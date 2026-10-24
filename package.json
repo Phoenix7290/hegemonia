@@ -1,0 +1,20 @@
+{
+  "name": "hegemonia",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Self-hosted geopolitical strategy board game (War/Risk clone)",
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "sim": "pnpm --filter @hegemonia/engine sim",
+    "dev:server": "pnpm --filter @hegemonia/server dev",
+    "dev:web": "pnpm --filter @hegemonia/web dev",
+    "build": "pnpm -r build"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.3",
+    "vitest": "^3.0.5",
+    "tsx": "^4.19.2",
+    "@types/node": "^22.13.1"
+  }
+}

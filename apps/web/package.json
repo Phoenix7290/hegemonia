@@ -1,0 +1,22 @@
+{
+  "name": "@hegemonia/web",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev": "vite --host ::",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@hegemonia/shared": "workspace:*",
+    "@hegemonia/maps": "workspace:*",
+    "@hegemonia/engine": "workspace:*",
+    "colyseus.js": "^0.16.4"
+  },
+  "devDependencies": {
+    "@sveltejs/vite-plugin-svelte": "^5.0.3",
+    "svelte": "^5.19.9",
+    "vite": "^6.1.0"
+  }
+}

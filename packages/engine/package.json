@@ -1,0 +1,15 @@
+{
+  "name": "@hegemonia/engine",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "scripts": {
+    "sim": "tsx src/sim.ts",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@hegemonia/shared": "workspace:*",
+    "@hegemonia/maps": "workspace:*"
+  }
+}
