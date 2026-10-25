@@ -32,4 +32,4 @@ EXPOSE 2567
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
   CMD node -e "fetch('http://localhost:2567/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"
 
-CMD ["node", "apps/server/dist/index.js"]
+CMD ["npx", "tsx", "apps/server/src/index.ts"]
