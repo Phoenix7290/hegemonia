@@ -943,60 +943,143 @@ export const CLASSIC_OBJECTIVES: ObjectiveCard[] = [
 
 export const ROLEPLAY_OBJECTIVES: ObjectiveCard[] = [
   {
-    id: "obj_rp_monroe",
-    descriptionPt: "Doutrina Monroe: Controlar a totalidade da América do Norte e da América do Sul, além de Moscou OU (China e Mongólia).",
-    descriptionEn: "Monroe Doctrine: Conquer North America and South America, plus Moscow OR (China and Mongolia).",
+    id: "obj_rp_japan_rising_sun",
+    descriptionPt: "Japão Imperial (Sol Nascente): Controlar o Leste Asiático (Japão, China, Mongólia, Vladivostok), a Oceania (Sumatra, Bornéu, Nova Guiné, Austrália) e o Arco do Pacífico (Havaí, Alasca, Califórnia, Vancouver, Mackenzie).",
+    descriptionEn: "Imperial Japan (Rising Sun): Conquer East Asia (Japan, China, Mongolia, Vladivostok), Oceania (Sumatra, Borneo, New Guinea, Australia) and the Pacific Rim (Hawaii, Alaska, California, Vancouver, Mackenzie).",
+    rule: {
+      type: "specific_territories",
+      territoryIds: [
+        "japao", "china", "mongolia", "vladivostok",
+        "sumatra", "borneu", "nova_guine", "australia",
+        "havai", "alasca", "california", "vancouver", "mackenzie"
+      ],
+    },
+    coreTerritoryIds: ["japao"],
+  },
+  {
+    id: "obj_rp_usa_manifest_destiny",
+    descriptionPt: "Estados Unidos (Destino Manifesto): Controlar a totalidade das Américas (América do Norte e América do Sul) e mais (China e Mongólia) OU Moscou.",
+    descriptionEn: "United States (Manifest Destiny): Conquer all of the Americas (North and South America) plus (China and Mongolia) OR Moscow.",
     rule: {
       type: "specific_territories",
       territoryIds: [
         "brasil", "argentina", "peru", "venezuela",
         "mexico", "california", "nova_york", "labrador", "ottawa", "vancouver", "mackenzie", "alasca", "groenlandia", "havai"
       ],
-      extraAnyOf: [["moscou"], ["china", "mongolia"]],
+      extraAnyOf: [["china", "mongolia"], ["moscou"]],
     },
-    coreTerritoryIds: ["nova_york", "california", "ottawa", "vancouver", "havai"],
+    coreTerritoryIds: ["nova_york", "california", "alasca", "havai"],
   },
   {
-    id: "obj_rp_pax_britannica",
-    descriptionPt: "Pax Britannica: Controlar Inglaterra, Índia, Egito, África do Sul, Austrália e Ottawa.",
-    descriptionEn: "Pax Britannica: Conquer Great Britain, India, Egypt, South Africa, Australia and Ottawa.",
+    id: "obj_rp_lusitania_three_oceans",
+    descriptionPt: "Império Lusitano (Três Oceanos): Controlar a América do Sul (Brasil, Argentina, Peru, Venezuela) e os entrepostos dos Três Oceanos (França, Argélia, Congo, África do Sul, Índia e Sumatra).",
+    descriptionEn: "Lusitanian Empire (Three Oceans): Conquer South America (Brazil, Argentina, Peru, Venezuela) and the Three Oceans trade posts (France, Algeria, Congo, South Africa, India and Sumatra).",
     rule: {
       type: "specific_territories",
-      territoryIds: ["inglaterra", "india", "egito", "africa_do_sul", "australia", "ottawa"],
+      territoryIds: [
+        "brasil", "argentina", "peru", "venezuela",
+        "franca", "argelia", "congo", "africa_do_sul", "india", "sumatra"
+      ],
     },
-    coreTerritoryIds: ["inglaterra"],
+    coreTerritoryIds: ["brasil"],
   },
   {
-    id: "obj_rp_eurasia",
-    descriptionPt: "Ordem Eurasiana: Controlar Moscou, Omsk, Sibéria, Dudinka, Cazaquistão, Tchita, Vladivostok, Polônia e ou Alemanha ou China.",
-    descriptionEn: "Eurasian Order: Conquer Moscow, Omsk, Siberia, Dudinka, Kazakhstan, Tchita, Vladivostok, Poland and either Germany or China.",
+    id: "obj_rp_russia_third_rome",
+    descriptionPt: "Império Russo (Terceira Roma): Controlar todas as 6 províncias russas (Moscou, Omsk, Dudinka, Sibéria, Tchita, Vladivostok), Japão, Alasca e toda a Europa.",
+    descriptionEn: "Russian Empire (Third Rome): Conquer all 6 Russian regions (Moscow, Omsk, Dudinka, Siberia, Tchita, Vladivostok), Japan, Alaska and all of Europe.",
     rule: {
       type: "specific_territories",
-      territoryIds: ["moscou", "omsk", "siberia", "dudinka", "aral", "tchita", "vladivostok", "polonia"],
-      extraAnyOf: [["alemanha"], ["china"]],
+      territoryIds: [
+        "moscou", "omsk", "dudinka", "siberia", "tchita", "vladivostok",
+        "japao", "alasca",
+        "islandia", "inglaterra", "suecia", "alemanha", "franca", "polonia", "balcas"
+      ],
     },
-    coreTerritoryIds: ["moscou", "omsk", "siberia", "vladivostok"],
+    coreTerritoryIds: ["moscou", "omsk"],
   },
   {
-    id: "obj_rp_mitteleuropa",
-    descriptionPt: "Mitteleuropa: Controlar Alemanha, França, Polônia, Bálcãs, Suécia e Moscou.",
-    descriptionEn: "Mitteleuropa: Conquer Germany, France, Poland, Balkans, Sweden and Moscow.",
+    id: "obj_rp_golden_crescent",
+    descriptionPt: "Crescente Dourado (União & Al-Andalus): Controlar as 6 regiões do Crescente (Oriente Médio, Egito, Argélia, Sudão, Cazaquistão, Sumatra) e toda a Europa.",
+    descriptionEn: "Golden Crescent (Union & Al-Andalus): Conquer the 6 Crescent regions (Middle East, Egypt, Algeria, Sudan, Kazakhstan, Sumatra) and all of Europe.",
     rule: {
       type: "specific_territories",
-      territoryIds: ["alemanha", "franca", "polonia", "balcas", "suecia", "moscou"],
+      territoryIds: [
+        "oriente_medio", "egito", "argelia", "sudao", "aral", "sumatra",
+        "islandia", "inglaterra", "suecia", "alemanha", "franca", "polonia", "balcas", "moscou"
+      ],
+    },
+    coreTerritoryIds: ["oriente_medio", "egito", "argelia", "sudao", "aral", "sumatra"],
+  },
+  {
+    id: "obj_rp_pacto_austral",
+    descriptionPt: "Pacto Austral (Aliança dos Três Oceanos): Controlar na totalidade os três continentes do Hemisfério Sul: América do Sul, África e Oceania.",
+    descriptionEn: "Southern Pact (Alliance of Three Oceans): Conquer the three Southern Continents in their entirety: South America, Africa and Oceania.",
+    rule: {
+      type: "specific_territories",
+      territoryIds: [
+        "brasil", "argentina", "peru", "venezuela",
+        "argelia", "egito", "sudao", "congo", "africa_do_sul", "madagascar",
+        "sumatra", "borneu", "nova_guine", "australia"
+      ],
+    },
+    coreTerritoryIds: ["argentina", "africa_do_sul", "australia"],
+  },
+  {
+    id: "obj_rp_mitteleuropa_atlantic",
+    descriptionPt: "Ordem Central Germânica (Mitteleuropa & Atlântico): Controlar toda a Europa, além de Oriente Médio, Omsk, Cazaquistão e o Corredor do Atlântico Norte (Groenlândia, Labrador, Ottawa e Nova York).",
+    descriptionEn: "Germanic Central Order (Mitteleuropa & Atlantic): Conquer all of Europe, plus Middle East, Omsk, Kazakhstan and the North Atlantic Corridor (Greenland, Labrador, Ottawa and New York).",
+    rule: {
+      type: "specific_territories",
+      territoryIds: [
+        "islandia", "inglaterra", "suecia", "alemanha", "franca", "polonia", "balcas", "moscou",
+        "oriente_medio", "omsk", "aral",
+        "groenlandia", "labrador", "ottawa", "nova_york"
+      ],
     },
     coreTerritoryIds: ["alemanha"],
   },
   {
-    id: "obj_rp_coprosperity",
-    descriptionPt: "Esfera de Co-Prosperidade: Controlar Japão, Havaí, Vladivostok, China, Índia, Sumatra e Bornéu.",
-    descriptionEn: "Greater East Asia Co-Prosperity Sphere: Conquer Japan, Hawaii, Vladivostok, China, India, Sumatra and Borneo.",
+    id: "obj_rp_island_empire",
+    descriptionPt: "Império das Ilhas (Talassocracia Global): Controlar a totalidade dos 10 territórios insulares e arquipélagos do planeta (Groenlândia, Islândia, Inglaterra, Madagascar, Sumatra, Bornéu, Nova Guiné, Austrália, Japão e Havaí).",
+    descriptionEn: "Island Empire (Global Thalassocracy): Conquer all 10 planetary islands and archipelagos (Greenland, Iceland, Great Britain, Madagascar, Sumatra, Borneo, New Guinea, Australia, Japan and Hawaii).",
     rule: {
       type: "specific_territories",
-      territoryIds: ["japao", "havai", "vladivostok", "china", "india", "sumatra", "borneu"],
+      territoryIds: [
+        "groenlandia", "islandia", "inglaterra", "madagascar", "sumatra", "borneu", "nova_guine", "australia", "japao", "havai"
+      ],
     },
-    coreTerritoryIds: ["japao"],
+    coreTerritoryIds: ["inglaterra", "japao", "islandia", "madagascar", "havai", "borneu", "sumatra"],
   },
+  {
+    id: "obj_rp_pax_britannica",
+    descriptionPt: "Pax Britannica (O Império Onde o Sol Nunca se Põe): Controlar Inglaterra, Ottawa, Labrador, Vancouver, Nova York, Egito, Sudão, África do Sul, Oriente Médio, Índia, Bornéu e Austrália.",
+    descriptionEn: "Pax Britannica (The Empire On Which the Sun Never Sets): Conquer Great Britain, Ottawa, Labrador, Vancouver, New York, Egypt, Sudan, South Africa, Middle East, India, Borneo and Australia.",
+    rule: {
+      type: "specific_territories",
+      territoryIds: [
+        "inglaterra", "ottawa", "labrador", "vancouver", "nova_york",
+        "egito", "sudao", "africa_do_sul", "oriente_medio", "india", "borneu", "australia"
+      ],
+    },
+    coreTerritoryIds: ["inglaterra"],
+  },
+  {
+    id: "obj_rp_middle_kingdom_silk_road",
+    descriptionPt: "Império do Meio (Mandato do Céu & Rota da Seda): Controlar China, Mongólia, a Indo-Arábia (Oriente Médio, Cazaquistão, Índia, Vietnã), a Oceania (4 territórios) e a Europa Oriental/Central (Moscou, Polônia, Bálcãs, Alemanha).",
+    descriptionEn: "Middle Kingdom (Mandate of Heaven & Silk Road): Conquer China, Mongolia, Indo-Arabia (Middle East, Kazakhstan, India, Vietnam), Oceania (4 territories) and Eastern/Central Europe (Moscow, Poland, Balkans, Germany).",
+    rule: {
+      type: "specific_territories",
+      territoryIds: [
+        "china", "mongolia",
+        "oriente_medio", "aral", "india", "vietna",
+        "sumatra", "borneu", "nova_guine", "australia",
+        "moscou", "polonia", "balcas", "alemanha"
+      ],
+    },
+    coreTerritoryIds: ["china"],
+  },
+  /*
+  // RESERVED FOR FUTURE EXPANSIONS:
   {
     id: "obj_rp_patria_grande",
     descriptionPt: "Pátria Grande: Controlar a totalidade da América do Sul, além de México e Califórnia.",
@@ -1006,16 +1089,6 @@ export const ROLEPLAY_OBJECTIVES: ObjectiveCard[] = [
       territoryIds: ["brasil", "argentina", "peru", "venezuela", "mexico", "california"],
     },
     coreTerritoryIds: ["brasil", "argentina", "peru", "venezuela"],
-  },
-  {
-    id: "obj_rp_caliphate",
-    descriptionPt: "Califado / Pan-Arabismo: Controlar Oriente Médio, Egito, Argélia, Cazaquistão, Índia e Bálcãs.",
-    descriptionEn: "Caliphate / Pan-Arabism: Conquer Middle East, Egypt, Algeria, Kazakhstan, India and Balkans.",
-    rule: {
-      type: "specific_territories",
-      territoryIds: ["oriente_medio", "egito", "argelia", "aral", "india", "balcas"],
-    },
-    coreTerritoryIds: ["oriente_medio", "egito", "argelia"],
   },
   {
     id: "obj_rp_mare_nostrum",
@@ -1047,6 +1120,7 @@ export const ROLEPLAY_OBJECTIVES: ObjectiveCard[] = [
     },
     coreTerritoryIds: ["argelia", "egito", "sudao", "congo", "africa_do_sul", "madagascar"],
   },
+  */
 ];
 
 export const ALL_OBJECTIVES: ObjectiveCard[] = [

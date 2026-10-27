@@ -11,7 +11,17 @@ This document outlines the architectural roadmap and upcoming milestone features
   - 44-territory Natural Earth vector map with continuous zoom/pan and WASD.
   - Asia 3-theater division (+2 Indo-Arábia, +2 Estepes & Sibéria, +3 Leste Asiático).
   - Strategic maritime connections (Argentina-Australia, Argentina-South Africa, Hawaii Pacific Hub).
-  - 14 Classic Objectives + 10 Roleplay / Alt-History National Ambitions.
+  - 14 Classic Objectives + 10 Roleplay / Alt-History National Ambitions:
+    1. *Japão Imperial (Sol Nascente)*: 13 territórios (Leste Asiático + Oceania + Arco do Pacífico).
+    2. *Estados Unidos (Destino Manifesto)*: 15–16 territórios (Todas as Américas + [China & Mongólia] OU Moscou).
+    3. *Império Lusitano (Três Oceanos)*: 10 territórios (América do Sul + entrepostos em França, Argélia, Congo, África do Sul, Índia e Sumatra).
+    4. *Império Russo (Terceira Roma)*: 15 territórios (6 províncias russas + Japão + Alasca + toda a Europa).
+    5. *Crescente Dourado (União & Al-Andalus)*: 14 territórios (6 regiões islâmicas + toda a Europa).
+    6. *Pacto Austral (Aliança dos Três Oceanos)*: 14 territórios (América do Sul + África + Oceania).
+    7. *Ordem Central Germânica (Mitteleuropa & Atlântico)*: 15 territórios (Toda a Europa + Oriente Médio, Omsk, Cazaquistão + Corredor do Atlântico Norte).
+    8. *Império das Ilhas (Talassocracia Global)*: 10 territórios (Todos os 10 territórios insulares/arquipélagos do planeta).
+    9. *Pax Britannica (O Império Onde o Sol Nunca se Põe)*: 12 territórios da Commonwealth global.
+    10. *Império do Meio (Mandato do Céu & Rota da Seda)*: 14 territórios (China, Mongólia, Indo-Arábia, Oceania e Europa Oriental/Central).
   - Strict 120s turn timers with automated fallback resolution.
   - Colyseus WebSocket server with SQLite session persistence.
 

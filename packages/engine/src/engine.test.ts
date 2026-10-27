@@ -241,15 +241,18 @@ describe("War Classic Rules Engine", () => {
 
     expect(checkPlayerVictory(state, "p1")).toBe(false);
 
-    // Give p1 all required territories for Pax Britannica
-    for (const tid of ["inglaterra", "india", "egito", "africa_do_sul", "australia", "ottawa"]) {
+    // Give p1 all 12 required territories for Pax Britannica
+    for (const tid of [
+      "inglaterra", "ottawa", "labrador", "vancouver", "nova_york",
+      "egito", "sudao", "africa_do_sul", "oriente_medio", "india", "borneu", "australia"
+    ]) {
       state.territories[tid].ownerId = "p1";
     }
     expect(checkPlayerVictory(state, "p1")).toBe(true);
 
-    // Test Monroe Doctrine with extraAnyOf alternatives
-    const monroe = ROLEPLAY_OBJECTIVES.find((o) => o.id === "obj_rp_monroe")!;
-    p1.objective = monroe;
+    // Test USA Manifest Destiny with extraAnyOf alternatives
+    const usaManifest = ROLEPLAY_OBJECTIVES.find((o) => o.id === "obj_rp_usa_manifest_destiny")!;
+    p1.objective = usaManifest;
 
     // Give p1 all North & South America
     for (const t of CLASSIC_MAP.territories) {
