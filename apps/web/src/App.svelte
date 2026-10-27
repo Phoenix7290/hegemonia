@@ -3,7 +3,6 @@
   import {
     ASIA_SUBREGIONS,
     CLASSIC_MAP,
-    GLOBAL_LAND_SVG_PATH,
     GRATICULE_SVG_PATH,
     MAP_HEIGHT,
     MAP_WIDTH,
@@ -101,6 +100,24 @@
     }
     return REGION_COLOR_HEX[t.continent] ?? "#64748b";
   }
+
+  const COMPACT_BADGE_IDS = new Set([
+    "islandia",
+    "inglaterra",
+    "alemanha",
+    "polonia",
+    "balcas",
+    "franca",
+    "egito",
+    "tchita",
+    "mongolia",
+    "vietna",
+    "borneu",
+    "sumatra",
+    "nova_guine",
+    "madagascar",
+    "havai",
+  ]);
 
   // Continuous Wraparound Camera State (in SVG coordinate space: width=1200, height=620)
   let camX = $state(0);
@@ -732,7 +749,7 @@
             y={-MAP_HEIGHT}
             width={MAP_WIDTH * 5}
             height={MAP_HEIGHT * 3}
-            fill={mapMode === "cartographic" ? "#050b16" : "#070d19"}
+            fill={mapMode === "cartographic" ? "#061121" : "#08172e"}
           />
           <rect
             x={-MAP_WIDTH * 2}
@@ -754,32 +771,23 @@
                   width={MAP_WIDTH}
                   height="600"
                   preserveAspectRatio="none"
-                  opacity="0.92"
+                  opacity="0.94"
                   pointer-events="none"
                 />
                 <!-- Latitude / Longitude Graticule Lines -->
                 <path
                   d={GRATICULE_SVG_PATH}
                   fill="none"
-                  stroke="rgba(186, 230, 253, 0.14)"
-                  stroke-width="0.55"
+                  stroke="rgba(186, 230, 253, 0.13)"
+                  stroke-width="0.5"
                   pointer-events="none"
                 />
-                <!-- Continental Coastline Rim -->
-                <path
-                  d={GLOBAL_LAND_SVG_PATH}
-                  fill="none"
-                  stroke="rgba(15, 23, 42, 0.85)"
-                  stroke-width="1.4"
-                  stroke-linejoin="round"
-                  pointer-events="none"
-                />
-              {:else if mapMode === "regional"}
+              {:else}
                 <path
                   d={GRATICULE_SVG_PATH}
                   fill="none"
                   stroke="rgba(148, 163, 184, 0.12)"
-                  stroke-width="0.55"
+                  stroke-width="0.5"
                   pointer-events="none"
                 />
               {/if}
@@ -874,22 +882,25 @@
                     />
                   {/if}
 
-                  <!-- HOI4-STYLE MILITARY DIVISION COUNTER (FLAG + TROOP COUNT) -->
-                  <g transform="translate({t.center[0]}, {t.center[1]})" class="division-counter">
+                  <!-- HOI4-STYLE MILITARY DIVISION COUNTER (COMPACT FLAG + TROOP COUNT) -->
+                  <g
+                    transform="translate({t.center[0]}, {t.center[1]}) scale({COMPACT_BADGE_IDS.has(t.id) ? 0.82 : 0.94})"
+                    class="division-counter"
+                  >
                     <rect
-                      x="-18"
-                      y="-9"
-                      width="36"
-                      height="18"
-                      rx="3"
+                      x="-13"
+                      y="-6.5"
+                      width="26"
+                      height="13"
+                      rx="2.2"
                       fill="#090e1a"
                       stroke={isSelected ? "#ffffff" : isValidTarget ? "#facc15" : ownerColor}
-                      stroke-width={isSelected || isValidTarget ? "1.8" : "1.3"}
-                      filter="drop-shadow(0 2px 4px rgba(0,0,0,0.85))"
+                      stroke-width={isSelected || isValidTarget ? "1.6" : "1.1"}
+                      filter="drop-shadow(0 1.5px 3px rgba(0,0,0,0.85))"
                     />
                     <!-- Mini Faction Flag inside Left Half of Counter -->
                     {#if owner}
-                      <g transform="translate(-15.5, -6)">
+                      <g transform="translate(-11.2, -4.5) scale(0.75)">
                         {#if owner.color === "blue"}
                           <rect width="13" height="12" fill="#1d4ed8" />
                           <polygon points="6.5,2 8,5 11,6 8,7 6.5,10 5,7 2,6 5,5" fill="#f8fafc" />
@@ -912,15 +923,15 @@
                       </g>
                     {/if}
                     <!-- Divider Line -->
-                    <line x1="-1.5" y1="-8" x2="-1.5" y2="8" stroke="rgba(148, 163, 184, 0.35)" stroke-width="0.8" />
+                    <line x1="-0.8" y1="-5.8" x2="-0.8" y2="5.8" stroke="rgba(148, 163, 184, 0.35)" stroke-width="0.7" />
                     <!-- Crisp Troop Count -->
                     <text
-                      x="8"
-                      y="0.5"
+                      x="6"
+                      y="0.4"
                       text-anchor="middle"
                       dominant-baseline="central"
                       fill="#ffffff"
-                      font-size="10.5"
+                      font-size="8.2"
                       font-weight="800"
                       font-family="system-ui, -apple-system, sans-serif"
                       pointer-events="none"
@@ -931,14 +942,14 @@
                     <!-- Territory Label Underneath Counter -->
                     <text
                       x="0"
-                      y="16.5"
+                      y="11.2"
                       text-anchor="middle"
                       fill="#e2e8f0"
-                      font-size="7.8"
+                      font-size="6.2"
                       font-weight="700"
-                      letter-spacing="0.02em"
+                      letter-spacing="0.01em"
                       pointer-events="none"
-                      style="paint-order: stroke; stroke: #050912; stroke-width: 3px; stroke-linejoin: round;"
+                      style="paint-order: stroke; stroke: #050912; stroke-width: 2.4px; stroke-linejoin: round;"
                     >
                       {t.namePt}
                     </text>

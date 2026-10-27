@@ -44,7 +44,7 @@ describe("Classic Map Graph Integrity", () => {
     }
   });
 
-  it("is a single connected graph (every territory reachable from Brasil)", () => {
+  it("is a single connected graph (every territory reachable from Brasil) and has bounded SVG polygons (no ocean fill)", () => {
     const byId = new Map(CLASSIC_MAP.territories.map((t) => [t.id, t]));
     const visited = new Set<string>();
     const queue = ["brasil"];
@@ -57,6 +57,21 @@ describe("Classic Map Graph Integrity", () => {
       }
     }
     expect(visited.size).toBe(44);
+
+    // Verify no territory has an inverted spherical ring that covers the whole ocean (1200x600)
+    for (const t of CLASSIC_MAP.territories) {
+      const nums = [...t.svgPath.matchAll(/(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)/g)];
+      const xs = nums.map((n) => parseFloat(n[1]));
+      const ys = nums.map((n) => parseFloat(n[2]));
+      const w = Math.max(...xs) - Math.min(...xs);
+      const h = Math.max(...ys) - Math.min(...ys);
+      expect(w, `Territory ${t.id} width ${w} exceeds max expected bound`).toBeLessThan(450);
+      expect(h, `Territory ${t.id} height ${h} exceeds max expected bound`).toBeLessThan(300);
+    }
+
+    // Verify Sudão does not directly attack África do Sul, and Aral is named Cazaquistão
+    expect(byId.get("sudao")!.neighbors).not.toContain("africa_do_sul");
+    expect(byId.get("aral")!.namePt).toBe("Cazaquistão");
   });
 });
 

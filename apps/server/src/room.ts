@@ -278,8 +278,59 @@ export class HegemoniaRoom extends Room {
   private handleTurnTimeout() {
     if (!this.gameState || this.gameState.phase === "game_over") return;
     const current = this.gameState.players[this.gameState.turnIndex];
-    this.gameState.log.push(`[TEMPO] Tempo esgotado para ${current.name}. Ação automática executada.`);
-    this.runSingleBotStep(current.id);
+    const timedOutPlayerId = current.id;
+    this.gameState.log.push(
+      `[TEMPO] Tempo esgotado para ${current.name}. Turno encerrado automaticamente.`
+    );
+
+    const mapById = new Map(CLASSIC_MAP.territories.map((t) => [t.id, t]));
+
+    for (let guard = 0; guard < 6; guard++) {
+      const gs = this.gameState as GameState | null;
+      if (!gs || gs.phase === "game_over") break;
+      const active = gs.players[gs.turnIndex];
+      if (!active || active.id !== timedOutPlayerId) break;
+
+      if (active.cards.length >= 5) {
+        const triplet = findValidTradeTriplet(active.cards);
+        if (triplet) {
+          this.executePlayerAction(timedOutPlayerId, { type: "trade_cards", cardIds: triplet });
+          continue;
+        }
+      }
+
+      if (gs.pendingConquest) {
+        this.executePlayerAction(timedOutPlayerId, {
+          type: "occupy",
+          armies: gs.pendingConquest.minMove,
+        });
+        continue;
+      }
+
+      if (gs.phase === "deploy" && active.unplacedArmies > 0) {
+        const owned = Object.values(gs.territories).filter(
+          (t) => t.ownerId === timedOutPlayerId
+        );
+        const frontline = owned.filter((t) =>
+          mapById
+            .get(t.id)!
+            .neighbors.some((n) => gs.territories[n].ownerId !== timedOutPlayerId)
+        );
+        const target = (frontline.length > 0 ? frontline : owned)[0];
+        if (target) {
+          this.executePlayerAction(timedOutPlayerId, {
+            type: "deploy",
+            territoryId: target.id,
+            armies: active.unplacedArmies,
+          });
+          continue;
+        }
+      }
+
+      this.executePlayerAction(timedOutPlayerId, { type: "end_turn" });
+      break;
+    }
+
     this.resetTurnTimer();
   }
 
