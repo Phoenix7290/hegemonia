@@ -1,0 +1,15 @@
+node_modules
+.git
+.github
+dist
+data
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+.idea
+.vscode
+*.log
+.env
+.env.*
+!.env.example

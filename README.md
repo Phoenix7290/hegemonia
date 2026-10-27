@@ -38,7 +38,7 @@ Built with a modern web stack, Hegemonia runs fully in the browser with real-tim
 ```
 hegemonia/
 ├── apps/
-│   ├── server/           # Colyseus room handlers, SQLite persistence, Turn timers
+│   ├── server/           # Colyseus rooms, PostgreSQL repositories, migrations, Turn timers
 │   └── web/              # Svelte 5 reactive frontend, SVG map engine, Sound FX
 ├── packages/
 │   ├── shared/           # Zod action contracts, GameState interfaces, Types
@@ -58,41 +58,64 @@ hegemonia/
 ### Prerequisites
 - [Node.js](https://nodejs.org/) (v20+ recommended)
 - [pnpm](https://pnpm.io/) (v9+)
+- PostgreSQL 18, or Docker for the local database container
 
 ### Local Development
 
-1. **Install dependencies:**
+1. **Install dependencies and configure the environment:**
    ```bash
    pnpm install
+   cp .env.example .env
    ```
 
-2. **Run tests across engine and map integrity:**
+2. **Start PostgreSQL and apply the migrations:**
+   ```bash
+   docker compose up -d postgres
+   set -a; . ./.env; set +a
+   pnpm --filter @hegemonia/server db:migrate
+   ```
+
+3. **Run tests and build all workspace projects:**
    ```bash
    pnpm test
-   ```
-
-3. **Build all packages and applications:**
-   ```bash
    pnpm build
    ```
 
-4. **Start local development server (web + WebSocket game server):**
+4. **Start the web and WebSocket development servers in separate terminals:**
    ```bash
-   pnpm dev
+   pnpm dev:server
+   pnpm dev:web
    ```
    Open `http://localhost:5173` in your browser.
+
+The schema includes match history and snapshots, future authentication flows, seasonal ranked ratings, career statistics, and breakdowns by color, objective, map, and doctrine. Casual, LAN, guest, and bot matches remain supported; only eligible ranked matches affect the leaderboard.
+
+PostgreSQL integration tests are opt-in and destructive to their target database. Use a dedicated disposable database and an explicit `TEST_DATABASE_URL`:
+```bash
+TEST_DATABASE_URL=postgresql://hegemonia:hegemonia@localhost:5432/hegemonia_test \
+  pnpm --filter @hegemonia/server test:db
+```
 
 ---
 
 ## Docker Deployment
 
-Hegemonia can be packaged and run in a production-ready container:
+Hegemonia can be packaged and run with PostgreSQL in production-ready containers:
 
 ```bash
+# Build and run the stack in the background
 docker compose up -d --build
+
+# View logs
+docker compose logs -f
+
+# Stop the containers (keep database data)
+docker compose down
 ```
 
-The game server will be available at `http://localhost:3000`.
+The game server and web client will be available at `http://localhost:2567`. The app applies pending migrations on startup. API endpoints include `/health`, `/api/matches`, `/api/leaderboard`, `/api/players/:userId/stats`, and `/api/players/:userId/matches`.
+
+Match history, snapshots, accounts, ratings, and statistics are persisted in the `postgres_data` Docker volume. Change the default database credentials outside local development. The HTTP port can be customized by defining `PORT` in a `.env` file (see `.env.example`).
 
 ---
 

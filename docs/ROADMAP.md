@@ -23,7 +23,8 @@ This document outlines the architectural roadmap and upcoming milestone features
     9. *Pax Britannica (O Império Onde o Sol Nunca se Põe)*: 12 territórios da Commonwealth global.
     10. *Império do Meio (Mandato do Céu & Rota da Seda)*: 14 territórios (China, Mongólia, Indo-Arábia, Oceania e Europa Oriental/Central).
   - Strict 120s turn timers with automated fallback resolution.
-  - Colyseus WebSocket server with SQLite session persistence.
+  - Colyseus WebSocket server with transactional PostgreSQL match persistence.
+  - Versioned database schema for accounts, authentication, seasons, rankings, and player statistics.
 
 ---
 

@@ -16,7 +16,7 @@ import {
   findValidTradeTriplet,
   type SeededRng,
 } from "@hegemonia/engine";
-import { appendMatchEvent, saveMatchSnapshot } from "./db.js";
+import { appendMatchEvent, createMatch, startMatch } from "./db.js";
 
 interface LobbyPlayer {
   token: string;
@@ -26,6 +26,7 @@ interface LobbyPlayer {
   isHost: boolean;
   isBot: boolean;
   connected: boolean;
+  userId?: string;
 }
 
 const ALL_COLORS: PlayerColor[] = ["blue", "red", "green", "yellow", "black", "white"];
@@ -33,11 +34,13 @@ const ALL_COLORS: PlayerColor[] = ["blue", "red", "green", "yellow", "black", "w
 export class HegemoniaRoom extends Room {
   maxClients = 12;
   private roomCode = "";
+  private matchId = "";
   private secretSeed = "";
   private rng!: SeededRng;
   private lobbyPlayers: LobbyPlayer[] = [];
   private gameState: GameState | null = null;
   private stepCounter = 0;
+  private actionQueue: Promise<void> = Promise.resolve();
   private turnTimerSeconds = Number(process.env.TURN_TIMER_DEFAULT ?? 120);
   private turnDeadline = 0;
   private timerInterval: NodeJS.Timeout | null = null;
@@ -111,50 +114,72 @@ export class HegemoniaRoom extends Room {
     });
 
     this.onMessage("start_game", (client) => {
-      if (this.gameState) return;
-      const caller = this.lobbyPlayers.find((p) => p.sessionId === client.sessionId);
-      if (!caller?.isHost) {
-        client.send("error_msg", { message: "Apenas o anfitrião pode iniciar a partida." });
-        return;
-      }
-      if (this.lobbyPlayers.length < 2) {
-        client.send("error_msg", { message: "São necessários pelo menos 2 jogadores." });
-        return;
-      }
+      this.enqueueAction(async () => {
+        if (this.gameState) return;
+        const caller = this.lobbyPlayers.find((p) => p.sessionId === client.sessionId);
+        if (!caller?.isHost) {
+          client.send("error_msg", { message: "Apenas o anfitrião pode iniciar a partida." });
+          return;
+        }
+        if (this.lobbyPlayers.length < 2) {
+          client.send("error_msg", { message: "São necessários pelo menos 2 jogadores." });
+          return;
+        }
 
-      this.gameState = createGame({
-        id: `match_${this.roomCode}_${Date.now()}`,
-        seed: this.secretSeed,
-        players: this.lobbyPlayers.map((p) => ({
-          id: p.token,
-          name: p.name,
-          color: p.color,
-        })),
+        try {
+          const players = this.lobbyPlayers.map((p) => ({
+            id: p.token,
+            name: p.name,
+            color: p.color,
+          }));
+          const provisional = createGame({ id: "pending", seed: this.secretSeed, players });
+          this.matchId = await createMatch({ roomCode: this.roomCode, seedCommitHash: provisional.seedCommitHash });
+          const nextState = createGame({ id: this.matchId, seed: this.secretSeed, players });
+          await startMatch(
+            this.matchId,
+            nextState,
+            this.lobbyPlayers.map((player) => {
+              const gamePlayer = nextState.players.find((candidate) => candidate.id === player.token)!;
+              return {
+                enginePlayerId: player.token,
+                userId: player.userId,
+                displayName: player.name,
+                color: player.color,
+                objectiveId: gamePlayer.objective.id,
+                seatIndex: nextState.players.indexOf(gamePlayer),
+                isBot: player.isBot,
+              };
+            })
+          );
+          this.gameState = nextState;
+          this.resetTurnTimer();
+          this.broadcastRoomState();
+          this.checkAndRunBotTurn();
+        } catch (error) {
+          const message = error instanceof Error ? error.message : "Não foi possível iniciar a partida.";
+          client.send("error_msg", { message });
+        }
       });
-
-      this.resetTurnTimer();
-      this.saveMatchState();
-      this.broadcastRoomState();
-      this.checkAndRunBotTurn();
     });
 
     this.onMessage("game_action", (client, rawAction: unknown) => {
-      if (!this.gameState) return;
-      const lobbyPlayer = this.lobbyPlayers.find((p) => p.sessionId === client.sessionId);
-      if (!lobbyPlayer) return;
-
       const parsed = GameActionSchema.safeParse(rawAction);
       if (!parsed.success) {
         client.send("error_msg", { message: "Formato de ação inválido." });
         return;
       }
 
-      try {
-        this.executePlayerAction(lobbyPlayer.token, parsed.data);
-      } catch (err: unknown) {
-        const message = err instanceof Error ? err.message : "Ação inválida.";
-        client.send("error_msg", { message });
-      }
+      this.enqueueAction(async () => {
+        if (!this.gameState) return;
+        const lobbyPlayer = this.lobbyPlayers.find((p) => p.sessionId === client.sessionId);
+        if (!lobbyPlayer) return;
+        try {
+          await this.executePlayerAction(lobbyPlayer.token, parsed.data);
+        } catch (err: unknown) {
+          const message = err instanceof Error ? err.message : "Ação inválida.";
+          client.send("error_msg", { message });
+        }
+      });
     });
 
     this.onMessage("chat", (client, payload: { text: string }) => {
@@ -162,8 +187,11 @@ export class HegemoniaRoom extends Room {
       const text = String(payload?.text ?? "").trim().slice(0, 240);
       if (!sender || !text) return;
       if (this.gameState) {
-        this.gameState.log.push(`[COMMS] ${sender.name}: ${text}`);
-        this.broadcastRoomState();
+        this.enqueueAction(async () => {
+          if (!this.gameState) return;
+          this.gameState.log.push(`[COMMS] ${sender.name}: ${text}`);
+          this.broadcastRoomState();
+        });
       } else {
         this.broadcast("chat_msg", { from: sender.name, color: sender.color, text });
       }
@@ -172,7 +200,7 @@ export class HegemoniaRoom extends Room {
     this.timerInterval = setInterval(() => {
       if (!this.gameState || this.gameState.phase === "game_over") return;
       if (Date.now() > this.turnDeadline) {
-        this.handleTurnTimeout();
+        this.enqueueAction(() => this.handleTurnTimeout());
       }
     }, 1000);
   }
@@ -244,38 +272,47 @@ export class HegemoniaRoom extends Room {
     this.broadcastRoomState();
   }
 
-  onDispose() {
+  async onDispose() {
     if (this.timerInterval) clearInterval(this.timerInterval);
+    await this.actionQueue;
+  }
+
+  private enqueueAction(operation: () => Promise<void>): void {
+    this.actionQueue = this.actionQueue.then(operation).catch((error: unknown) => {
+      console.error(`Falha na fila da sala ${this.roomCode}:`, error);
+    });
   }
 
   private resetTurnTimer() {
     this.turnDeadline = Date.now() + this.turnTimerSeconds * 1000;
   }
 
-  private executePlayerAction(playerId: string, action: GameAction) {
+  private async executePlayerAction(playerId: string, action: GameAction): Promise<void> {
     if (!this.gameState) return;
     const prevTurn = this.gameState.turnIndex;
-    this.gameState = applyAction(this.gameState, playerId, action, this.rng, CLASSIC_MAP);
-    this.stepCounter += 1;
+    const nextState = applyAction(this.gameState, playerId, action, this.rng, CLASSIC_MAP);
+    const nextStep = this.stepCounter + 1;
 
-    if (this.gameState.phase === "game_over") {
-      // Reveal seed on game over so players can verify commit-reveal fairness!
-      this.gameState.revealedSeed = this.secretSeed;
+    if (nextState.phase === "game_over") {
+      nextState.revealedSeed = this.secretSeed;
+    }
+    for (const player of nextState.players) {
+      player.connected = this.lobbyPlayers.find((entry) => entry.token === player.id)?.connected ?? true;
     }
 
-    if (this.gameState.turnIndex !== prevTurn) {
+    await appendMatchEvent(this.matchId, nextStep, playerId, action, nextState);
+    this.gameState = nextState;
+    this.stepCounter = nextStep;
+
+    if (nextState.turnIndex !== prevTurn) {
       this.resetTurnTimer();
     }
-
-    // Persist event and snapshot in SQLite
-    appendMatchEvent(this.gameState.id, this.stepCounter, playerId, JSON.stringify(action));
-    this.saveMatchState();
 
     this.broadcastRoomState();
     this.checkAndRunBotTurn();
   }
 
-  private handleTurnTimeout() {
+  private async handleTurnTimeout(): Promise<void> {
     if (!this.gameState || this.gameState.phase === "game_over") return;
     const current = this.gameState.players[this.gameState.turnIndex];
     const timedOutPlayerId = current.id;
@@ -294,13 +331,13 @@ export class HegemoniaRoom extends Room {
       if (active.cards.length >= 5) {
         const triplet = findValidTradeTriplet(active.cards);
         if (triplet) {
-          this.executePlayerAction(timedOutPlayerId, { type: "trade_cards", cardIds: triplet });
+          await this.executePlayerAction(timedOutPlayerId, { type: "trade_cards", cardIds: triplet });
           continue;
         }
       }
 
       if (gs.pendingConquest) {
-        this.executePlayerAction(timedOutPlayerId, {
+        await this.executePlayerAction(timedOutPlayerId, {
           type: "occupy",
           armies: gs.pendingConquest.minMove,
         });
@@ -318,7 +355,7 @@ export class HegemoniaRoom extends Room {
         );
         const target = (frontline.length > 0 ? frontline : owned)[0];
         if (target) {
-          this.executePlayerAction(timedOutPlayerId, {
+          await this.executePlayerAction(timedOutPlayerId, {
             type: "deploy",
             territoryId: target.id,
             armies: active.unplacedArmies,
@@ -327,7 +364,7 @@ export class HegemoniaRoom extends Room {
         }
       }
 
-      this.executePlayerAction(timedOutPlayerId, { type: "end_turn" });
+      await this.executePlayerAction(timedOutPlayerId, { type: "end_turn" });
       break;
     }
 
@@ -344,12 +381,12 @@ export class HegemoniaRoom extends Room {
       if (!this.gameState || this.gameState.phase === "game_over") return;
       const active = this.gameState.players[this.gameState.turnIndex];
       if (active.id === current.id) {
-        this.runSingleBotStep(current.id);
+        this.enqueueAction(() => this.runSingleBotStep(current.id));
       }
     }, 450);
   }
 
-  private runSingleBotStep(playerId: string) {
+  private async runSingleBotStep(playerId: string): Promise<void> {
     if (!this.gameState || this.gameState.phase === "game_over") return;
     const player = this.gameState.players.find((p) => p.id === playerId);
     if (!player) return;
@@ -358,7 +395,7 @@ export class HegemoniaRoom extends Room {
     try {
       const triplet = findValidTradeTriplet(player.cards);
       if (triplet && (this.gameState.phase === "deploy" || player.cards.length >= 5)) {
-        this.executePlayerAction(playerId, { type: "trade_cards", cardIds: triplet });
+        await this.executePlayerAction(playerId, { type: "trade_cards", cardIds: triplet });
         return;
       }
 
@@ -372,7 +409,7 @@ export class HegemoniaRoom extends Room {
             .neighbors.some((n) => this.gameState!.territories[n].ownerId !== playerId)
         );
         const target = (frontline.length > 0 ? frontline : owned)[0];
-        this.executePlayerAction(playerId, {
+        await this.executePlayerAction(playerId, {
           type: "deploy",
           territoryId: target.id,
           armies: player.unplacedArmies,
@@ -381,7 +418,7 @@ export class HegemoniaRoom extends Room {
       }
 
       if (this.gameState.pendingConquest) {
-        this.executePlayerAction(playerId, {
+        await this.executePlayerAction(playerId, {
           type: "occupy",
           armies: this.gameState.pendingConquest.maxMove,
         });
@@ -399,7 +436,7 @@ export class HegemoniaRoom extends Room {
             .filter((n) => n.ownerId !== playerId && from.armies > n.armies);
           if (enemies.length > 0) {
             enemies.sort((a, b) => a.armies - b.armies);
-            this.executePlayerAction(playerId, {
+            await this.executePlayerAction(playerId, {
               type: "attack",
               fromTerritoryId: from.id,
               toTerritoryId: enemies[0].id,
@@ -407,41 +444,21 @@ export class HegemoniaRoom extends Room {
             return;
           }
         }
-        this.executePlayerAction(playerId, { type: "end_attack" });
+        await this.executePlayerAction(playerId, { type: "end_attack" });
         return;
       }
 
       if (this.gameState.phase === "maneuver") {
-        this.executePlayerAction(playerId, { type: "end_turn" });
+        await this.executePlayerAction(playerId, { type: "end_turn" });
       }
     } catch {
       // Fallback if stuck
       if (this.gameState.phase === "attack") {
-        this.executePlayerAction(playerId, { type: "end_attack" });
+        await this.executePlayerAction(playerId, { type: "end_attack" });
       } else if (this.gameState.phase === "maneuver") {
-        this.executePlayerAction(playerId, { type: "end_turn" });
+        await this.executePlayerAction(playerId, { type: "end_turn" });
       }
     }
-  }
-
-  private saveMatchState() {
-    if (!this.gameState) return;
-    const winner = this.gameState.winnerId
-      ? this.gameState.players.find((p) => p.id === this.gameState!.winnerId)
-      : undefined;
-
-    saveMatchSnapshot({
-      id: this.gameState.id,
-      roomCode: this.roomCode,
-      status: this.gameState.phase === "game_over" ? "finished" : "playing",
-      winnerName: winner?.name ?? null,
-      winnerColor: winner?.color ?? null,
-      round: this.gameState.round,
-      seedCommitHash: this.gameState.seedCommitHash,
-      revealedSeed: this.gameState.revealedSeed ?? null,
-      stateJson: JSON.stringify(this.gameState),
-      updatedAt: Date.now(),
-    });
   }
 
   private sendStateToClient(client: Client, viewerToken: string | null) {

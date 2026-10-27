@@ -1,0 +1,40 @@
+services:
+  postgres:
+    image: postgres:18-alpine
+    container_name: hegemonia_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: "${POSTGRES_DB:-hegemonia}"
+      POSTGRES_USER: "${POSTGRES_USER:-hegemonia}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:-hegemonia}"
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  hegemonia:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: hegemonia:latest
+    container_name: hegemonia
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "${PORT:-2567}:2567"
+    environment:
+      NODE_ENV: "production"
+      PORT: "2567"
+      HOST: "::"
+      DATABASE_URL: "postgresql://${POSTGRES_USER:-hegemonia}:${POSTGRES_PASSWORD:-hegemonia}@postgres:5432/${POSTGRES_DB:-hegemonia}"
+      PUBLIC_DIR: "/app/apps/web/dist"
+
+volumes:
+  postgres_data:

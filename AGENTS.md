@@ -20,9 +20,13 @@ Welcome, AI pair programmer! When contributing to or refactoring the **Hegemonia
   - Symmetrical borders: If territory $A$ lists territory $B$ as a neighbor, $B$ MUST list $A$.
   - Clean polygons: All SVG paths must have realistic bounded dimensions ($w < 450, h < 300$ on the $1200 \times 620$ canvas) to prevent inverted spherical polygons from filling the oceans.
 
-- **`apps/server` (Colyseus & Persistence)**:
+- **`apps/server` (Colyseus & PostgreSQL Persistence)**:
   - Authoritative room controller (`room.ts`). Validates client messages using Zod schemas from `@hegemonia/shared`, applies actions via `applyAction` from `@hegemonia/engine`, and dispatches player views via `createPlayerView`.
   - Manages the 120s turn timer with automated timeouts (auto-trade mandatory 5-card hands, auto-deploy remaining reinforcements, and advance the turn).
+  - Uses PostgreSQL 18 through `pg`; SQL migrations live in `apps/server/migrations`. Never reintroduce SQLite or a second source of persistent state.
+  - Match events, snapshots, current state, results, and rating changes must commit atomically. Only publish a new authoritative state after its transaction commits.
+  - Queryable player, match, result, and rating data belongs in relational columns. Reserve `jsonb` for versioned configuration, actions, and state snapshots.
+  - Run `pnpm --filter @hegemonia/server db:migrate` before local development. Database integration tests require an explicit disposable `TEST_DATABASE_URL` and truncate its data; never point them at development or production.
 
 - **`apps/web` (Svelte 5 Reactive Frontend)**:
   - Uses Svelte 5 runes (`$state`, `$derived`, `$props`).
