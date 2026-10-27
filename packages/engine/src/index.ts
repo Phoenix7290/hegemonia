@@ -8,7 +8,7 @@ import {
   type TerritoryCard,
   type TerritoryState,
 } from "@hegemonia/shared";
-import { ASIA_SUBREGIONS, CLASSIC_MAP, CLASSIC_OBJECTIVES } from "@hegemonia/maps";
+import { ALL_OBJECTIVES, ASIA_SUBREGIONS, CLASSIC_MAP, CLASSIC_OBJECTIVES, ROLEPLAY_OBJECTIVES } from "@hegemonia/maps";
 import { createSeededRng, hashSeed, type SeededRng } from "./rng.js";
 
 export * from "./rng.js";
@@ -105,37 +105,73 @@ export function calculateTurnReinforcements(
  */
 export function createGame(opts: CreateGameOptions): GameState {
   const map = opts.map ?? CLASSIC_MAP;
-  const objectivesPool = opts.objectives ?? CLASSIC_OBJECTIVES;
   if (opts.players.length < 2 || opts.players.length > 6) {
     throw new Error("Player count must be between 2 and 6.");
   }
 
   const rng = createSeededRng(opts.seed);
   const shuffledPlayers = rng.shuffle(opts.players);
-  const shuffledObjectives = rng.shuffle(objectivesPool);
-
-  const players: PlayerState[] = shuffledPlayers.map((p, idx) => ({
-    id: p.id,
-    name: p.name,
-    color: p.color,
-    eliminated: false,
-    objective: shuffledObjectives[idx],
-    cards: [],
-    unplacedArmies: 0,
-    conqueredThisTurn: false,
-    connected: true,
-  }));
 
   // Deal territories evenly (round-robin from shuffled territory list), 1 army each
   const shuffledTerritories = rng.shuffle(map.territories);
   const territories: Record<string, TerritoryState> = {};
+  const playerOwnedTerritoryIds: Record<string, string[]> = {};
+  for (const p of shuffledPlayers) {
+    playerOwnedTerritoryIds[p.id] = [];
+  }
+
   shuffledTerritories.forEach((t, idx) => {
-    const owner = players[idx % players.length];
+    const owner = shuffledPlayers[idx % shuffledPlayers.length];
     territories[t.id] = {
       id: t.id,
       ownerId: owner.id,
       armies: 1,
       movedInArmies: 0,
+    };
+    playerOwnedTerritoryIds[owner.id].push(t.id);
+  });
+
+  // Assign objectives: if custom objectives passed, use them; otherwise pool ALL_OBJECTIVES
+  // and give 50% chance for a player to be assigned a thematic roleplay objective matching their starting core territory
+  const pool = opts.objectives ? [...opts.objectives] : [...ALL_OBJECTIVES];
+  const shuffledObjectives = rng.shuffle(pool);
+  const assignedObjectiveIds = new Set<string>();
+
+  const players: PlayerState[] = shuffledPlayers.map((p) => {
+    let chosenObjective: ObjectiveCard | undefined;
+
+    if (!opts.objectives) {
+      // Look for a thematic roleplay objective matching any of player's starting territories
+      const startingTerrs = playerOwnedTerritoryIds[p.id] ?? [];
+      const matchingRoleplay = ROLEPLAY_OBJECTIVES.filter(
+        (obj) =>
+          !assignedObjectiveIds.has(obj.id) &&
+          obj.coreTerritoryIds?.some((coreId) => startingTerrs.includes(coreId))
+      );
+
+      if (matchingRoleplay.length > 0 && rng.nextFloat() < 0.5) {
+        chosenObjective = matchingRoleplay[rng.nextInt(0, matchingRoleplay.length - 1)];
+      }
+    }
+
+    if (!chosenObjective) {
+      chosenObjective = shuffledObjectives.find((obj) => !assignedObjectiveIds.has(obj.id));
+    }
+    if (!chosenObjective) {
+      chosenObjective = shuffledObjectives[0];
+    }
+    assignedObjectiveIds.add(chosenObjective.id);
+
+    return {
+      id: p.id,
+      name: p.name,
+      color: p.color,
+      eliminated: false,
+      objective: chosenObjective,
+      cards: [],
+      unplacedArmies: 0,
+      conqueredThisTurn: false,
+      connected: true,
     };
   });
 
@@ -212,6 +248,15 @@ export function checkPlayerVictory(
       (t) => t.armies >= rule.minArmiesPerTerritory
     );
     return qualifying.length >= rule.count;
+  }
+
+  if (rule.type === "specific_territories") {
+    const hasRequired = rule.territoryIds.every((id) => ownedSet.has(id));
+    if (!hasRequired) return false;
+    if (rule.extraAnyOf && rule.extraAnyOf.length > 0) {
+      return rule.extraAnyOf.some((group) => group.every((id) => ownedSet.has(id)));
+    }
+    return true;
   }
 
   if (rule.type === "continents") {

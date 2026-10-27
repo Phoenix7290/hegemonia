@@ -85,6 +85,11 @@ export type ObjectiveKind =
       type: "destroy_color";
       targetColor: PlayerColor;
       fallbackTerritories: number;
+    }
+  | {
+      type: "specific_territories";
+      territoryIds: string[];
+      extraAnyOf?: string[][];
     };
 
 export interface ObjectiveCard {
@@ -92,6 +97,7 @@ export interface ObjectiveCard {
   descriptionPt: string;
   descriptionEn: string;
   rule: ObjectiveKind;
+  coreTerritoryIds?: string[];
 }
 
 export interface PlayerState {

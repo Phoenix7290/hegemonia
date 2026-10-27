@@ -1,0 +1,74 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "project": "Hegemonia",
+  "version": "0.1.0-alpha",
+  "milestones": [
+    {
+      "id": "v0.1.0-alpha",
+      "name": "Base Tactical & Alt-History Engine",
+      "status": "completed",
+      "delivered": [
+        "authoritative_rules_engine",
+        "mulberry32_seeded_rng",
+        "44_territories_natural_earth_vector_map",
+        "trans_pacific_and_southern_sea_lanes",
+        "asia_3_theaters",
+        "wasd_camera_pan_and_zoom",
+        "cartographic_and_geopolitical_views",
+        "10_alt_history_roleplay_ambitions",
+        "120s_turn_timers_with_fallback",
+        "colyseus_websocket_server"
+      ]
+    },
+    {
+      "id": "v0.2.0-beta",
+      "name": "War Economy, Straits & Diplomacy",
+      "status": "planned",
+      "features": [
+        {
+          "id": "epic_economy",
+          "title": "War Economy & Maritime Straits",
+          "priority": "P1",
+          "tasks": ["strait_income_evaluator", "treasury_state_extension", "emergency_conscription_action", "fortification_action"]
+        },
+        {
+          "id": "epic_treaties",
+          "title": "Diplomatic Treaties & Non-Aggression Pacts",
+          "priority": "P1",
+          "tasks": ["nap_proposal_protocol", "betrayal_infamy_penalty", "lend_lease_gold_transfer"]
+        },
+        {
+          "id": "epic_capitals",
+          "title": "Supreme HQ & National Capitals",
+          "priority": "P2",
+          "tasks": ["capital_selection_round1", "capital_defense_tiebreaker", "decapitation_morale_drop"]
+        }
+      ]
+    },
+    {
+      "id": "v0.3.0",
+      "name": "Combined Arms & Navy",
+      "status": "planned",
+      "features": [
+        {
+          "id": "epic_units_tier",
+          "title": "3-Tier Combat Units (Infantry, Armor, Artillery)",
+          "priority": "P2",
+          "tasks": ["armor_reroll_mechanic", "artillery_pre_combat_barrage", "unit_composition_state"]
+        },
+        {
+          "id": "epic_navy",
+          "title": "Naval Taskforces & Maritime Zones",
+          "priority": "P3",
+          "tasks": ["sea_zone_graph", "naval_blockades", "amphibious_landings"]
+        },
+        {
+          "id": "epic_airforce",
+          "title": "Airfields & Tactical Aviation",
+          "priority": "P3",
+          "tasks": ["airfield_construction", "recon_flights", "bombardment_missions"]
+        }
+      ]
+    }
+  ]
+}

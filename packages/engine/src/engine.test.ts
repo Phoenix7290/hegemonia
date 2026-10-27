@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { CLASSIC_MAP, CLASSIC_OBJECTIVES } from "@hegemonia/maps";
+import { ALL_OBJECTIVES, CLASSIC_MAP, CLASSIC_OBJECTIVES, ROLEPLAY_OBJECTIVES } from "@hegemonia/maps";
 import {
   applyAction,
   calculateTurnReinforcements,
+  checkPlayerVictory,
   createGame,
   createPlayerView,
   createSeededRng,
@@ -214,5 +215,62 @@ describe("War Classic Rules Engine", () => {
     expect(byId.get("balcas")!.neighbors).toEqual(
       expect.arrayContaining(["alemanha", "franca", "polonia", "moscou", "oriente_medio", "egito"])
     );
+  });
+
+  it("verifies specific_territories roleplay objectives victory condition", () => {
+    expect(ROLEPLAY_OBJECTIVES.length).toBe(10);
+    expect(ALL_OBJECTIVES.length).toBe(CLASSIC_OBJECTIVES.length + 10);
+
+    const state = createGame({
+      id: "g-rp",
+      seed: "roleplay-seed-test",
+      players: [
+        { id: "p1", name: "Commander", color: "blue" },
+        { id: "p2", name: "Rival", color: "red" },
+      ],
+    });
+
+    const p1 = state.players.find((p) => p.id === "p1")!;
+    const paxBritannica = ROLEPLAY_OBJECTIVES.find((o) => o.id === "obj_rp_pax_britannica")!;
+    p1.objective = paxBritannica;
+
+    // Reset ownership to p2
+    for (const t of CLASSIC_MAP.territories) {
+      state.territories[t.id].ownerId = "p2";
+    }
+
+    expect(checkPlayerVictory(state, "p1")).toBe(false);
+
+    // Give p1 all required territories for Pax Britannica
+    for (const tid of ["inglaterra", "india", "egito", "africa_do_sul", "australia", "ottawa"]) {
+      state.territories[tid].ownerId = "p1";
+    }
+    expect(checkPlayerVictory(state, "p1")).toBe(true);
+
+    // Test Monroe Doctrine with extraAnyOf alternatives
+    const monroe = ROLEPLAY_OBJECTIVES.find((o) => o.id === "obj_rp_monroe")!;
+    p1.objective = monroe;
+
+    // Give p1 all North & South America
+    for (const t of CLASSIC_MAP.territories) {
+      if (t.continent === "north_america" || t.continent === "south_america") {
+        state.territories[t.id].ownerId = "p1";
+      } else {
+        state.territories[t.id].ownerId = "p2";
+      }
+    }
+    // Has all Americas, but neither Moscow nor (China + Mongolia)
+    expect(checkPlayerVictory(state, "p1")).toBe(false);
+
+    // Option A: With Moscow
+    state.territories["moscou"].ownerId = "p1";
+    expect(checkPlayerVictory(state, "p1")).toBe(true);
+
+    // Option B: Without Moscow, but with China + Mongolia
+    state.territories["moscou"].ownerId = "p2";
+    state.territories["china"].ownerId = "p1";
+    expect(checkPlayerVictory(state, "p1")).toBe(false); // missing mongolia
+    state.territories["mongolia"].ownerId = "p1";
+    expect(checkPlayerVictory(state, "p1")).toBe(true);
   });
 });
