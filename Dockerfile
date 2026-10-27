@@ -24,6 +24,7 @@ ENV HOST=::
 ENV PUBLIC_DIR=/app/apps/web/dist
 
 COPY --from=builder /app /app
+RUN mkdir -p /app/data/avatars && chown -R 1000:1000 /app/data
 
 USER 1000:1000
 EXPOSE 2567

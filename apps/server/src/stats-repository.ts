@@ -5,6 +5,7 @@ export interface LeaderboardRow {
   userId: string;
   username: string;
   displayName: string;
+  avatarUrl: string | null;
   score: number;
   matchesPlayed: number;
   wins: number;
@@ -28,18 +29,18 @@ export async function getLeaderboard(options: {
   const cursor = options.cursor;
   const result = await query<LeaderboardRow>(
     `SELECT
-      rank::integer AS rank, user_id AS "userId", username, display_name AS "displayName",
-      score, matches_played::integer AS "matchesPlayed", wins::integer AS wins,
-      win_rate::double precision AS "winRate", updated_at AS "updatedAt"
-     FROM ranked_leaderboard
-     WHERE season_slug = $1 AND queue = $2
+      r.rank::integer AS rank, r.user_id AS "userId", r.username, r.display_name AS "displayName",
+      u.avatar_url AS "avatarUrl", r.score, r.matches_played::integer AS "matchesPlayed", r.wins::integer AS wins,
+      r.win_rate::double precision AS "winRate", r.updated_at AS "updatedAt"
+     FROM ranked_leaderboard r JOIN users u ON u.id = r.user_id
+     WHERE r.season_slug = $1 AND r.queue = $2
        AND (
          $3::integer IS NULL
-         OR score < $3
-         OR (score = $3 AND wins < $4)
-         OR (score = $3 AND wins = $4 AND user_id > $5::uuid)
+         OR r.score < $3
+         OR (r.score = $3 AND r.wins < $4)
+         OR (r.score = $3 AND r.wins = $4 AND r.user_id > $5::uuid)
        )
-     ORDER BY score DESC, wins DESC, user_id
+     ORDER BY r.score DESC, r.wins DESC, r.user_id
      LIMIT $6`,
     [
       options.seasonSlug ?? "lifetime",

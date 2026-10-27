@@ -1,6 +1,7 @@
 import type { PoolClient } from "pg";
 import type { GameAction, GameState, PlayerColor } from "@hegemonia/shared";
 import { query, withTransaction } from "./connection.js";
+import { awardMatchBadges } from "./badge-service.js";
 
 export interface CreateMatchInput {
   roomCode: string;
@@ -301,6 +302,8 @@ async function finalizeMatch(
      WHERE id = $1`,
     [match.id, state.round, state.revealedSeed ?? null, state]
   );
+
+  await awardMatchBadges(client, match.id);
 
   if (match.ranked_eligible && match.season_id) {
     for (const participant of participants.rows) {

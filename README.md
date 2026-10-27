@@ -88,12 +88,15 @@ hegemonia/
    ```
    Open `http://localhost:5173` in your browser.
 
-The schema includes match history and snapshots, future authentication flows, seasonal ranked ratings, career statistics, and breakdowns by color, objective, map, and doctrine. Casual, LAN, guest, and bot matches remain supported; only eligible ranked matches affect the leaderboard.
+The schema includes persistent accounts, hashed sessions, profiles, avatars, friendships, blocks, badges, match history, seasonal ranked ratings, career statistics, and breakdowns by color, objective, map, and doctrine. Casual, LAN, guest, and bot matches remain supported; only eligible ranked matches affect the leaderboard.
+
+Account sessions use an `HttpOnly`, `SameSite=Lax` cookie. Passwords are hashed with Argon2id and only SHA-256 session-token hashes are stored. Avatars are validated and converted to 256×256 WebP files. Set `COOKIE_SECURE=true` and the exact HTTPS `WEB_ORIGIN` in production; the HTTP-only local Docker default intentionally uses `COOKIE_SECURE=false`.
 
 PostgreSQL integration tests are opt-in and destructive to their target database. Use a dedicated disposable database and an explicit `TEST_DATABASE_URL`:
 ```bash
-TEST_DATABASE_URL=postgresql://hegemonia:hegemonia@localhost:5432/hegemonia_test \
-  pnpm --filter @hegemonia/server test:db
+export TEST_DATABASE_URL=postgresql://hegemonia:hegemonia@localhost:5432/hegemonia_test
+pnpm --filter @hegemonia/server test:db
+pnpm --filter @hegemonia/server test:identity
 ```
 
 ---
@@ -113,9 +116,9 @@ docker compose logs -f
 docker compose down
 ```
 
-The game server and web client will be available at `http://localhost:2567`. The app applies pending migrations on startup. API endpoints include `/health`, `/api/matches`, `/api/leaderboard`, `/api/players/:userId/stats`, and `/api/players/:userId/matches`.
+The game server and web client will be available at `http://localhost:2567`. The app applies pending migrations on startup. Public routes include `/health`, `/api/matches`, `/api/leaderboard`, and `/api/profiles/:username`. Account routes live under `/api/auth`, `/api/profile`, `/api/friends`, and `/api/users/search`; private statistics use `/api/profiles/:username/stats` and enforce profile visibility.
 
-Match history, snapshots, accounts, ratings, and statistics are persisted in the `postgres_data` Docker volume. Change the default database credentials outside local development. The HTTP port can be customized by defining `PORT` in a `.env` file (see `.env.example`).
+Match history, snapshots, accounts, ratings, friendships, and statistics are persisted in the `postgres_data` Docker volume. Uploaded avatars persist separately in `avatar_data`. Change the default database credentials outside local development. The HTTP port can be customized by defining `PORT` in a `.env` file (see `.env.example`).
 
 ---
 
