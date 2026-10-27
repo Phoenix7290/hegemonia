@@ -276,4 +276,35 @@ describe("War Classic Rules Engine", () => {
     state.territories["mongolia"].ownerId = "p1";
     expect(checkPlayerVictory(state, "p1")).toBe(true);
   });
+
+  it("strictly enforces that roleplay objectives are only assigned if player holds matching core territories", () => {
+    // Run across 20 distinct seeds to verify invariant across random territory deals
+    for (let i = 0; i < 20; i++) {
+      const state = createGame({
+        id: `g-core-test-${i}`,
+        seed: `seed-core-check-${i}`,
+        players: [
+          { id: "p1", name: "Alpha", color: "blue" },
+          { id: "p2", name: "Bravo", color: "red" },
+          { id: "p3", name: "Charlie", color: "green" },
+        ],
+      });
+
+      for (const player of state.players) {
+        const ownedTerritoryIds = Object.values(state.territories)
+          .filter((t) => t.ownerId === player.id)
+          .map((t) => t.id);
+
+        if (player.objective.coreTerritoryIds && player.objective.coreTerritoryIds.length > 0) {
+          const hasAtLeastOneCore = player.objective.coreTerritoryIds.some((coreId) =>
+            ownedTerritoryIds.includes(coreId)
+          );
+          expect(
+            hasAtLeastOneCore,
+            `Player ${player.id} received roleplay objective ${player.objective.id} without owning any core territory! Core: ${player.objective.coreTerritoryIds.join(", ")}, Owned: ${ownedTerritoryIds.join(", ")}`
+          ).toBe(true);
+        }
+      }
+    }
+  });
 });
