@@ -70,8 +70,37 @@
   let remainingSeconds = $state(120);
   let errorBanner = $state("");
 
-  // Map Rendering Mode: "cartographic" (HOI4 physical relief + borders) or "geopolitical" (Crisp War colors)
-  let mapMode = $state<"cartographic" | "geopolitical">("cartographic");
+  // Map Rendering Mode: "cartographic" (HOI4 physical satellite relief + borders), "geopolitical" (Crisp War colors), or "regional" (Continents & Sub-Regions)
+  let mapMode = $state<"cartographic" | "geopolitical" | "regional">("cartographic");
+
+  const REGION_COLOR_HEX: Record<string, string> = {
+    south_america: "#10b981",
+    north_america: "#f59e0b",
+    europe: "#3b82f6",
+    africa: "#eab308",
+    oceania: "#a855f7",
+    asia_indo_arabia: "#f97316",
+    asia_steppes: "#06b6d4",
+    asia_east: "#ec4899",
+  };
+
+  const REGION_BANNERS: { label: string; bonus: string; x: number; y: number; color: string }[] = [
+    { label: "AMÉRICA DO NORTE", bonus: "+5", x: 265, y: 125, color: "#f59e0b" },
+    { label: "AMÉRICA DO SUL", bonus: "+2", x: 392, y: 382, color: "#10b981" },
+    { label: "EUROPA", bonus: "+5", x: 645, y: 132, color: "#3b82f6" },
+    { label: "ÁFRICA", bonus: "+3", x: 655, y: 295, color: "#eab308" },
+    { label: "ÁSIA: INDO-ARÁBIA", bonus: "+2", x: 835, y: 228, color: "#f97316" },
+    { label: "ÁSIA: ESTEPES & SIBÉRIA", bonus: "+2", x: 935, y: 108, color: "#06b6d4" },
+    { label: "ÁSIA: LESTE ASIÁTICO", bonus: "+3", x: 995, y: 185, color: "#ec4899" },
+    { label: "OCEANIA", bonus: "+2", x: 1015, y: 375, color: "#a855f7" },
+  ];
+
+  function getTerritoryRegionColor(t: { continent: string; subRegion?: string }): string {
+    if (t.subRegion && REGION_COLOR_HEX[t.subRegion]) {
+      return REGION_COLOR_HEX[t.subRegion];
+    }
+    return REGION_COLOR_HEX[t.continent] ?? "#64748b";
+  }
 
   // Continuous Wraparound Camera State (in SVG coordinate space: width=1200, height=620)
   let camX = $state(0);
@@ -140,6 +169,7 @@
   const DIRECT_SEA_LINKS: [string, string][] = [
     ["brasil", "argelia"],
     ["argentina", "africa_do_sul"],
+    ["california", "havai"],
     ["groenlandia", "islandia"],
     ["inglaterra", "islandia"],
     ["inglaterra", "suecia"],
@@ -147,7 +177,7 @@
     ["inglaterra", "alemanha"],
     ["franca", "argelia"],
     ["franca", "egito"],
-    ["polonia", "egito"],
+    ["balcas", "egito"],
     ["sudao", "madagascar"],
     ["africa_do_sul", "madagascar"],
     ["india", "sumatra"],
@@ -163,7 +193,8 @@
   // Trans-Pacific Wraparound Sea Links (westTerritoryId on left edge -> eastTerritoryId on right edge - MAP_WIDTH)
   const PACIFIC_WRAP_LINKS: [string, string][] = [
     ["alasca", "vladivostok"],
-    ["california", "japao"],
+    ["havai", "japao"],
+    ["havai", "nova_guine"],
     ["argentina", "australia"],
   ];
 
@@ -242,6 +273,9 @@
     } else if (e.key === "F2" || k === "2") {
       e.preventDefault();
       mapMode = "cartographic";
+    } else if (e.key === "F3" || k === "3") {
+      e.preventDefault();
+      mapMode = "regional";
     }
   }
 
@@ -712,29 +746,40 @@
           {#each [-MAP_WIDTH, 0, MAP_WIDTH] as offsetX (offsetX)}
             <g class="world-copy" transform="translate({offsetX}, 0)">
               {#if mapMode === "cartographic"}
+                <!-- NASA Blue Marble Topography + Ocean Bathymetry Satellite Raster Layer (Exact Equirectangular Match: x=0..1200, y=20..620) -->
+                <image
+                  href="/maps/world-relief.jpg"
+                  x="0"
+                  y="20"
+                  width={MAP_WIDTH}
+                  height="600"
+                  preserveAspectRatio="none"
+                  opacity="0.92"
+                  pointer-events="none"
+                />
                 <!-- Latitude / Longitude Graticule Lines -->
                 <path
                   d={GRATICULE_SVG_PATH}
                   fill="none"
-                  stroke="rgba(56, 189, 248, 0.12)"
-                  stroke-width="0.6"
+                  stroke="rgba(186, 230, 253, 0.14)"
+                  stroke-width="0.55"
                   pointer-events="none"
                 />
-                <!-- Continental Shelf Bathymetry Halo -->
+                <!-- Continental Coastline Rim -->
                 <path
                   d={GLOBAL_LAND_SVG_PATH}
-                  fill="#16202c"
-                  stroke="rgba(56, 189, 248, 0.22)"
-                  stroke-width="4.5"
+                  fill="none"
+                  stroke="rgba(15, 23, 42, 0.85)"
+                  stroke-width="1.4"
                   stroke-linejoin="round"
                   pointer-events="none"
                 />
-                <!-- Physical Landmass Base Relief -->
+              {:else if mapMode === "regional"}
                 <path
-                  d={GLOBAL_LAND_SVG_PATH}
-                  fill="#24303c"
-                  stroke="#090f1a"
-                  stroke-width="1.2"
+                  d={GRATICULE_SVG_PATH}
+                  fill="none"
+                  stroke="rgba(148, 163, 184, 0.12)"
+                  stroke-width="0.55"
                   pointer-events="none"
                 />
               {/if}
@@ -748,14 +793,14 @@
                   y1={ta.center[1]}
                   x2={tb.center[0]}
                   y2={tb.center[1]}
-                  stroke={mapMode === "cartographic" ? "rgba(125, 211, 252, 0.55)" : "#64748b"}
+                  stroke={mapMode === "cartographic" ? "rgba(224, 242, 254, 0.65)" : "#64748b"}
                   stroke-dasharray="3.5,4"
                   stroke-width="1.35"
                   pointer-events="none"
                 />
               {/each}
 
-              <!-- Trans-Pacific Wraparound Sea Routes (Alaska<->Vladivostok, California<->Japan, Argentina<->Australia) -->
+              <!-- Trans-Pacific Wraparound Sea Routes (Alaska<->Vladivostok, Hawaii<->Japan, Hawaii<->New Guinea, Argentina<->Australia) -->
               {#each PACIFIC_WRAP_LINKS as [westId, eastId]}
                 {@const tw = territoryById.get(westId)!}
                 {@const te = territoryById.get(eastId)!}
@@ -765,18 +810,20 @@
                   y1={tw.center[1]}
                   x2={te.center[0] - MAP_WIDTH}
                   y2={te.center[1]}
-                  stroke={mapMode === "cartographic" ? "rgba(125, 211, 252, 0.65)" : "#94a3b8"}
+                  stroke={mapMode === "cartographic" ? "rgba(224, 242, 254, 0.72)" : "#94a3b8"}
                   stroke-dasharray="4,4"
                   stroke-width="1.5"
                   pointer-events="none"
                 />
               {/each}
 
-              <!-- 42 Natural Earth Geopolitical Territories -->
+              <!-- 44 Natural Earth Admin-1 & Admin-0 Geopolitical Territories -->
               {#each CLASSIC_MAP.territories as t (t.id)}
                 {@const tState = game.territories[t.id]}
                 {@const owner = game.players.find((p) => p.id === tState.ownerId)}
-                {@const fill = owner ? COLOR_HEX[owner.color] : "#334155"}
+                {@const ownerColor = owner ? COLOR_HEX[owner.color] : "#334155"}
+                {@const regionColor = getTerritoryRegionColor(t as any)}
+                {@const activeFill = mapMode === "regional" ? regionColor : ownerColor}
                 {@const isSelected = selectedFromId === t.id || selectedToId === t.id}
                 {@const isValidTarget =
                   selectedFromId &&
@@ -787,40 +834,42 @@
                 <!-- svelte-ignore a11y_click_events_have_key_events -->
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
                 <g class="territory-group" onclick={() => onTerritoryClick(t.id)}>
-                  <!-- Political Fill + Frontier Border -->
+                  <!-- Political or Regional Fill + Frontier Border -->
                   <path
                     d={t.svgPath}
-                    fill={fill}
+                    fill={activeFill}
                     fill-opacity={isSelected
-                      ? "0.92"
+                      ? "0.88"
                       : mapMode === "cartographic"
-                        ? "0.46"
-                        : "0.82"}
+                        ? "0.42"
+                        : mapMode === "regional"
+                          ? "0.72"
+                          : "0.84"}
                     stroke={isSelected
                       ? "#ffffff"
                       : isValidTarget
                         ? "#facc15"
                         : mapMode === "cartographic"
-                          ? fill
-                          : "rgba(9, 13, 22, 0.88)"}
+                          ? ownerColor
+                          : "rgba(9, 13, 22, 0.9)"}
                     stroke-width={isSelected
                       ? "2.6"
                       : isValidTarget
                         ? "2.2"
                         : mapMode === "cartographic"
-                          ? "1.5"
-                          : "0.95"}
+                          ? "1.6"
+                          : "1.0"}
                     stroke-linejoin="round"
                     filter={isSelected || isValidTarget ? "url(#glow-gold)" : undefined}
                   />
 
                   {#if mapMode === "cartographic"}
-                    <!-- Subtle Topographic Texture Overlay + Dark Inner Frontier Line -->
+                    <!-- Crisp Dark Inner Frontier Line so Neighboring Same-Color Provinces Remain Distinct Over Satellite Terrain -->
                     <path
                       d={t.svgPath}
-                      fill="url(#topo-relief)"
-                      stroke="rgba(9, 13, 22, 0.72)"
-                      stroke-width="0.65"
+                      fill="none"
+                      stroke="rgba(6, 10, 18, 0.78)"
+                      stroke-width="0.7"
                       pointer-events="none"
                     />
                   {/if}
@@ -834,7 +883,7 @@
                       height="18"
                       rx="3"
                       fill="#090e1a"
-                      stroke={isSelected ? "#ffffff" : isValidTarget ? "#facc15" : fill}
+                      stroke={isSelected ? "#ffffff" : isValidTarget ? "#facc15" : ownerColor}
                       stroke-width={isSelected || isValidTarget ? "1.8" : "1.3"}
                       filter="drop-shadow(0 2px 4px rgba(0,0,0,0.85))"
                     />
@@ -896,6 +945,36 @@
                   </g>
                 </g>
               {/each}
+
+              <!-- Floating Regional & Sub-Regional Theatre Banners in "regional" Map Mode -->
+              {#if mapMode === "regional"}
+                {#each REGION_BANNERS as rb}
+                  <g transform="translate({rb.x}, {rb.y})" pointer-events="none">
+                    <rect
+                      x="-68"
+                      y="-11"
+                      width="136"
+                      height="20"
+                      rx="4"
+                      fill="rgba(6, 10, 18, 0.88)"
+                      stroke={rb.color}
+                      stroke-width="1.5"
+                    />
+                    <text
+                      x="0"
+                      y="-1"
+                      text-anchor="middle"
+                      dominant-baseline="central"
+                      fill="#f8fafc"
+                      font-size="7.8"
+                      font-weight="900"
+                      letter-spacing="0.06em"
+                    >
+                      {rb.label} ({rb.bonus})
+                    </text>
+                  </g>
+                {/each}
+              {/if}
             </g>
           {/each}
         </g>
@@ -1046,16 +1125,16 @@
           </div>
         </div>
 
-        <!-- Map Mode Switcher (Cartographic HOI4 vs Geopolitical Clean) + Camera Controls -->
+        <!-- Map Mode Switcher (Cartographic HOI4 vs Geopolitical Clean vs Regional Theatres) + Camera Controls -->
         <div class="map-mode-bar">
           <div class="mode-tabs">
             <button
               class="mode-btn"
               class:active={mapMode === "cartographic"}
               onclick={() => (mapMode = "cartographic")}
-              title="Modo Cartográfico Físico (Tecla 2 / F2)"
+              title="Modo Cartográfico Físico Satelital (Tecla 2 / F2)"
             >
-              Mapa Cartográfico
+              Cartográfico
             </button>
             <button
               class="mode-btn"
@@ -1063,7 +1142,15 @@
               onclick={() => (mapMode = "geopolitical")}
               title="Modo Geopolítico Limpo (Tecla 1 / F1)"
             >
-              Mapa Geopolítico
+              Geopolítico
+            </button>
+            <button
+              class="mode-btn"
+              class:active={mapMode === "regional"}
+              onclick={() => (mapMode = "regional")}
+              title="Modo de Regiões & Sub-Regiões (Tecla 3 / F3)"
+            >
+              Regional
             </button>
           </div>
 
@@ -1434,6 +1521,7 @@
   .top-left-panel {
     grid-column: 1;
     grid-row: 1;
+    align-self: start;
   }
   .brand-row {
     display: flex;
@@ -1577,6 +1665,7 @@
   .top-right-panel {
     grid-column: 3;
     grid-row: 1;
+    align-self: start;
     position: relative;
   }
   .my-hq-row {

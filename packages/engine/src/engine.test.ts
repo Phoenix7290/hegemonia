@@ -11,8 +11,8 @@ import {
 } from "./index.js";
 
 describe("Classic Map Graph Integrity", () => {
-  it("has exactly 42 territories across 6 continents", () => {
-    expect(CLASSIC_MAP.territories.length).toBe(42);
+  it("has exactly 44 territories across 6 continents", () => {
+    expect(CLASSIC_MAP.territories.length).toBe(44);
     expect(CLASSIC_MAP.continents.length).toBe(6);
 
     const counts: Record<string, number> = {};
@@ -21,8 +21,8 @@ describe("Classic Map Graph Integrity", () => {
     }
     expect(counts).toEqual({
       south_america: 4,
-      north_america: 9,
-      europe: 7,
+      north_america: 10,
+      europe: 8,
       africa: 6,
       asia: 12,
       oceania: 4,
@@ -56,7 +56,7 @@ describe("Classic Map Graph Integrity", () => {
         if (!visited.has(n)) queue.push(n);
       }
     }
-    expect(visited.size).toBe(42);
+    expect(visited.size).toBe(44);
   });
 });
 
@@ -188,10 +188,16 @@ describe("War Classic Rules Engine", () => {
     const reinfSub = calculateTurnReinforcements(state, "p1");
     expect(reinfSub.continentBonus).toBe(2);
 
-    // Check strategic maritime connections
+    // Check strategic maritime connections & new territories (Havaí and Bálcãs)
     const byId = new Map(CLASSIC_MAP.territories.map((t) => [t.id, t]));
     expect(byId.get("argentina")!.neighbors).toContain("australia");
     expect(byId.get("argentina")!.neighbors).toContain("africa_do_sul");
-    expect(byId.get("california")!.neighbors).toContain("japao");
+    expect(byId.get("havai")!.neighbors).toEqual(
+      expect.arrayContaining(["california", "japao", "nova_guine"])
+    );
+    expect(byId.get("california")!.neighbors).not.toContain("japao");
+    expect(byId.get("balcas")!.neighbors).toEqual(
+      expect.arrayContaining(["alemanha", "franca", "polonia", "moscou", "oriente_medio", "egito"])
+    );
   });
 });

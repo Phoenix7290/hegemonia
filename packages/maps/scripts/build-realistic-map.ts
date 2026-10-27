@@ -3,6 +3,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import * as d3 from "d3-geo";
 import * as topojson from "topojson-client";
+import * as topojsonServer from "topojson-server";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const c110 = JSON.parse(
@@ -12,13 +13,38 @@ const c110 = JSON.parse(
   )
 );
 
+const admin1Raw = JSON.parse(
+  fs.readFileSync("/tmp/ne_50m_admin_1.geojson", "utf-8")
+);
+
+// Convert Admin-1 FeatureCollection into a quantized Topology (3600) so topojson.merge dissolves internal state lines and keeps SVG paths lightweight!
+const admin1Topo = topojsonServer.topology({ states: admin1Raw }, 3600) as any;
+const admin1Geoms: any[] = admin1Topo.objects.states.geometries;
+
 // Map dimensions: width = 1200, height = 620
-// Equirectangular projection with width = 1200 guarantees exact horizontal wraparound at x=0 and x=1200!
+// Equirectangular projection with translate([600, 320]) maps [-180..180, -90..90] to x=[0..1200], y=[20..620] (exact 1200x600 2:1 aspect ratio!)
 const MAP_WIDTH = 1200;
 const BASE_PROJ = d3
   .geoEquirectangular()
   .scale(MAP_WIDTH / (2 * Math.PI))
-  .translate([MAP_WIDTH / 2, 330]);
+  .translate([MAP_WIDTH / 2, 320]);
+
+const AREA_CHECK_PATH = d3.geoPath(BASE_PROJ);
+function filterMicroPolygons(geojson: any, minAreaSqPx = 1.8): any {
+  if (!geojson) return geojson;
+  if (geojson.type === "Polygon") return geojson;
+  if (geojson.type === "MultiPolygon") {
+    const kept = geojson.coordinates.filter((coords: any) => {
+      const poly = { type: "Polygon", coordinates: coords };
+      return AREA_CHECK_PATH.area(poly as any) >= minAreaSqPx;
+    });
+    return {
+      type: "MultiPolygon",
+      coordinates: kept.length > 0 ? kept : geojson.coordinates.slice(0, 1),
+    };
+  }
+  return geojson;
+}
 
 type BBox = [number, number, number, number]; // [lonMin, latMin, lonMax, latMax]
 
@@ -28,12 +54,21 @@ function mergeCountries(names: string[]) {
     nameSet.has(g.properties.name)
   );
   if (geoms.length === 0) {
-    throw new Error(`No geometries found for: ${names.join(", ")}`);
+    throw new Error(`No country geometries found for: ${names.join(", ")}`);
   }
   return topojson.merge(c110, geoms);
 }
 
-function renderClipped(geojson: any, boxes?: BBox[]): { d: string; center: [number, number] } {
+function mergeAdmin1ByCodes(codes: string[], minAreaSqPx = 1.8) {
+  const codeSet = new Set(codes);
+  const geoms = admin1Geoms.filter((g: any) => codeSet.has(g.properties.adm1_code));
+  if (geoms.length === 0) {
+    throw new Error(`No Admin-1 geometries found for codes: ${codes.join(", ")}`);
+  }
+  return filterMicroPolygons(topojson.merge(admin1Topo, geoms), minAreaSqPx);
+}
+
+function renderGeometry(geojson: any, boxes?: BBox[]): { d: string; center: [number, number] } {
   if (!boxes || boxes.length === 0) {
     const pathGen = d3.geoPath(BASE_PROJ).digits(1);
     const d = pathGen(geojson) || "";
@@ -51,7 +86,7 @@ function renderClipped(geojson: any, boxes?: BBox[]): { d: string; center: [numb
     const proj = d3
       .geoEquirectangular()
       .scale(MAP_WIDTH / (2 * Math.PI))
-      .translate([MAP_WIDTH / 2, 330])
+      .translate([MAP_WIDTH / 2, 320])
       .postclip(d3.geoClipRectangle(x0, y0, x1, y1));
 
     const pathGen = d3.geoPath(proj).digits(1);
@@ -72,6 +107,137 @@ function renderClipped(geojson: any, boxes?: BBox[]): { d: string; center: [numb
   return { d: paths.join(" "), center: bestCentroid };
 }
 
+function combineGeometries(geoms: any[]): any {
+  const coordinates: any[] = [];
+  for (const g of geoms) {
+    if (!g) continue;
+    if (g.type === "Polygon") {
+      coordinates.push(g.coordinates);
+    } else if (g.type === "MultiPolygon") {
+      coordinates.push(...g.coordinates);
+    }
+  }
+  return { type: "MultiPolygon", coordinates };
+}
+
+// --- Grouping Russian Admin-1 Subjects into 6 Authentic Regions + Sakhalin ---
+const rusGeoms = admin1Geoms.filter((g) => g.properties.adm0_a3 === "RUS");
+
+const RUS_SAKHALIN = ["RUS-2616"]; // Goes to Japan!
+const RUS_KALININGRAD = ["RUS-2324"]; // Merges into Poland!
+
+const RUS_OMSK = [
+  "RUS-2379", // Chelyabinsk
+  "RUS-2380", // Kurgan
+  "RUS-2386", // Sverdlovsk
+  "RUS-2398", // Tyumen'
+  "RUS-2396", // Khanty-Mansiy
+  "RUS-2397", // Omsk
+  "RUS-2167", // Tomsk
+  "RUS-2403", // Novosibirsk
+  "RUS-2401", // Kemerovo
+  "RUS-2399", // Altay
+  "RUS-2400", // Gorno-Altay
+];
+
+const RUS_DUDINKA = [
+  "RUS-2382", // Yamal-Nenets
+  "RUS-2603", // Krasnoyarsk
+  "RUS-2402", // Khakass
+  "RUS-2605", // Tuva
+];
+
+const RUS_SIBERIA = [
+  "RUS-2612", // Sakha (Yakutia)
+  "RUS-2602", // Irkutsk
+];
+
+const RUS_TCHITA = [
+  "RUS-2606", // Buryat
+  "RUS-2610", // Chita (Zabaykalsky Krai)
+  "RUS-2609", // Amur
+  "RUS-2613", // Yevrey
+];
+
+const RUS_VLADIVOSTOK = [
+  "RUS-2611", // Primor'ye
+  "RUS-2614", // Khabarovsk
+  "RUS-2615", // Magadan
+  "RUS-3468", // Kamchatka
+  "RUS-2321", // Chukotka
+];
+
+const assignedRus = new Set([
+  ...RUS_SAKHALIN,
+  ...RUS_KALININGRAD,
+  ...RUS_OMSK,
+  ...RUS_DUDINKA,
+  ...RUS_SIBERIA,
+  ...RUS_TCHITA,
+  ...RUS_VLADIVOSTOK,
+]);
+
+// All remaining European Russian oblasts/republics belong to Moscou!
+const RUS_MOSCOU = rusGeoms
+  .map((g) => g.properties.adm1_code as string)
+  .filter((code) => !assignedRus.has(code));
+
+// --- Grouping Canadian Admin-1 Provinces ---
+const CAN_VANCOUVER = ["CAN-633", "CAN-632", "CAN-631"]; // BC, Alberta, Saskatchewan
+const CAN_MACKENZIE = ["CAN-636", "CAN-635", "CAN-634"]; // Yukon, NWT, Nunavut
+const CAN_OTTAWA = ["CAN-630", "CAN-682"]; // Manitoba, Ontario
+const CAN_LABRADOR = ["CAN-683", "CAN-686", "CAN-684", "CAN-685", "CAN-687"]; // Quebec, NL, NB, NS, PEI
+
+// --- Grouping USA Admin-1 States ---
+const USA_ALASKA = ["USA-3563"];
+const USA_HAWAII = ["USA-3517"];
+const USA_WEST_POSTALS = new Set([
+  "WA", "OR", "CA", "NV", "ID", "MT", "WY", "UT", "AZ", "NM", "CO",
+  "ND", "SD", "NE", "KS", "OK", "TX",
+]);
+const usaGeoms = admin1Geoms.filter((g) => g.properties.adm0_a3 === "USA");
+const USA_CALIFORNIA = usaGeoms
+  .filter((g) => USA_WEST_POSTALS.has(g.properties.postal))
+  .map((g) => g.properties.adm1_code as string);
+const USA_NEW_YORK = usaGeoms
+  .filter(
+    (g) =>
+      !USA_WEST_POSTALS.has(g.properties.postal) &&
+      g.properties.adm1_code !== "USA-3563" &&
+      g.properties.adm1_code !== "USA-3517"
+  )
+  .map((g) => g.properties.adm1_code as string);
+
+// --- Grouping Indonesian Admin-1 Provinces (Zero Overlap on Borneo, Sumatra, New Guinea!) ---
+const idnGeoms = admin1Geoms.filter((g) => g.properties.adm0_a3 === "IDN");
+const IDN_BORNEO = idnGeoms
+  .filter((g) => (g.properties.name as string).startsWith("Kalimantan"))
+  .map((g) => g.properties.adm1_code as string);
+
+const IDN_NEW_GUINEA_NAMES = new Set([
+  "Papua",
+  "Papua Barat",
+  "Maluku",
+  "Maluku Utara",
+  "Sulawesi Utara",
+  "Gorontalo",
+  "Sulawesi Tengah",
+  "Sulawesi Barat",
+  "Sulawesi Selatan",
+  "Sulawesi Tenggara",
+]);
+const IDN_NEW_GUINEA = idnGeoms
+  .filter((g) => IDN_NEW_GUINEA_NAMES.has(g.properties.name))
+  .map((g) => g.properties.adm1_code as string);
+
+const IDN_SUMATRA = idnGeoms
+  .filter(
+    (g) =>
+      !(g.properties.name as string).startsWith("Kalimantan") &&
+      !IDN_NEW_GUINEA_NAMES.has(g.properties.name)
+  )
+  .map((g) => g.properties.adm1_code as string);
+
 interface TerritorySpec {
   id: string;
   name: string;
@@ -79,8 +245,7 @@ interface TerritorySpec {
   continent: string;
   subRegion?: string;
   symbol: "circle" | "square" | "triangle";
-  countries: string[];
-  boxes?: BBox[];
+  buildGeo: () => { d: string; center: [number, number] };
   centerOverride?: [number, number];
   neighbors: string[];
 }
@@ -93,7 +258,7 @@ const SPECS: TerritorySpec[] = [
     namePt: "Brasil",
     continent: "south_america",
     symbol: "circle",
-    countries: ["Brazil"],
+    buildGeo: () => renderGeometry(mergeCountries(["Brazil"])),
     neighbors: ["venezuela", "peru", "argentina", "argelia"],
   },
   {
@@ -102,7 +267,10 @@ const SPECS: TerritorySpec[] = [
     namePt: "Argentina",
     continent: "south_america",
     symbol: "square",
-    countries: ["Argentina", "Chile", "Uruguay", "Paraguay", "Falkland Is."],
+    buildGeo: () =>
+      renderGeometry(
+        mergeCountries(["Argentina", "Chile", "Uruguay", "Paraguay", "Falkland Is."])
+      ),
     neighbors: ["brasil", "peru", "australia", "africa_do_sul"],
   },
   {
@@ -111,7 +279,7 @@ const SPECS: TerritorySpec[] = [
     namePt: "Peru",
     continent: "south_america",
     symbol: "triangle",
-    countries: ["Peru", "Bolivia", "Ecuador"],
+    buildGeo: () => renderGeometry(mergeCountries(["Peru", "Bolivia", "Ecuador"])),
     neighbors: ["venezuela", "brasil", "argentina"],
   },
   {
@@ -120,34 +288,40 @@ const SPECS: TerritorySpec[] = [
     namePt: "Venezuela",
     continent: "south_america",
     symbol: "triangle",
-    countries: ["Venezuela", "Colombia", "Guyana", "Suriname", "France"],
-    boxes: [[-85, -10, -50, 15]],
+    buildGeo: () =>
+      renderGeometry(
+        mergeCountries(["Venezuela", "Colombia", "Guyana", "Suriname", "France"]),
+        [[-85, -10, -50, 15]]
+      ),
     neighbors: ["mexico", "brasil", "peru"],
   },
 
-  // ================= NORTH AMERICA (9) =================
+  // ================= NORTH AMERICA (10 — includes Havaí!) =================
   {
     id: "mexico",
     name: "Mexico",
     namePt: "México",
     continent: "north_america",
     symbol: "square",
-    countries: [
-      "Mexico",
-      "Guatemala",
-      "Belize",
-      "Honduras",
-      "El Salvador",
-      "Nicaragua",
-      "Costa Rica",
-      "Panama",
-      "Cuba",
-      "Haiti",
-      "Dominican Rep.",
-      "Jamaica",
-      "Bahamas",
-      "Puerto Rico",
-    ],
+    buildGeo: () =>
+      renderGeometry(
+        mergeCountries([
+          "Mexico",
+          "Guatemala",
+          "Belize",
+          "Honduras",
+          "El Salvador",
+          "Nicaragua",
+          "Costa Rica",
+          "Panama",
+          "Cuba",
+          "Haiti",
+          "Dominican Rep.",
+          "Jamaica",
+          "Bahamas",
+          "Puerto Rico",
+        ])
+      ),
     neighbors: ["california", "nova_york", "venezuela"],
   },
   {
@@ -156,9 +330,9 @@ const SPECS: TerritorySpec[] = [
     namePt: "Califórnia",
     continent: "north_america",
     symbol: "square",
-    countries: ["United States of America"],
-    boxes: [[-128, 24, -96, 49.5]],
-    neighbors: ["vancouver", "ottawa", "nova_york", "mexico", "japao"],
+    buildGeo: () => renderGeometry(mergeAdmin1ByCodes(USA_CALIFORNIA)),
+    centerOverride: [226, 200],
+    neighbors: ["vancouver", "ottawa", "nova_york", "mexico", "havai"],
   },
   {
     id: "nova_york",
@@ -166,8 +340,8 @@ const SPECS: TerritorySpec[] = [
     namePt: "Nova York",
     continent: "north_america",
     symbol: "triangle",
-    countries: ["United States of America"],
-    boxes: [[-96, 24, -65, 49.5]],
+    buildGeo: () => renderGeometry(mergeAdmin1ByCodes(USA_NEW_YORK)),
+    centerOverride: [314, 198],
     neighbors: ["california", "ottawa", "labrador", "mexico"],
   },
   {
@@ -176,8 +350,8 @@ const SPECS: TerritorySpec[] = [
     namePt: "Labrador",
     continent: "north_america",
     symbol: "circle",
-    countries: ["Canada"],
-    boxes: [[-76, 42, -50, 64]],
+    buildGeo: () => renderGeometry(mergeAdmin1ByCodes(CAN_LABRADOR)),
+    centerOverride: [370, 150],
     neighbors: ["ottawa", "nova_york", "groenlandia"],
   },
   {
@@ -186,8 +360,8 @@ const SPECS: TerritorySpec[] = [
     namePt: "Ottawa",
     continent: "north_america",
     symbol: "circle",
-    countries: ["Canada"],
-    boxes: [[-98, 41, -76, 60]],
+    buildGeo: () => renderGeometry(mergeAdmin1ByCodes(CAN_OTTAWA)),
+    centerOverride: [298, 156],
     neighbors: ["mackenzie", "vancouver", "california", "nova_york", "labrador", "groenlandia"],
   },
   {
@@ -196,8 +370,8 @@ const SPECS: TerritorySpec[] = [
     namePt: "Vancouver",
     continent: "north_america",
     symbol: "triangle",
-    countries: ["Canada"],
-    boxes: [[-140, 48, -98, 60]],
+    buildGeo: () => renderGeometry(mergeAdmin1ByCodes(CAN_VANCOUVER)),
+    centerOverride: [222, 148],
     neighbors: ["alasca", "mackenzie", "ottawa", "california"],
   },
   {
@@ -206,9 +380,10 @@ const SPECS: TerritorySpec[] = [
     namePt: "Mackenzie",
     continent: "north_america",
     symbol: "circle",
-    countries: ["Canada"],
-    boxes: [[-141, 60, -60, 84]],
-    centerOverride: [245, 102],
+    buildGeo: () =>
+      // Clip out tiny southern Hudson Bay / Ungava islands below 60N so they don't overlap Ottawa/Labrador
+      renderGeometry(mergeAdmin1ByCodes(CAN_MACKENZIE), [[-141, 60, -61, 84]]),
+    centerOverride: [242, 98],
     neighbors: ["alasca", "vancouver", "ottawa", "groenlandia"],
   },
   {
@@ -217,8 +392,9 @@ const SPECS: TerritorySpec[] = [
     namePt: "Alasca",
     continent: "north_america",
     symbol: "triangle",
-    countries: ["United States of America"],
-    boxes: [[-179.9, 51, -130, 73]],
+    buildGeo: () =>
+      renderGeometry(mergeAdmin1ByCodes(USA_ALASKA), [[-179.9, 51, -129, 73]]),
+    centerOverride: [92, 108],
     neighbors: ["mackenzie", "vancouver", "vladivostok"],
   },
   {
@@ -227,18 +403,38 @@ const SPECS: TerritorySpec[] = [
     namePt: "Groenlândia",
     continent: "north_america",
     symbol: "circle",
-    countries: ["Greenland"],
+    buildGeo: () => renderGeometry(mergeCountries(["Greenland"])),
     neighbors: ["mackenzie", "ottawa", "labrador", "islandia"],
   },
+  {
+    id: "havai",
+    name: "Hawaii",
+    namePt: "Havaí",
+    continent: "north_america",
+    symbol: "circle",
+    buildGeo: () => {
+      const realHi = renderGeometry(mergeAdmin1ByCodes(USA_HAWAII));
+      // Add a crisp clickable naval archipelago chain polygon around Hawaii (x=75, y=250) so it's easy to click & see!
+      const [hx, hy] = BASE_PROJ([-157.5, 20.8])!;
+      const cx = Math.round(hx);
+      const cy = Math.round(hy);
+      const islandChainSvg = `M${cx - 18},${cy - 8} L${cx - 10},${cy - 11} L${cx - 4},${cy - 5} L${cx - 12},${cy - 2} Z M${cx - 2},${cy - 3} L${cx + 7},${cy - 5} L${cx + 10},${cy + 2} L${cx + 1},${cy + 4} Z M${cx + 9},${cy + 4} L${cx + 19},${cy + 2} L${cx + 22},${cy + 11} L${cx + 11},${cy + 13} Z`;
+      return {
+        d: `${realHi.d} ${islandChainSvg}`.trim(),
+        center: [cx + 2, cy + 2],
+      };
+    },
+    neighbors: ["california", "japao", "nova_guine"],
+  },
 
-  // ================= EUROPE (7) =================
+  // ================= EUROPE (8 — Denmark in Alemanha, Polonia split into Polonia + Balcas!) =================
   {
     id: "islandia",
     name: "Iceland",
     namePt: "Islândia",
     continent: "europe",
     symbol: "triangle",
-    countries: ["Iceland"],
+    buildGeo: () => renderGeometry(mergeCountries(["Iceland"])),
     neighbors: ["groenlandia", "inglaterra"],
   },
   {
@@ -247,7 +443,8 @@ const SPECS: TerritorySpec[] = [
     namePt: "Inglaterra",
     continent: "europe",
     symbol: "circle",
-    countries: ["United Kingdom", "Ireland"],
+    buildGeo: () => renderGeometry(mergeCountries(["United Kingdom", "Ireland"])),
+    centerOverride: [586, 146],
     neighbors: ["islandia", "suecia", "franca", "alemanha"],
   },
   {
@@ -256,8 +453,10 @@ const SPECS: TerritorySpec[] = [
     namePt: "Suécia",
     continent: "europe",
     symbol: "square",
-    countries: ["Norway", "Sweden", "Finland", "Denmark"],
-    boxes: [[4, 54, 32, 72]],
+    buildGeo: () =>
+      // Denmark removed from Sweden and added to Germany!
+      renderGeometry(mergeCountries(["Norway", "Sweden", "Finland"]), [[4, 54, 32, 72]]),
+    centerOverride: [652, 108],
     neighbors: ["inglaterra", "moscou"],
   },
   {
@@ -266,8 +465,22 @@ const SPECS: TerritorySpec[] = [
     namePt: "Alemanha",
     continent: "europe",
     symbol: "circle",
-    countries: ["Germany", "Netherlands", "Belgium", "Luxembourg", "Switzerland", "Austria", "Czechia"],
-    neighbors: ["inglaterra", "franca", "polonia"],
+    buildGeo: () =>
+      renderGeometry(
+        mergeCountries([
+          "Denmark",
+          "Germany",
+          "Netherlands",
+          "Belgium",
+          "Luxembourg",
+          "Switzerland",
+          "Austria",
+          "Czechia",
+        ]),
+        [[2, 45, 18, 58]]
+      ),
+    centerOverride: [634, 152],
+    neighbors: ["inglaterra", "franca", "polonia", "balcas"],
   },
   {
     id: "franca",
@@ -275,9 +488,13 @@ const SPECS: TerritorySpec[] = [
     namePt: "França",
     continent: "europe",
     symbol: "square",
-    countries: ["France", "Spain", "Portugal", "Italy"],
-    boxes: [[-11, 35, 19, 52]],
-    neighbors: ["inglaterra", "alemanha", "polonia", "argelia", "egito"],
+    buildGeo: () =>
+      renderGeometry(
+        mergeCountries(["France", "Spain", "Portugal", "Italy"]),
+        [[-11, 35, 19, 52]]
+      ),
+    centerOverride: [604, 178],
+    neighbors: ["inglaterra", "alemanha", "balcas", "argelia", "egito"],
   },
   {
     id: "polonia",
@@ -285,29 +502,48 @@ const SPECS: TerritorySpec[] = [
     namePt: "Polônia",
     continent: "europe",
     symbol: "triangle",
-    countries: [
-      "Poland",
-      "Slovakia",
-      "Hungary",
-      "Romania",
-      "Moldova",
-      "Ukraine",
-      "Belarus",
-      "Lithuania",
-      "Latvia",
-      "Estonia",
-      "Slovenia",
-      "Croatia",
-      "Bosnia and Herz.",
-      "Serbia",
-      "Montenegro",
-      "Kosovo",
-      "Albania",
-      "Macedonia",
-      "Bulgaria",
-      "Greece",
-    ],
-    neighbors: ["alemanha", "franca", "moscou", "oriente_medio", "egito"],
+    buildGeo: () => {
+      const centralEast = mergeCountries([
+        "Poland",
+        "Slovakia",
+        "Hungary",
+        "Ukraine",
+        "Belarus",
+        "Lithuania",
+        "Latvia",
+        "Estonia",
+      ]);
+      const kaliningrad = mergeAdmin1ByCodes(RUS_KALININGRAD);
+      return renderGeometry(combineGeometries([centralEast, kaliningrad]));
+    },
+    centerOverride: [684, 148],
+    neighbors: ["alemanha", "balcas", "moscou"],
+  },
+  {
+    id: "balcas",
+    name: "Balkans",
+    namePt: "Bálcãs",
+    continent: "europe",
+    symbol: "square",
+    buildGeo: () =>
+      renderGeometry(
+        mergeCountries([
+          "Greece",
+          "Romania",
+          "Moldova",
+          "Bulgaria",
+          "Serbia",
+          "Croatia",
+          "Bosnia and Herz.",
+          "Montenegro",
+          "Kosovo",
+          "Albania",
+          "Macedonia",
+          "Slovenia",
+        ])
+      ),
+    centerOverride: [674, 182],
+    neighbors: ["alemanha", "franca", "polonia", "moscou", "oriente_medio", "egito"],
   },
   {
     id: "moscou",
@@ -315,9 +551,9 @@ const SPECS: TerritorySpec[] = [
     namePt: "Moscou",
     continent: "europe",
     symbol: "triangle",
-    countries: ["Russia"],
-    boxes: [[27, 41, 58, 78]],
-    neighbors: ["suecia", "polonia", "omsk", "aral", "oriente_medio"],
+    buildGeo: () => renderGeometry(mergeAdmin1ByCodes(RUS_MOSCOU)),
+    centerOverride: [736, 126],
+    neighbors: ["suecia", "polonia", "balcas", "omsk", "aral", "oriente_medio"],
   },
 
   // ================= AFRICA (6) =================
@@ -327,27 +563,30 @@ const SPECS: TerritorySpec[] = [
     namePt: "Argélia",
     continent: "africa",
     symbol: "circle",
-    countries: [
-      "Morocco",
-      "W. Sahara",
-      "Algeria",
-      "Tunisia",
-      "Mauritania",
-      "Mali",
-      "Niger",
-      "Senegal",
-      "Gambia",
-      "Guinea-Bissau",
-      "Guinea",
-      "Sierra Leone",
-      "Liberia",
-      "Côte d'Ivoire",
-      "Burkina Faso",
-      "Ghana",
-      "Togo",
-      "Benin",
-      "Nigeria",
-    ],
+    buildGeo: () =>
+      renderGeometry(
+        mergeCountries([
+          "Morocco",
+          "W. Sahara",
+          "Algeria",
+          "Tunisia",
+          "Mauritania",
+          "Mali",
+          "Niger",
+          "Senegal",
+          "Gambia",
+          "Guinea-Bissau",
+          "Guinea",
+          "Sierra Leone",
+          "Liberia",
+          "Côte d'Ivoire",
+          "Burkina Faso",
+          "Ghana",
+          "Togo",
+          "Benin",
+          "Nigeria",
+        ])
+      ),
     neighbors: ["brasil", "franca", "egito", "sudao", "congo"],
   },
   {
@@ -356,8 +595,8 @@ const SPECS: TerritorySpec[] = [
     namePt: "Egito",
     continent: "africa",
     symbol: "triangle",
-    countries: ["Egypt", "Libya"],
-    neighbors: ["franca", "polonia", "oriente_medio", "argelia", "sudao"],
+    buildGeo: () => renderGeometry(mergeCountries(["Egypt", "Libya"])),
+    neighbors: ["franca", "balcas", "oriente_medio", "argelia", "sudao"],
   },
   {
     id: "sudao",
@@ -365,18 +604,21 @@ const SPECS: TerritorySpec[] = [
     namePt: "Sudão",
     continent: "africa",
     symbol: "square",
-    countries: [
-      "Sudan",
-      "S. Sudan",
-      "Chad",
-      "Ethiopia",
-      "Eritrea",
-      "Djibouti",
-      "Somalia",
-      "Somaliland",
-      "Kenya",
-      "Uganda",
-    ],
+    buildGeo: () =>
+      renderGeometry(
+        mergeCountries([
+          "Sudan",
+          "S. Sudan",
+          "Chad",
+          "Ethiopia",
+          "Eritrea",
+          "Djibouti",
+          "Somalia",
+          "Somaliland",
+          "Kenya",
+          "Uganda",
+        ])
+      ),
     neighbors: ["argelia", "egito", "congo", "africa_do_sul", "madagascar"],
   },
   {
@@ -385,18 +627,21 @@ const SPECS: TerritorySpec[] = [
     namePt: "Congo",
     continent: "africa",
     symbol: "square",
-    countries: [
-      "Dem. Rep. Congo",
-      "Congo",
-      "Central African Rep.",
-      "Cameroon",
-      "Gabon",
-      "Eq. Guinea",
-      "Rwanda",
-      "Burundi",
-      "Tanzania",
-      "Angola",
-    ],
+    buildGeo: () =>
+      renderGeometry(
+        mergeCountries([
+          "Dem. Rep. Congo",
+          "Congo",
+          "Central African Rep.",
+          "Cameroon",
+          "Gabon",
+          "Eq. Guinea",
+          "Rwanda",
+          "Burundi",
+          "Tanzania",
+          "Angola",
+        ])
+      ),
     neighbors: ["argelia", "sudao", "africa_do_sul"],
   },
   {
@@ -405,17 +650,20 @@ const SPECS: TerritorySpec[] = [
     namePt: "África do Sul",
     continent: "africa",
     symbol: "triangle",
-    countries: [
-      "South Africa",
-      "Namibia",
-      "Botswana",
-      "Zimbabwe",
-      "Zambia",
-      "Malawi",
-      "Mozambique",
-      "Lesotho",
-      "eSwatini",
-    ],
+    buildGeo: () =>
+      renderGeometry(
+        mergeCountries([
+          "South Africa",
+          "Namibia",
+          "Botswana",
+          "Zimbabwe",
+          "Zambia",
+          "Malawi",
+          "Mozambique",
+          "Lesotho",
+          "eSwatini",
+        ])
+      ),
     neighbors: ["congo", "sudao", "madagascar", "argentina"],
   },
   {
@@ -424,7 +672,7 @@ const SPECS: TerritorySpec[] = [
     namePt: "Madagascar",
     continent: "africa",
     symbol: "circle",
-    countries: ["Madagascar"],
+    buildGeo: () => renderGeometry(mergeCountries(["Madagascar"])),
     neighbors: ["sudao", "africa_do_sul"],
   },
 
@@ -437,28 +685,31 @@ const SPECS: TerritorySpec[] = [
     continent: "asia",
     subRegion: "asia_indo_arabia",
     symbol: "square",
-    countries: [
-      "Turkey",
-      "Syria",
-      "Lebanon",
-      "Israel",
-      "Palestine",
-      "Jordan",
-      "Iraq",
-      "Iran",
-      "Saudi Arabia",
-      "Yemen",
-      "Oman",
-      "United Arab Emirates",
-      "Qatar",
-      "Kuwait",
-      "Georgia",
-      "Armenia",
-      "Azerbaijan",
-      "Cyprus",
-      "N. Cyprus",
-    ],
-    neighbors: ["polonia", "moscou", "aral", "india", "egito"],
+    buildGeo: () =>
+      renderGeometry(
+        mergeCountries([
+          "Turkey",
+          "Syria",
+          "Lebanon",
+          "Israel",
+          "Palestine",
+          "Jordan",
+          "Iraq",
+          "Iran",
+          "Saudi Arabia",
+          "Yemen",
+          "Oman",
+          "United Arab Emirates",
+          "Qatar",
+          "Kuwait",
+          "Georgia",
+          "Armenia",
+          "Azerbaijan",
+          "Cyprus",
+          "N. Cyprus",
+        ])
+      ),
+    neighbors: ["balcas", "moscou", "aral", "india", "egito"],
   },
   {
     id: "aral",
@@ -467,7 +718,17 @@ const SPECS: TerritorySpec[] = [
     continent: "asia",
     subRegion: "asia_indo_arabia",
     symbol: "triangle",
-    countries: ["Kazakhstan", "Uzbekistan", "Turkmenistan", "Kyrgyzstan", "Tajikistan", "Afghanistan"],
+    buildGeo: () =>
+      renderGeometry(
+        mergeCountries([
+          "Kazakhstan",
+          "Uzbekistan",
+          "Turkmenistan",
+          "Kyrgyzstan",
+          "Tajikistan",
+          "Afghanistan",
+        ])
+      ),
     neighbors: ["moscou", "omsk", "china", "india", "oriente_medio"],
   },
   {
@@ -477,7 +738,10 @@ const SPECS: TerritorySpec[] = [
     continent: "asia",
     subRegion: "asia_indo_arabia",
     symbol: "triangle",
-    countries: ["India", "Pakistan", "Bangladesh", "Sri Lanka", "Nepal", "Bhutan"],
+    buildGeo: () =>
+      renderGeometry(
+        mergeCountries(["India", "Pakistan", "Bangladesh", "Sri Lanka", "Nepal", "Bhutan"])
+      ),
     neighbors: ["oriente_medio", "aral", "china", "vietna", "sumatra"],
   },
   {
@@ -487,12 +751,16 @@ const SPECS: TerritorySpec[] = [
     continent: "asia",
     subRegion: "asia_indo_arabia",
     symbol: "triangle",
-    countries: ["Vietnam", "Thailand", "Myanmar", "Laos", "Cambodia", "Malaysia"],
-    boxes: [[92, 1, 110, 29]],
+    buildGeo: () =>
+      // Peninsular Malaysia (lon < 105) included here; East Malaysia on Borneo (lon > 108) excluded!
+      renderGeometry(
+        mergeCountries(["Vietnam", "Thailand", "Myanmar", "Laos", "Cambodia", "Malaysia"]),
+        [[92, 1, 108, 29]]
+      ),
     neighbors: ["china", "india", "borneu"],
   },
 
-  // Sub-Region 2: Estepes & Sibéria (4)
+  // Sub-Region 2: Estepes & Sibéria (4 — Real Russian Admin-1 Oblasts/Krais!)
   {
     id: "omsk",
     name: "Omsk",
@@ -500,8 +768,8 @@ const SPECS: TerritorySpec[] = [
     continent: "asia",
     subRegion: "asia_steppes",
     symbol: "square",
-    countries: ["Russia"],
-    boxes: [[58, 50, 85, 78]],
+    buildGeo: () => renderGeometry(mergeAdmin1ByCodes(RUS_OMSK)),
+    centerOverride: [842, 122],
     neighbors: ["moscou", "dudinka", "mongolia", "china", "aral"],
   },
   {
@@ -511,8 +779,8 @@ const SPECS: TerritorySpec[] = [
     continent: "asia",
     subRegion: "asia_steppes",
     symbol: "circle",
-    countries: ["Russia"],
-    boxes: [[85, 59, 116, 82]],
+    buildGeo: () => renderGeometry(mergeAdmin1ByCodes(RUS_DUDINKA)),
+    centerOverride: [912, 96],
     neighbors: ["omsk", "siberia", "tchita", "mongolia"],
   },
   {
@@ -522,8 +790,8 @@ const SPECS: TerritorySpec[] = [
     continent: "asia",
     subRegion: "asia_steppes",
     symbol: "triangle",
-    countries: ["Russia"],
-    boxes: [[116, 59, 148, 80]],
+    buildGeo: () => renderGeometry(mergeAdmin1ByCodes(RUS_SIBERIA)),
+    centerOverride: [1015, 96],
     neighbors: ["dudinka", "tchita", "vladivostok"],
   },
   {
@@ -533,13 +801,12 @@ const SPECS: TerritorySpec[] = [
     continent: "asia",
     subRegion: "asia_steppes",
     symbol: "triangle",
-    countries: ["Russia"],
-    boxes: [[85, 49, 126, 59]],
-    centerOverride: [962, 140],
+    buildGeo: () => renderGeometry(mergeAdmin1ByCodes(RUS_TCHITA)),
+    centerOverride: [1002, 146],
     neighbors: ["dudinka", "siberia", "vladivostok", "china", "mongolia"],
   },
 
-  // Sub-Region 3: Leste Asiático (4)
+  // Sub-Region 3: Leste Asiático (4 — Sakhalin + Taiwan added to Japan!)
   {
     id: "vladivostok",
     name: "Vladivostok",
@@ -547,12 +814,9 @@ const SPECS: TerritorySpec[] = [
     continent: "asia",
     subRegion: "asia_east",
     symbol: "circle",
-    countries: ["Russia"],
-    boxes: [
-      [148, 50, 179.9, 75],
-      [126, 42, 148, 59],
-    ],
-    centerOverride: [1085, 136],
+    buildGeo: () =>
+      renderGeometry(mergeAdmin1ByCodes(RUS_VLADIVOSTOK), [[125, 41, 179.9, 75]]),
+    centerOverride: [1095, 126],
     neighbors: ["siberia", "tchita", "china", "japao", "alasca"],
   },
   {
@@ -562,7 +826,8 @@ const SPECS: TerritorySpec[] = [
     continent: "asia",
     subRegion: "asia_east",
     symbol: "circle",
-    countries: ["Mongolia"],
+    buildGeo: () => renderGeometry(mergeCountries(["Mongolia"])),
+    centerOverride: [946, 162],
     neighbors: ["omsk", "dudinka", "tchita", "china"],
   },
   {
@@ -572,8 +837,9 @@ const SPECS: TerritorySpec[] = [
     continent: "asia",
     subRegion: "asia_east",
     symbol: "square",
-    countries: ["China", "Taiwan", "North Korea", "South Korea"],
-    centerOverride: [968, 214],
+    buildGeo: () =>
+      renderGeometry(mergeCountries(["China", "North Korea", "South Korea"])),
+    centerOverride: [968, 208],
     neighbors: ["aral", "omsk", "mongolia", "tchita", "vladivostok", "japao", "vietna", "india"],
   },
   {
@@ -583,23 +849,28 @@ const SPECS: TerritorySpec[] = [
     continent: "asia",
     subRegion: "asia_east",
     symbol: "square",
-    countries: ["Japan"],
-    neighbors: ["vladivostok", "china", "california"],
+    buildGeo: () => {
+      const jpTw = mergeCountries(["Japan", "Taiwan"]);
+      const sakhalin = mergeAdmin1ByCodes(RUS_SAKHALIN);
+      return renderGeometry(combineGeometries([jpTw, sakhalin]));
+    },
+    centerOverride: [1062, 198],
+    neighbors: ["vladivostok", "china", "havai"],
   },
 
-  // ================= OCEANIA (4) =================
+  // ================= OCEANIA (4 — Unified Borneo, Sumatra, New Guinea!) =================
   {
     id: "sumatra",
     name: "Sumatra",
     namePt: "Sumatra",
     continent: "oceania",
     symbol: "square",
-    countries: ["Indonesia", "Timor-Leste"],
-    boxes: [
-      [94, -11, 115, 6],
-      [115, -11, 127, -6],
-    ],
-    centerOverride: [942, 342],
+    buildGeo: () => {
+      const idnSumatraJava = mergeAdmin1ByCodes(IDN_SUMATRA);
+      const timor = mergeCountries(["Timor-Leste"]);
+      return renderGeometry(combineGeometries([idnSumatraJava, timor]));
+    },
+    centerOverride: [942, 336],
     neighbors: ["india", "australia"],
   },
   {
@@ -608,9 +879,19 @@ const SPECS: TerritorySpec[] = [
     namePt: "Bornéu",
     continent: "oceania",
     symbol: "square",
-    countries: ["Indonesia", "Malaysia", "Brunei", "Philippines"],
-    boxes: [[108.5, -5.5, 128, 20]],
-    centerOverride: [985, 315],
+    buildGeo: () => {
+      // 100% of Kalimantan (Indonesian Borneo) + East Malaysia (Sabah/Sarawak) + Brunei + Philippines
+      const idnKalimantan = renderGeometry(mergeAdmin1ByCodes(IDN_BORNEO));
+      const myBrPh = renderGeometry(
+        mergeCountries(["Malaysia", "Brunei", "Philippines"]),
+        [[108.5, 0.5, 128, 21]]
+      );
+      return {
+        d: `${idnKalimantan.d} ${myBrPh.d}`.trim(),
+        center: [986, 308],
+      };
+    },
+    centerOverride: [986, 308],
     neighbors: ["vietna", "nova_guine", "australia"],
   },
   {
@@ -619,10 +900,18 @@ const SPECS: TerritorySpec[] = [
     namePt: "Nova Guiné",
     continent: "oceania",
     symbol: "circle",
-    countries: ["Indonesia", "Papua New Guinea", "Solomon Is.", "Vanuatu", "Fiji"],
-    boxes: [[128, -20, 179.9, 2]],
-    centerOverride: [1072, 352],
-    neighbors: ["borneu", "australia"],
+    buildGeo: () => {
+      const idnEast = mergeAdmin1ByCodes(IDN_NEW_GUINEA);
+      const pngIslands = mergeCountries([
+        "Papua New Guinea",
+        "Solomon Is.",
+        "Vanuatu",
+        "Fiji",
+      ]);
+      return renderGeometry(combineGeometries([idnEast, pngIslands]), [[118, -22, 179.9, 5]]);
+    },
+    centerOverride: [1072, 344],
+    neighbors: ["borneu", "australia", "havai"],
   },
   {
     id: "australia",
@@ -630,21 +919,21 @@ const SPECS: TerritorySpec[] = [
     namePt: "Austrália",
     continent: "oceania",
     symbol: "triangle",
-    countries: ["Australia", "New Zealand", "New Caledonia"],
-    centerOverride: [1048, 418],
+    buildGeo: () =>
+      renderGeometry(mergeCountries(["Australia", "New Zealand", "New Caledonia"])),
+    centerOverride: [1048, 412],
     neighbors: ["sumatra", "borneu", "nova_guine", "argentina"],
   },
 ];
 
-// Generate global coastline land outline and graticules for Cartographic Mode
+// Generate global coastline land outline and graticules
 const landFeature = topojson.feature(c110, c110.objects.land);
 const basePathGen = d3.geoPath(BASE_PROJ).digits(1);
 const globalLandSvgPath = basePathGen(landFeature) || "";
 const graticuleSvgPath = basePathGen(d3.geoGraticule10()) || "";
 
 const builtTerritories = SPECS.map((spec) => {
-  const merged = mergeCountries(spec.countries);
-  const { d, center } = renderClipped(merged, spec.boxes);
+  const { d, center } = spec.buildGeo();
   return {
     id: spec.id,
     name: spec.name,
@@ -665,6 +954,18 @@ for (const t of builtTerritories) {
   console.log(`${t.id.padEnd(15)} center=[${t.center[0]}, ${t.center[1]}] pathLen=${t.svgPath.length}`);
 }
 
+// Verify neighbor symmetry before writing!
+const byId = new Map(builtTerritories.map((t) => [t.id, t]));
+for (const t of builtTerritories) {
+  for (const n of t.neighbors) {
+    const nb = byId.get(n);
+    if (!nb) throw new Error(`Missing neighbor ${n} referenced by ${t.id}`);
+    if (!nb.neighbors.includes(t.id)) {
+      throw new Error(`Asymmetric neighbor: ${t.id} -> ${n}, but ${n} does not list ${t.id}`);
+    }
+  }
+}
+
 const currentSrc = fs.readFileSync(path.join(__dirname, "../src/index.ts"), "utf-8");
 const objIndex = currentSrc.indexOf("export const CLASSIC_OBJECTIVES");
 const objectivesCode = currentSrc.slice(objIndex);
@@ -680,6 +981,7 @@ export interface AsiaSubRegionDef {
   id: string;
   namePt: string;
   bonus: number;
+  color: string;
   territoryIds: string[];
 }
 
@@ -688,25 +990,28 @@ export const ASIA_SUBREGIONS: AsiaSubRegionDef[] = [
     id: "asia_indo_arabia",
     namePt: "Ásia: Indo-Arábia",
     bonus: 2,
+    color: "#f97316",
     territoryIds: ["oriente_medio", "aral", "india", "vietna"],
   },
   {
     id: "asia_steppes",
     namePt: "Ásia: Estepes & Sibéria",
     bonus: 2,
+    color: "#dc2626",
     territoryIds: ["omsk", "dudinka", "siberia", "tchita"],
   },
   {
     id: "asia_east",
     namePt: "Ásia: Leste Asiático",
     bonus: 3,
+    color: "#e11d48",
     territoryIds: ["vladivostok", "mongolia", "china", "japao"],
   },
 ];
 
 export const CLASSIC_MAP: GameMapDef = {
-  id: "classic_42",
-  name: "Mundo Geopolítico Natural Earth (42 Territórios)",
+  id: "classic_44",
+  name: "Mundo Geopolítico Natural Earth (44 Territórios)",
   continents: [
     { id: "south_america", name: "South America", namePt: "América do Sul", bonus: 2, color: "#10b981" },
     { id: "north_america", name: "North America", namePt: "América do Norte", bonus: 5, color: "#f59e0b" },
@@ -722,4 +1027,4 @@ ${objectivesCode}
 `;
 
 fs.writeFileSync(path.join(__dirname, "../src/index.ts"), outputTs, "utf-8");
-console.log("✅ Successfully generated Natural Earth Geopolitical Map!");
+console.log("✅ Successfully generated 44-territory Natural Earth Admin-1 & Admin-0 Geopolitical Map!");
