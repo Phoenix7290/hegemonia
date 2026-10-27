@@ -7,7 +7,15 @@ build/
 *.db-wal
 *.db-shm
 data/
+# Environment & secrets
 .env
 .env.*
 !.env.example
 .DS_Store
+
+# Local Music & Soundtracks (do not commit copyright/large audio)
+apps/web/public/music/*.mp3
+apps/web/public/music/*.ogg
+apps/web/public/music/*.wav
+apps/web/public/music/*.flac
+apps/web/public/audio/

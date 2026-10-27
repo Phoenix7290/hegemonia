@@ -99,7 +99,8 @@ The game server will be available at `http://localhost:3000`.
 ## Contributing & Roadmap
 
 Hegemonia is built for open collaboration! If you or your AI agent want to contribute, check out:
-- [docs/ROADMAP.md](docs/ROADMAP.md) for the 12 upcoming game expansions (Economy, Treaties, Capitals, Navy, Airforce, etc.).
+- [docs/CRITICAL_TASKS.md](docs/CRITICAL_TASKS.md) for the immediate pre-roadmap stability and polish checklist (v0.1.x).
+- [docs/ROADMAP.md](docs/ROADMAP.md) for the 12 upcoming major game expansions (Economy, Treaties, Capitals, Navy, Airforce, etc.).
 - [AGENTS.md](AGENTS.md) for architectural guidelines and coding standards.
 
 Pull requests and issues are welcome!
