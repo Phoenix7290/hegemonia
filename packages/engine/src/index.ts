@@ -8,7 +8,7 @@ import {
   type TerritoryCard,
   type TerritoryState,
 } from "@hegemonia/shared";
-import { CLASSIC_MAP, CLASSIC_OBJECTIVES } from "@hegemonia/maps";
+import { ASIA_SUBREGIONS, CLASSIC_MAP, CLASSIC_OBJECTIVES } from "@hegemonia/maps";
 import { createSeededRng, hashSeed, type SeededRng } from "./rng.js";
 
 export * from "./rng.js";
@@ -69,6 +69,22 @@ export function calculateTurnReinforcements(
   const controlledContinents: string[] = [];
 
   for (const cont of map.continents) {
+    if (cont.id === "asia") {
+      // Asia is divided into 3 strategic sub-regions (+2 Indo-Arábia, +2 Estepes & Sibéria, +3 Leste Asiático = +7 total)
+      let allAsiaSubregionsControlled = true;
+      for (const sub of ASIA_SUBREGIONS) {
+        if (sub.territoryIds.every((tid) => ownedSet.has(tid))) {
+          continentBonus += sub.bonus;
+          controlledContinents.push(sub.id);
+        } else {
+          allAsiaSubregionsControlled = false;
+        }
+      }
+      if (allAsiaSubregionsControlled) {
+        controlledContinents.push("asia");
+      }
+      continue;
+    }
     const contTerritories = map.territories.filter((t) => t.continent === cont.id);
     if (contTerritories.length > 0 && contTerritories.every((t) => ownedSet.has(t.id))) {
       continentBonus += cont.bonus;
@@ -534,7 +550,7 @@ export function applyAction(
       if (checkPlayerVictory(state, p.id, map)) {
         state.winnerId = p.id;
         state.phase = "game_over";
-        state.log.push(`🏆 ${p.name} cumpriu seu objetivo e venceu a partida!`);
+        state.log.push(`[VITÓRIA] ${p.name} cumpriu seu objetivo e venceu a partida!`);
         break;
       }
     }

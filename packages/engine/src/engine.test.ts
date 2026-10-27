@@ -168,4 +168,30 @@ describe("War Classic Rules Engine", () => {
     expect(reinf.continentBonus).toBe(2); // South America +2
     expect(reinf.total).toBe(5);
   });
+
+  it("awards Asia sub-region bonuses (+2 Indo-Arábia, +2 Estepes, +3 Leste = +7 total) and verifies new sea lanes", () => {
+    const state = createGame({
+      id: "g4",
+      seed: "asia-sub-seed",
+      players: [
+        { id: "p1", name: "General", color: "blue" },
+        { id: "p2", name: "Enemy", color: "red" },
+      ],
+    });
+    for (const t of CLASSIC_MAP.territories) {
+      state.territories[t.id].ownerId = "p2";
+    }
+    // Give p1 only Indo-Arábia (4 territories)
+    for (const id of ["oriente_medio", "aral", "india", "vietna"]) {
+      state.territories[id].ownerId = "p1";
+    }
+    const reinfSub = calculateTurnReinforcements(state, "p1");
+    expect(reinfSub.continentBonus).toBe(2);
+
+    // Check strategic maritime connections
+    const byId = new Map(CLASSIC_MAP.territories.map((t) => [t.id, t]));
+    expect(byId.get("argentina")!.neighbors).toContain("australia");
+    expect(byId.get("argentina")!.neighbors).toContain("africa_do_sul");
+    expect(byId.get("california")!.neighbors).toContain("japao");
+  });
 });

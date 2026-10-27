@@ -1,450 +1,712 @@
-import https from "node:https";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import * as d3 from "d3-geo";
+import * as topojson from "topojson-client";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const c110 = JSON.parse(
+  fs.readFileSync(
+    path.join(__dirname, "../node_modules/world-atlas/countries-110m.json"),
+    "utf-8"
+  )
+);
 
-function fetchText(url: string): Promise<string> {
-  return new Promise((resolve, reject) => {
-    https
-      .get(url, { headers: { "User-Agent": "hegemonia-build" } }, (res) => {
-        let d = "";
-        res.on("data", (c) => (d += c));
-        res.on("end", () => resolve(d));
-      })
-      .on("error", reject);
-  });
+// Map dimensions: width = 1200, height = 620
+// Equirectangular projection with width = 1200 guarantees exact horizontal wraparound at x=0 and x=1200!
+const MAP_WIDTH = 1200;
+const BASE_PROJ = d3
+  .geoEquirectangular()
+  .scale(MAP_WIDTH / (2 * Math.PI))
+  .translate([MAP_WIDTH / 2, 330]);
+
+type BBox = [number, number, number, number]; // [lonMin, latMin, lonMax, latMax]
+
+function mergeCountries(names: string[]) {
+  const nameSet = new Set(names);
+  const geoms = c110.objects.countries.geometries.filter((g: any) =>
+    nameSet.has(g.properties.name)
+  );
+  if (geoms.length === 0) {
+    throw new Error(`No geometries found for: ${names.join(", ")}`);
+  }
+  return topojson.merge(c110, geoms);
 }
 
-function extractPath(jsCode: string): string {
-  let coordsStr = "";
-  const coordsMatch = jsCode.match(/(?:coords|setCoords)[^\[]*\[\s*(\[\[[\s\S]*?\]\])\s*\]/);
-  if (coordsMatch) {
-    try {
-      const parsed = JSON.parse(coordsMatch[1].replace(/'/g, '"'));
-      coordsStr = parsed.map((p: any) => p.join(",")).join(" ");
-    } catch {}
+function renderClipped(geojson: any, boxes?: BBox[]): { d: string; center: [number, number] } {
+  if (!boxes || boxes.length === 0) {
+    const pathGen = d3.geoPath(BASE_PROJ).digits(1);
+    const d = pathGen(geojson) || "";
+    const c = pathGen.centroid(geojson);
+    return { d, center: [Math.round(c[0]), Math.round(c[1])] };
   }
-  if (!coordsStr) {
-    const directCoordsMatch = jsCode.match(/useState\(\s*(\[\[[\s\S]*?\]\])\s*\)/);
-    if (directCoordsMatch) {
-      try {
-        const parsed = JSON.parse(directCoordsMatch[1].replace(/'/g, '"'));
-        coordsStr = parsed.map((p: any) => p.join(",")).join(" ");
-      } catch {}
+
+  const paths: string[] = [];
+  let bestArea = -1;
+  let bestCentroid: [number, number] = [600, 300];
+
+  for (const [lon0, lat0, lon1, lat1] of boxes) {
+    const [x0, y1] = BASE_PROJ([lon0, lat0])!;
+    const [x1, y0] = BASE_PROJ([lon1, lat1])!;
+    const proj = d3
+      .geoEquirectangular()
+      .scale(MAP_WIDTH / (2 * Math.PI))
+      .translate([MAP_WIDTH / 2, 330])
+      .postclip(d3.geoClipRectangle(x0, y0, x1, y1));
+
+    const pathGen = d3.geoPath(proj).digits(1);
+    const subD = pathGen(geojson);
+    if (subD) {
+      paths.push(subD);
+      const area = pathGen.area(geojson);
+      if (area > bestArea) {
+        bestArea = area;
+        const c = pathGen.centroid(geojson);
+        if (!Number.isNaN(c[0]) && !Number.isNaN(c[1])) {
+          bestCentroid = [Math.round(c[0]), Math.round(c[1])];
+        }
+      }
     }
   }
 
-  let marksStr = "";
-  const marksMatch = jsCode.match(/marks\s*=\s*\[\s*\[(\d+),\s*(\d+)\]\s*\]/);
-  if (marksMatch) {
-    marksStr = `${marksMatch[1]} ${marksMatch[2]}`;
-  }
-
-  const start = jsCode.indexOf("d={`");
-  if (start === -1) return "";
-  const end = jsCode.indexOf("`}", start);
-  let d = jsCode.slice(start + 4, end).trim();
-
-  if (marksStr) {
-    d = d.replace("${marks[0].join(' ')}", marksStr);
-  }
-  if (coordsStr) {
-    d = d.replace("${coords.join(' ')}", coordsStr);
-    d = d.replace("${c}", coordsStr);
-  }
-  return d;
+  return { d: paths.join(" "), center: bestCentroid };
 }
 
-function computeBBox(d: string): { minX: number; maxX: number; minY: number; maxY: number; cx: number; cy: number } {
-  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-  let currX = 0, currY = 0;
-  const tokens = d.match(/([a-df-z]|[-+]?\d*\.?\d+(?:e[-+]?\d+)?)/gi);
-  if (!tokens) return { minX: 0, maxX: 0, minY: 0, maxY: 0, cx: 0, cy: 0 };
-  
-  let cmd = "";
-  let i = 0;
-  while (i < tokens.length) {
-    const t = tokens[i];
-    if (/^[a-df-z]$/i.test(t)) {
-      cmd = t;
-      i++;
-      continue;
-    }
-    if (cmd === "M") {
-      currX = parseFloat(tokens[i++]);
-      currY = parseFloat(tokens[i++]);
-      minX = Math.min(minX, currX); maxX = Math.max(maxX, currX);
-      minY = Math.min(minY, currY); maxY = Math.max(maxY, currY);
-    } else if (cmd === "m") {
-      currX += parseFloat(tokens[i++]);
-      currY += parseFloat(tokens[i++]);
-      minX = Math.min(minX, currX); maxX = Math.max(maxX, currX);
-      minY = Math.min(minY, currY); maxY = Math.max(maxY, currY);
-    } else if (cmd === "c") {
-      i++; i++; i++; i++; // control points dx1, dy1, dx2, dy2
-      const dx = parseFloat(tokens[i++]);
-      const dy = parseFloat(tokens[i++]);
-      currX += dx;
-      currY += dy;
-      minX = Math.min(minX, currX); maxX = Math.max(maxX, currX);
-      minY = Math.min(minY, currY); maxY = Math.max(maxY, currY);
-    } else if (cmd === "C") {
-      i++; i++; i++; i++;
-      currX = parseFloat(tokens[i++]);
-      currY = parseFloat(tokens[i++]);
-      minX = Math.min(minX, currX); maxX = Math.max(maxX, currX);
-      minY = Math.min(minY, currY); maxY = Math.max(maxY, currY);
-    } else {
-      i++;
-    }
-  }
-  return {
-    minX, maxX, minY, maxY,
-    cx: Math.round((minX + maxX) / 2),
-    cy: Math.round((minY + maxY) / 2)
-  };
+interface TerritorySpec {
+  id: string;
+  name: string;
+  namePt: string;
+  continent: string;
+  subRegion?: string;
+  symbol: "circle" | "square" | "triangle";
+  countries: string[];
+  boxes?: BBox[];
+  centerOverride?: [number, number];
+  neighbors: string[];
 }
 
-const TERRITORY_SPECS: Record<string, { files: string[]; name: string; namePt: string; continent: string; symbol: "circle"|"square"|"triangle"; neighbors: string[] }> = {
-  // SOUTH AMERICA (4)
-  brasil: {
-    files: ["sa/brazil.js"],
-    name: "Brazil", namePt: "Brasil",
-    continent: "south_america", symbol: "circle",
+const SPECS: TerritorySpec[] = [
+  // ================= SOUTH AMERICA (4) =================
+  {
+    id: "brasil",
+    name: "Brazil",
+    namePt: "Brasil",
+    continent: "south_america",
+    symbol: "circle",
+    countries: ["Brazil"],
     neighbors: ["venezuela", "peru", "argentina", "argelia"],
   },
-  argentina: {
-    files: ["sa/argentina.js"],
-    name: "Argentina", namePt: "Argentina",
-    continent: "south_america", symbol: "square",
-    neighbors: ["brasil", "peru"],
+  {
+    id: "argentina",
+    name: "Argentina",
+    namePt: "Argentina",
+    continent: "south_america",
+    symbol: "square",
+    countries: ["Argentina", "Chile", "Uruguay", "Paraguay", "Falkland Is."],
+    neighbors: ["brasil", "peru", "australia", "africa_do_sul"],
   },
-  peru: {
-    files: ["sa/peru.js"],
-    name: "Peru", namePt: "Peru",
-    continent: "south_america", symbol: "triangle",
+  {
+    id: "peru",
+    name: "Peru",
+    namePt: "Peru",
+    continent: "south_america",
+    symbol: "triangle",
+    countries: ["Peru", "Bolivia", "Ecuador"],
     neighbors: ["venezuela", "brasil", "argentina"],
   },
-  venezuela: {
-    files: ["sa/venezuela.js"],
-    name: "Venezuela", namePt: "Venezuela",
-    continent: "south_america", symbol: "triangle",
+  {
+    id: "venezuela",
+    name: "Venezuela",
+    namePt: "Venezuela",
+    continent: "south_america",
+    symbol: "triangle",
+    countries: ["Venezuela", "Colombia", "Guyana", "Suriname", "France"],
+    boxes: [[-85, -10, -50, 15]],
     neighbors: ["mexico", "brasil", "peru"],
   },
 
-  // NORTH AMERICA (9)
-  mexico: {
-    files: ["na/central.js"],
-    name: "Mexico", namePt: "México",
-    continent: "north_america", symbol: "square",
+  // ================= NORTH AMERICA (9) =================
+  {
+    id: "mexico",
+    name: "Mexico",
+    namePt: "México",
+    continent: "north_america",
+    symbol: "square",
+    countries: [
+      "Mexico",
+      "Guatemala",
+      "Belize",
+      "Honduras",
+      "El Salvador",
+      "Nicaragua",
+      "Costa Rica",
+      "Panama",
+      "Cuba",
+      "Haiti",
+      "Dominican Rep.",
+      "Jamaica",
+      "Bahamas",
+      "Puerto Rico",
+    ],
     neighbors: ["california", "nova_york", "venezuela"],
   },
-  california: {
-    files: ["na/west.js"],
-    name: "California", namePt: "Califórnia",
-    continent: "north_america", symbol: "square",
-    neighbors: ["vancouver", "ottawa", "nova_york", "mexico"],
+  {
+    id: "california",
+    name: "California",
+    namePt: "Califórnia",
+    continent: "north_america",
+    symbol: "square",
+    countries: ["United States of America"],
+    boxes: [[-128, 24, -96, 49.5]],
+    neighbors: ["vancouver", "ottawa", "nova_york", "mexico", "japao"],
   },
-  nova_york: {
-    files: ["na/east.js"],
-    name: "New York", namePt: "Nova York",
-    continent: "north_america", symbol: "triangle",
+  {
+    id: "nova_york",
+    name: "New York",
+    namePt: "Nova York",
+    continent: "north_america",
+    symbol: "triangle",
+    countries: ["United States of America"],
+    boxes: [[-96, 24, -65, 49.5]],
     neighbors: ["california", "ottawa", "labrador", "mexico"],
   },
-  labrador: {
-    files: ["na/quebec.js"],
-    name: "Labrador", namePt: "Labrador",
-    continent: "north_america", symbol: "circle",
+  {
+    id: "labrador",
+    name: "Labrador",
+    namePt: "Labrador",
+    continent: "north_america",
+    symbol: "circle",
+    countries: ["Canada"],
+    boxes: [[-76, 42, -50, 64]],
     neighbors: ["ottawa", "nova_york", "groenlandia"],
   },
-  ottawa: {
-    files: ["na/ontario.js"],
-    name: "Ottawa", namePt: "Ottawa",
-    continent: "north_america", symbol: "circle",
+  {
+    id: "ottawa",
+    name: "Ottawa",
+    namePt: "Ottawa",
+    continent: "north_america",
+    symbol: "circle",
+    countries: ["Canada"],
+    boxes: [[-98, 41, -76, 60]],
     neighbors: ["mackenzie", "vancouver", "california", "nova_york", "labrador", "groenlandia"],
   },
-  vancouver: {
-    files: ["na/alberta.js"],
-    name: "Vancouver", namePt: "Vancouver",
-    continent: "north_america", symbol: "triangle",
+  {
+    id: "vancouver",
+    name: "Vancouver",
+    namePt: "Vancouver",
+    continent: "north_america",
+    symbol: "triangle",
+    countries: ["Canada"],
+    boxes: [[-140, 48, -98, 60]],
     neighbors: ["alasca", "mackenzie", "ottawa", "california"],
   },
-  mackenzie: {
-    files: ["na/northwest.js"],
-    name: "Mackenzie", namePt: "Mackenzie",
-    continent: "north_america", symbol: "circle",
+  {
+    id: "mackenzie",
+    name: "Mackenzie",
+    namePt: "Mackenzie",
+    continent: "north_america",
+    symbol: "circle",
+    countries: ["Canada"],
+    boxes: [[-141, 60, -60, 84]],
+    centerOverride: [245, 102],
     neighbors: ["alasca", "vancouver", "ottawa", "groenlandia"],
   },
-  alasca: {
-    files: ["na/alaska.js"],
-    name: "Alaska", namePt: "Alasca",
-    continent: "north_america", symbol: "triangle",
+  {
+    id: "alasca",
+    name: "Alaska",
+    namePt: "Alasca",
+    continent: "north_america",
+    symbol: "triangle",
+    countries: ["United States of America"],
+    boxes: [[-179.9, 51, -130, 73]],
     neighbors: ["mackenzie", "vancouver", "vladivostok"],
   },
-  groenlandia: {
-    files: ["na/greenland.js"],
-    name: "Greenland", namePt: "Groenlândia",
-    continent: "north_america", symbol: "circle",
+  {
+    id: "groenlandia",
+    name: "Greenland",
+    namePt: "Groenlândia",
+    continent: "north_america",
+    symbol: "circle",
+    countries: ["Greenland"],
     neighbors: ["mackenzie", "ottawa", "labrador", "islandia"],
   },
 
-  // EUROPE (7)
-  islandia: {
-    files: ["eu/iceland.js"],
-    name: "Iceland", namePt: "Islândia",
-    continent: "europe", symbol: "triangle",
+  // ================= EUROPE (7) =================
+  {
+    id: "islandia",
+    name: "Iceland",
+    namePt: "Islândia",
+    continent: "europe",
+    symbol: "triangle",
+    countries: ["Iceland"],
     neighbors: ["groenlandia", "inglaterra"],
   },
-  inglaterra: {
-    files: ["eu/britian.js"],
-    name: "Great Britain", namePt: "Inglaterra",
-    continent: "europe", symbol: "circle",
+  {
+    id: "inglaterra",
+    name: "Great Britain",
+    namePt: "Inglaterra",
+    continent: "europe",
+    symbol: "circle",
+    countries: ["United Kingdom", "Ireland"],
     neighbors: ["islandia", "suecia", "franca", "alemanha"],
   },
-  suecia: {
-    files: ["eu/scandinavia.js"],
-    name: "Sweden", namePt: "Suécia",
-    continent: "europe", symbol: "square",
+  {
+    id: "suecia",
+    name: "Sweden",
+    namePt: "Suécia",
+    continent: "europe",
+    symbol: "square",
+    countries: ["Norway", "Sweden", "Finland", "Denmark"],
+    boxes: [[4, 54, 32, 72]],
     neighbors: ["inglaterra", "moscou"],
   },
-  alemanha: {
-    files: ["eu/north.js"],
-    name: "Germany", namePt: "Alemanha",
-    continent: "europe", symbol: "circle",
+  {
+    id: "alemanha",
+    name: "Germany",
+    namePt: "Alemanha",
+    continent: "europe",
+    symbol: "circle",
+    countries: ["Germany", "Netherlands", "Belgium", "Luxembourg", "Switzerland", "Austria", "Czechia"],
     neighbors: ["inglaterra", "franca", "polonia"],
   },
-  franca: {
-    files: ["eu/west.js"],
-    name: "France", namePt: "França",
-    continent: "europe", symbol: "square",
+  {
+    id: "franca",
+    name: "France",
+    namePt: "França",
+    continent: "europe",
+    symbol: "square",
+    countries: ["France", "Spain", "Portugal", "Italy"],
+    boxes: [[-11, 35, 19, 52]],
     neighbors: ["inglaterra", "alemanha", "polonia", "argelia", "egito"],
   },
-  polonia: {
-    files: ["eu/south.js"],
-    name: "Poland", namePt: "Polônia",
-    continent: "europe", symbol: "triangle",
+  {
+    id: "polonia",
+    name: "Poland",
+    namePt: "Polônia",
+    continent: "europe",
+    symbol: "triangle",
+    countries: [
+      "Poland",
+      "Slovakia",
+      "Hungary",
+      "Romania",
+      "Moldova",
+      "Ukraine",
+      "Belarus",
+      "Lithuania",
+      "Latvia",
+      "Estonia",
+      "Slovenia",
+      "Croatia",
+      "Bosnia and Herz.",
+      "Serbia",
+      "Montenegro",
+      "Kosovo",
+      "Albania",
+      "Macedonia",
+      "Bulgaria",
+      "Greece",
+    ],
     neighbors: ["alemanha", "franca", "moscou", "oriente_medio", "egito"],
   },
-  moscou: {
-    files: ["eu/ukraine.js"],
-    name: "Moscow", namePt: "Moscou",
-    continent: "europe", symbol: "triangle",
+  {
+    id: "moscou",
+    name: "Moscow",
+    namePt: "Moscou",
+    continent: "europe",
+    symbol: "triangle",
+    countries: ["Russia"],
+    boxes: [[27, 41, 58, 78]],
     neighbors: ["suecia", "polonia", "omsk", "aral", "oriente_medio"],
   },
 
-  // AFRICA (6)
-  argelia: {
-    files: ["af/north.js"],
-    name: "Algeria", namePt: "Argélia",
-    continent: "africa", symbol: "circle",
+  // ================= AFRICA (6) =================
+  {
+    id: "argelia",
+    name: "Algeria",
+    namePt: "Argélia",
+    continent: "africa",
+    symbol: "circle",
+    countries: [
+      "Morocco",
+      "W. Sahara",
+      "Algeria",
+      "Tunisia",
+      "Mauritania",
+      "Mali",
+      "Niger",
+      "Senegal",
+      "Gambia",
+      "Guinea-Bissau",
+      "Guinea",
+      "Sierra Leone",
+      "Liberia",
+      "Côte d'Ivoire",
+      "Burkina Faso",
+      "Ghana",
+      "Togo",
+      "Benin",
+      "Nigeria",
+    ],
     neighbors: ["brasil", "franca", "egito", "sudao", "congo"],
   },
-  egito: {
-    files: ["af/egypt.js"],
-    name: "Egypt", namePt: "Egito",
-    continent: "africa", symbol: "triangle",
+  {
+    id: "egito",
+    name: "Egypt",
+    namePt: "Egito",
+    continent: "africa",
+    symbol: "triangle",
+    countries: ["Egypt", "Libya"],
     neighbors: ["franca", "polonia", "oriente_medio", "argelia", "sudao"],
   },
-  sudao: {
-    files: ["af/east.js"],
-    name: "Sudan", namePt: "Sudão",
-    continent: "africa", symbol: "square",
+  {
+    id: "sudao",
+    name: "Sudan",
+    namePt: "Sudão",
+    continent: "africa",
+    symbol: "square",
+    countries: [
+      "Sudan",
+      "S. Sudan",
+      "Chad",
+      "Ethiopia",
+      "Eritrea",
+      "Djibouti",
+      "Somalia",
+      "Somaliland",
+      "Kenya",
+      "Uganda",
+    ],
     neighbors: ["argelia", "egito", "congo", "africa_do_sul", "madagascar"],
   },
-  congo: {
-    files: ["af/congo.js"],
-    name: "Congo", namePt: "Congo",
-    continent: "africa", symbol: "square",
+  {
+    id: "congo",
+    name: "Congo",
+    namePt: "Congo",
+    continent: "africa",
+    symbol: "square",
+    countries: [
+      "Dem. Rep. Congo",
+      "Congo",
+      "Central African Rep.",
+      "Cameroon",
+      "Gabon",
+      "Eq. Guinea",
+      "Rwanda",
+      "Burundi",
+      "Tanzania",
+      "Angola",
+    ],
     neighbors: ["argelia", "sudao", "africa_do_sul"],
   },
-  africa_do_sul: {
-    files: ["af/south.js"],
-    name: "South Africa", namePt: "África do Sul",
-    continent: "africa", symbol: "triangle",
-    neighbors: ["congo", "sudao", "madagascar"],
+  {
+    id: "africa_do_sul",
+    name: "South Africa",
+    namePt: "África do Sul",
+    continent: "africa",
+    symbol: "triangle",
+    countries: [
+      "South Africa",
+      "Namibia",
+      "Botswana",
+      "Zimbabwe",
+      "Zambia",
+      "Malawi",
+      "Mozambique",
+      "Lesotho",
+      "eSwatini",
+    ],
+    neighbors: ["congo", "sudao", "madagascar", "argentina"],
   },
-  madagascar: {
-    files: ["af/madagascar.js"],
-    name: "Madagascar", namePt: "Madagascar",
-    continent: "africa", symbol: "circle",
+  {
+    id: "madagascar",
+    name: "Madagascar",
+    namePt: "Madagascar",
+    continent: "africa",
+    symbol: "circle",
+    countries: ["Madagascar"],
     neighbors: ["sudao", "africa_do_sul"],
   },
 
-  // ASIA (12)
-  oriente_medio: {
-    files: ["as/middle.js"],
-    name: "Middle East", namePt: "Oriente Médio",
-    continent: "asia", symbol: "square",
+  // ================= ASIA (12) — 3 Sub-Regions =================
+  // Sub-Region 1: Indo-Arábia (4)
+  {
+    id: "oriente_medio",
+    name: "Middle East",
+    namePt: "Oriente Médio",
+    continent: "asia",
+    subRegion: "asia_indo_arabia",
+    symbol: "square",
+    countries: [
+      "Turkey",
+      "Syria",
+      "Lebanon",
+      "Israel",
+      "Palestine",
+      "Jordan",
+      "Iraq",
+      "Iran",
+      "Saudi Arabia",
+      "Yemen",
+      "Oman",
+      "United Arab Emirates",
+      "Qatar",
+      "Kuwait",
+      "Georgia",
+      "Armenia",
+      "Azerbaijan",
+      "Cyprus",
+      "N. Cyprus",
+    ],
     neighbors: ["polonia", "moscou", "aral", "india", "egito"],
   },
-  aral: {
-    files: ["as/afganistan.js"],
-    name: "Aral", namePt: "Aral",
-    continent: "asia", symbol: "triangle",
+  {
+    id: "aral",
+    name: "Aral",
+    namePt: "Aral",
+    continent: "asia",
+    subRegion: "asia_indo_arabia",
+    symbol: "triangle",
+    countries: ["Kazakhstan", "Uzbekistan", "Turkmenistan", "Kyrgyzstan", "Tajikistan", "Afghanistan"],
     neighbors: ["moscou", "omsk", "china", "india", "oriente_medio"],
   },
-  omsk: {
-    files: ["as/ural.js"],
-    name: "Omsk", namePt: "Omsk",
-    continent: "asia", symbol: "square",
-    neighbors: ["moscou", "dudinka", "mongolia", "china", "aral"],
-  },
-  dudinka: {
-    files: ["as/yakutsk.js"],
-    name: "Dudinka", namePt: "Dudinka",
-    continent: "asia", symbol: "circle",
-    neighbors: ["omsk", "siberia", "tchita", "mongolia"],
-  },
-  siberia: {
-    files: ["as/siberia.js"],
-    name: "Siberia", namePt: "Sibéria",
-    continent: "asia", symbol: "triangle",
-    neighbors: ["dudinka", "tchita", "vladivostok"],
-  },
-  vladivostok: {
-    files: ["as/kamchatka.js"],
-    name: "Vladivostok", namePt: "Vladivostok",
-    continent: "asia", symbol: "circle",
-    neighbors: ["siberia", "tchita", "china", "japao", "alasca"],
-  },
-  tchita: {
-    files: ["as/irkutsk.js"],
-    name: "Tchita", namePt: "Tchita",
-    continent: "asia", symbol: "triangle",
-    neighbors: ["dudinka", "siberia", "vladivostok", "china", "mongolia"],
-  },
-  mongolia: {
-    files: ["as/mongolia.js"],
-    name: "Mongolia", namePt: "Mongólia",
-    continent: "asia", symbol: "circle",
-    neighbors: ["omsk", "dudinka", "tchita", "china"],
-  },
-  china: {
-    files: ["as/china.js"],
-    name: "China", namePt: "China",
-    continent: "asia", symbol: "square",
-    neighbors: ["aral", "omsk", "mongolia", "tchita", "vladivostok", "japao", "vietna", "india"],
-  },
-  japao: {
-    files: ["as/japan.js"],
-    name: "Japan", namePt: "Japão",
-    continent: "asia", symbol: "square",
-    neighbors: ["vladivostok", "china"],
-  },
-  india: {
-    files: ["as/india.js"],
-    name: "India", namePt: "Índia",
-    continent: "asia", symbol: "triangle",
+  {
+    id: "india",
+    name: "India",
+    namePt: "Índia",
+    continent: "asia",
+    subRegion: "asia_indo_arabia",
+    symbol: "triangle",
+    countries: ["India", "Pakistan", "Bangladesh", "Sri Lanka", "Nepal", "Bhutan"],
     neighbors: ["oriente_medio", "aral", "china", "vietna", "sumatra"],
   },
-  vietna: {
-    files: ["as/siam.js"],
-    name: "Vietnam", namePt: "Vietnã",
-    continent: "asia", symbol: "triangle",
+  {
+    id: "vietna",
+    name: "Vietnam",
+    namePt: "Vietnã",
+    continent: "asia",
+    subRegion: "asia_indo_arabia",
+    symbol: "triangle",
+    countries: ["Vietnam", "Thailand", "Myanmar", "Laos", "Cambodia", "Malaysia"],
+    boxes: [[92, 1, 110, 29]],
     neighbors: ["china", "india", "borneu"],
   },
 
-  // OCEANIA (4)
-  sumatra: {
-    files: ["au/indonesia.js:sumatra"],
-    name: "Sumatra", namePt: "Sumatra",
-    continent: "oceania", symbol: "square",
+  // Sub-Region 2: Estepes & Sibéria (4)
+  {
+    id: "omsk",
+    name: "Omsk",
+    namePt: "Omsk",
+    continent: "asia",
+    subRegion: "asia_steppes",
+    symbol: "square",
+    countries: ["Russia"],
+    boxes: [[58, 50, 85, 78]],
+    neighbors: ["moscou", "dudinka", "mongolia", "china", "aral"],
+  },
+  {
+    id: "dudinka",
+    name: "Dudinka",
+    namePt: "Dudinka",
+    continent: "asia",
+    subRegion: "asia_steppes",
+    symbol: "circle",
+    countries: ["Russia"],
+    boxes: [[85, 59, 116, 82]],
+    neighbors: ["omsk", "siberia", "tchita", "mongolia"],
+  },
+  {
+    id: "siberia",
+    name: "Siberia",
+    namePt: "Sibéria",
+    continent: "asia",
+    subRegion: "asia_steppes",
+    symbol: "triangle",
+    countries: ["Russia"],
+    boxes: [[116, 59, 148, 80]],
+    neighbors: ["dudinka", "tchita", "vladivostok"],
+  },
+  {
+    id: "tchita",
+    name: "Tchita",
+    namePt: "Tchita",
+    continent: "asia",
+    subRegion: "asia_steppes",
+    symbol: "triangle",
+    countries: ["Russia"],
+    boxes: [[85, 49, 126, 59]],
+    centerOverride: [962, 140],
+    neighbors: ["dudinka", "siberia", "vladivostok", "china", "mongolia"],
+  },
+
+  // Sub-Region 3: Leste Asiático (4)
+  {
+    id: "vladivostok",
+    name: "Vladivostok",
+    namePt: "Vladivostok",
+    continent: "asia",
+    subRegion: "asia_east",
+    symbol: "circle",
+    countries: ["Russia"],
+    boxes: [
+      [148, 50, 179.9, 75],
+      [126, 42, 148, 59],
+    ],
+    centerOverride: [1085, 136],
+    neighbors: ["siberia", "tchita", "china", "japao", "alasca"],
+  },
+  {
+    id: "mongolia",
+    name: "Mongolia",
+    namePt: "Mongólia",
+    continent: "asia",
+    subRegion: "asia_east",
+    symbol: "circle",
+    countries: ["Mongolia"],
+    neighbors: ["omsk", "dudinka", "tchita", "china"],
+  },
+  {
+    id: "china",
+    name: "China",
+    namePt: "China",
+    continent: "asia",
+    subRegion: "asia_east",
+    symbol: "square",
+    countries: ["China", "Taiwan", "North Korea", "South Korea"],
+    centerOverride: [968, 214],
+    neighbors: ["aral", "omsk", "mongolia", "tchita", "vladivostok", "japao", "vietna", "india"],
+  },
+  {
+    id: "japao",
+    name: "Japan",
+    namePt: "Japão",
+    continent: "asia",
+    subRegion: "asia_east",
+    symbol: "square",
+    countries: ["Japan"],
+    neighbors: ["vladivostok", "china", "california"],
+  },
+
+  // ================= OCEANIA (4) =================
+  {
+    id: "sumatra",
+    name: "Sumatra",
+    namePt: "Sumatra",
+    continent: "oceania",
+    symbol: "square",
+    countries: ["Indonesia", "Timor-Leste"],
+    boxes: [
+      [94, -11, 115, 6],
+      [115, -11, 127, -6],
+    ],
+    centerOverride: [942, 342],
     neighbors: ["india", "australia"],
   },
-  borneu: {
-    files: ["au/indonesia.js:borneo"],
-    name: "Borneo", namePt: "Bornéu",
-    continent: "oceania", symbol: "square",
+  {
+    id: "borneu",
+    name: "Borneo",
+    namePt: "Bornéu",
+    continent: "oceania",
+    symbol: "square",
+    countries: ["Indonesia", "Malaysia", "Brunei", "Philippines"],
+    boxes: [[108.5, -5.5, 128, 20]],
+    centerOverride: [985, 315],
     neighbors: ["vietna", "nova_guine", "australia"],
   },
-  nova_guine: {
-    files: ["au/guinea.js"],
-    name: "New Guinea", namePt: "Nova Guiné",
-    continent: "oceania", symbol: "circle",
+  {
+    id: "nova_guine",
+    name: "New Guinea",
+    namePt: "Nova Guiné",
+    continent: "oceania",
+    symbol: "circle",
+    countries: ["Indonesia", "Papua New Guinea", "Solomon Is.", "Vanuatu", "Fiji"],
+    boxes: [[128, -20, 179.9, 2]],
+    centerOverride: [1072, 352],
     neighbors: ["borneu", "australia"],
   },
-  australia: {
-    files: ["au/west.js", "au/east.js"],
-    name: "Australia", namePt: "Austrália",
-    continent: "oceania", symbol: "triangle",
-    neighbors: ["sumatra", "borneu", "nova_guine"],
+  {
+    id: "australia",
+    name: "Australia",
+    namePt: "Austrália",
+    continent: "oceania",
+    symbol: "triangle",
+    countries: ["Australia", "New Zealand", "New Caledonia"],
+    centerOverride: [1048, 418],
+    neighbors: ["sumatra", "borneu", "nova_guine", "argentina"],
   },
-};
+];
 
-const BASE_URL = "https://raw.githubusercontent.com/raddrick/risk-map-svg/master/src/countries/";
+// Generate global coastline land outline and graticules for Cartographic Mode
+const landFeature = topojson.feature(c110, c110.objects.land);
+const basePathGen = d3.geoPath(BASE_PROJ).digits(1);
+const globalLandSvgPath = basePathGen(landFeature) || "";
+const graticuleSvgPath = basePathGen(d3.geoGraticule10()) || "";
 
-async function main() {
-  console.log("Fetching realistic geopolitical paths from risk-map-svg...");
-  const cache: Record<string, string> = {};
+const builtTerritories = SPECS.map((spec) => {
+  const merged = mergeCountries(spec.countries);
+  const { d, center } = renderClipped(merged, spec.boxes);
+  return {
+    id: spec.id,
+    name: spec.name,
+    namePt: spec.namePt,
+    continent: spec.continent,
+    subRegion: spec.subRegion,
+    symbol: spec.symbol,
+    neighbors: spec.neighbors,
+    center: spec.centerOverride ?? center,
+    svgPath: d,
+  };
+});
 
-  async function getFile(rel: string): Promise<string> {
-    if (cache[rel]) return cache[rel];
-    const text = await fetchText(BASE_URL + rel);
-    cache[rel] = extractPath(text);
-    return cache[rel];
+for (const t of builtTerritories) {
+  if (!t.svgPath || Number.isNaN(t.center[0])) {
+    throw new Error(`Invalid geometry for ${t.id}`);
   }
+  console.log(`${t.id.padEnd(15)} center=[${t.center[0]}, ${t.center[1]}] pathLen=${t.svgPath.length}`);
+}
 
-  const outputTerritories = [];
+const currentSrc = fs.readFileSync(path.join(__dirname, "../src/index.ts"), "utf-8");
+const objIndex = currentSrc.indexOf("export const CLASSIC_OBJECTIVES");
+const objectivesCode = currentSrc.slice(objIndex);
 
-  for (const [id, spec] of Object.entries(TERRITORY_SPECS)) {
-    let combinedSvg = "";
-    for (const f of spec.files) {
-      if (f === "au/indonesia.js:sumatra") {
-        const full = await getFile("au/indonesia.js");
-        // Split subpaths and keep Sumatra/Java (y >= 430)
-        const parts = full.split(/(?=[M|m])/);
-        combinedSvg = parts
-          .filter((p) => {
-            const m = p.match(/[M|m](\d+)\s+(\d+)/);
-            if (!m) return false;
-            return parseInt(m[2], 10) >= 430;
-          })
-          .join(" ");
-      } else if (f === "au/indonesia.js:borneo") {
-        const full = await getFile("au/indonesia.js");
-        // Keep Borneo (y < 430)
-        const parts = full.split(/(?=[M|m])/);
-        combinedSvg = parts
-          .filter((p) => {
-            const m = p.match(/[M|m](\d+)\s+(\d+)/);
-            if (!m) return false;
-            return parseInt(m[2], 10) < 430;
-          })
-          .join(" ");
-      } else {
-        const p = await getFile(f);
-        combinedSvg += (combinedSvg ? " " : "") + p;
-      }
-    }
+const outputTs = `import type { GameMapDef, ObjectiveCard } from "@hegemonia/shared";
 
-    const bbox = computeBBox(combinedSvg);
+export const MAP_WIDTH = ${MAP_WIDTH};
+export const MAP_HEIGHT = 620;
+export const GLOBAL_LAND_SVG_PATH = ${JSON.stringify(globalLandSvgPath)};
+export const GRATICULE_SVG_PATH = ${JSON.stringify(graticuleSvgPath)};
 
-    outputTerritories.push({
-      id,
-      name: spec.name,
-      namePt: spec.namePt,
-      continent: spec.continent,
-      symbol: spec.symbol,
-      neighbors: spec.neighbors,
-      center: [bbox.cx, bbox.cy],
-      svgPath: combinedSvg,
-    });
-  }
+export interface AsiaSubRegionDef {
+  id: string;
+  namePt: string;
+  bonus: number;
+  territoryIds: string[];
+}
 
-  console.log(`Processed ${outputTerritories.length} realistic territories.`);
-
-  // Load existing objectives from packages/maps/src/index.ts
-  const currentSrc = fs.readFileSync(path.join(__dirname, "../src/index.ts"), "utf-8");
-  const objIndex = currentSrc.indexOf("export const CLASSIC_OBJECTIVES");
-  const objectivesCode = currentSrc.slice(objIndex);
-
-  const fileContent = `import type { GameMapDef, ObjectiveCard } from "@hegemonia/shared";
+export const ASIA_SUBREGIONS: AsiaSubRegionDef[] = [
+  {
+    id: "asia_indo_arabia",
+    namePt: "Ásia: Indo-Arábia",
+    bonus: 2,
+    territoryIds: ["oriente_medio", "aral", "india", "vietna"],
+  },
+  {
+    id: "asia_steppes",
+    namePt: "Ásia: Estepes & Sibéria",
+    bonus: 2,
+    territoryIds: ["omsk", "dudinka", "siberia", "tchita"],
+  },
+  {
+    id: "asia_east",
+    namePt: "Ásia: Leste Asiático",
+    bonus: 3,
+    territoryIds: ["vladivostok", "mongolia", "china", "japao"],
+  },
+];
 
 export const CLASSIC_MAP: GameMapDef = {
   id: "classic_42",
-  name: "Mundo Clássico Geopolítico (42 Territórios)",
+  name: "Mundo Geopolítico Natural Earth (42 Territórios)",
   continents: [
     { id: "south_america", name: "South America", namePt: "América do Sul", bonus: 2, color: "#10b981" },
     { id: "north_america", name: "North America", namePt: "América do Norte", bonus: 5, color: "#f59e0b" },
@@ -453,14 +715,11 @@ export const CLASSIC_MAP: GameMapDef = {
     { id: "asia", name: "Asia", namePt: "Ásia", bonus: 7, color: "#ef4444" },
     { id: "oceania", name: "Oceania", namePt: "Oceania", bonus: 2, color: "#a855f7" },
   ],
-  territories: ${JSON.stringify(outputTerritories, null, 2)} as any,
+  territories: ${JSON.stringify(builtTerritories, null, 2)} as any,
 };
 
 ${objectivesCode}
 `;
 
-  fs.writeFileSync(path.join(__dirname, "../src/index.ts"), fileContent, "utf-8");
-  console.log("Successfully wrote packages/maps/src/index.ts with realistic geopolitical curves!");
-}
-
-main().catch(console.error);
+fs.writeFileSync(path.join(__dirname, "../src/index.ts"), outputTs, "utf-8");
+console.log("✅ Successfully generated Natural Earth Geopolitical Map!");

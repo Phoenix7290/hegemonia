@@ -162,7 +162,7 @@ export class HegemoniaRoom extends Room {
       const text = String(payload?.text ?? "").trim().slice(0, 240);
       if (!sender || !text) return;
       if (this.gameState) {
-        this.gameState.log.push(`💬 ${sender.name}: ${text}`);
+        this.gameState.log.push(`[COMMS] ${sender.name}: ${text}`);
         this.broadcastRoomState();
       } else {
         this.broadcast("chat_msg", { from: sender.name, color: sender.color, text });
@@ -278,7 +278,7 @@ export class HegemoniaRoom extends Room {
   private handleTurnTimeout() {
     if (!this.gameState || this.gameState.phase === "game_over") return;
     const current = this.gameState.players[this.gameState.turnIndex];
-    this.gameState.log.push(`⏱️ Tempo esgotado para ${current.name}! Ação automática executada.`);
+    this.gameState.log.push(`[TEMPO] Tempo esgotado para ${current.name}. Ação automática executada.`);
     this.runSingleBotStep(current.id);
     this.resetTurnTimer();
   }
