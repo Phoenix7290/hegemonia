@@ -1086,4 +1086,213 @@ describe("Territorial Infrastructure & Building System (HEGEM-32)", () => {
       )
     ).toThrow(/já realizou/i);
   });
+
+  it("handles AoE2 dynamic global market pricing, buy/sell variations, and access restrictions (HEGEM-22)", () => {
+    const rng = createSeededRng("hegem-22-market");
+    let state = createGame({
+      id: "g_market",
+      seed: "hegem-22-market",
+      players: [
+        { id: "p1", name: "Alice", color: "blue" },
+        { id: "p2", name: "Bob", color: "red" },
+      ],
+    });
+
+    const activeId = state.players[state.turnIndex].id;
+    const player = state.players.find((p) => p.id === activeId)!;
+
+    // Ensure no markets initially
+    for (const t of Object.values(state.territories)) {
+      t.buildings = [];
+    }
+
+    player.resources = { money: 50, steel: 5, oil: 5, gold: 5 };
+
+    // Cannot trade without a Market building
+    expect(() =>
+      applyAction(
+        state,
+        activeId,
+        { type: "market_trade", resource: "steel", operation: "buy", quantity: 1 },
+        rng
+      )
+    ).toThrow(/Mercado construído/i);
+
+    // Give player a territory with a Market
+    const ownedTerr = Object.values(state.territories).find((t) => t.ownerId === activeId)!;
+    ownedTerr.buildings = [{ type: "market", level: 1 }];
+
+    // Initial steel price: buy $4, sell $3
+    expect(state.marketPrices.steel.buyPrice).toBe(4);
+    expect(state.marketPrices.steel.sellPrice).toBe(3);
+
+    // Buy 2 steel: unit 1 costs $4 (prices become buy $5, sell $4), unit 2 costs $5 (prices become buy $6, sell $5) -> total $9
+    state = applyAction(
+      state,
+      activeId,
+      { type: "market_trade", resource: "steel", operation: "buy", quantity: 2 },
+      rng
+    );
+
+    const updatedP1 = state.players.find((p) => p.id === activeId)!;
+    expect(updatedP1.resources.money).toBe(50 - 9);
+    expect(updatedP1.resources.steel).toBe(5 + 2);
+    expect(state.marketPrices.steel.buyPrice).toBe(6);
+    expect(state.marketPrices.steel.sellPrice).toBe(5);
+
+    // Sell 1 steel: unit 1 sells for $5 -> prices become sell $4, buy $5 -> revenue $5
+    state = applyAction(
+      state,
+      activeId,
+      { type: "market_trade", resource: "steel", operation: "sell", quantity: 1 },
+      rng
+    );
+
+    const updatedP1AfterSell = state.players.find((p) => p.id === activeId)!;
+    expect(updatedP1AfterSell.resources.money).toBe(41 + 5);
+    expect(updatedP1AfterSell.resources.steel).toBe(6);
+    expect(state.marketPrices.steel.buyPrice).toBe(5);
+    expect(state.marketPrices.steel.sellPrice).toBe(4);
+
+    // Dynamic Gold pricing: step $2, base buy $8, sell $6
+    expect(state.marketPrices.gold.buyPrice).toBe(8);
+    expect(state.marketPrices.gold.sellPrice).toBe(6);
+
+    state = applyAction(
+      state,
+      activeId,
+      { type: "market_trade", resource: "gold", operation: "buy", quantity: 1 },
+      rng
+    );
+    expect(state.marketPrices.gold.buyPrice).toBe(10);
+    expect(state.marketPrices.gold.sellPrice).toBe(8);
+  });
+
+  it("establishes Allied Investment Routes between treatied nations with Markets, generates escalating income, and dissolves upon treaty breach (HEGEM-22)", () => {
+    const rng = createSeededRng("hegem-22-investment");
+    let state = createGame({
+      id: "g_inv",
+      seed: "hegem-22-investment",
+      players: [
+        { id: "p1", name: "Alice", color: "blue" },
+        { id: "p2", name: "Bob", color: "red" },
+      ],
+    });
+
+    const p1 = state.players[0];
+    const p2 = state.players[1];
+
+    p1.resources = { money: 10, steel: 0, oil: 0, gold: 0 };
+    p2.resources = { money: 10, steel: 0, oil: 0, gold: 0 };
+
+    // Give both players a territory with a Market
+    const terr1 = Object.values(state.territories).find((t) => t.ownerId === p1.id)!;
+    const terr2 = Object.values(state.territories).find((t) => t.ownerId === p2.id)!;
+    terr1.buildings = [{ type: "market", level: 1 }];
+    terr2.buildings = [{ type: "market", level: 1 }];
+
+    // Cannot propose without a bilateral treaty
+    expect(() =>
+      applyAction(state, p1.id, { type: "propose_investment", targetPlayerId: p2.id }, rng)
+    ).toThrow(/tratado ativo prévio/i);
+
+    // Establish Non-Aggression Pact
+    state = applyAction(
+      state,
+      p1.id,
+      { type: "propose_treaty", targetPlayerId: p2.id, treatyType: "nap" },
+      rng
+    );
+    const treatyProposal = state.treaties.find((t) => t.status === "pending")!;
+    state = applyAction(state, p2.id, { type: "accept_treaty", treatyId: treatyProposal.id }, rng);
+
+    // Now propose investment route
+    state = applyAction(state, p1.id, { type: "propose_investment", targetPlayerId: p2.id }, rng);
+    expect(state.investmentRoutes.length).toBe(1);
+    expect(state.investmentRoutes[0].status).toBe("pending");
+
+    // Bob accepts investment route: both pay $3 opening capital
+    const route = state.investmentRoutes[0];
+    state = applyAction(state, p2.id, { type: "accept_investment", routeId: route.id }, rng);
+
+    expect(state.players.find((p) => p.id === p1.id)!.resources.money).toBe(7);
+    expect(state.players.find((p) => p.id === p2.id)!.resources.money).toBe(7);
+    expect(state.investmentRoutes[0].status).toBe("active");
+    expect(state.investmentRoutes[0].roundsActive).toBe(0);
+
+    // Check turn economy with active route: +$2 for route (plus +$2 market and +$3 capital)
+    const econ = calculateTurnEconomy(state, p1.id);
+    expect(econ.investmentMoney).toBe(2);
+
+    // After 3 rounds active, escalates to +$3
+    state.investmentRoutes[0].roundsActive = 3;
+    const escalatedEcon = calculateTurnEconomy(state, p1.id);
+    expect(escalatedEcon.investmentMoney).toBe(3);
+
+    // If Alice breaks treaty, the route is immediately dissolved and confiscated
+    const activeTreaty = state.treaties.find((t) => t.status === "active")!;
+    state = applyAction(state, p1.id, { type: "break_treaty", treatyId: activeTreaty.id }, rng);
+
+    expect(state.investmentRoutes.length).toBe(0);
+    const dissolvedEcon = calculateTurnEconomy(state, p1.id);
+    expect(dissolvedEcon.investmentMoney).toBe(0);
+  });
+
+  it("executes Border Trade between adjacent territories without impacting market inflation (HEGEM-22)", () => {
+    const rng = createSeededRng("hegem-22-border-trade");
+    let state = createGame({
+      id: "g_btrade",
+      seed: "hegem-22-border-trade",
+      players: [
+        { id: "p1", name: "Alice", color: "blue" },
+        { id: "p2", name: "Bob", color: "red" },
+      ],
+    });
+
+    const p1 = state.players[0];
+    const p2 = state.players[1];
+
+    p1.resources = { money: 10, steel: 3, oil: 0, gold: 0 };
+    p2.resources = { money: 15, steel: 0, oil: 0, gold: 0 };
+
+    // Brasil (p1) is adjacent to Argentina (p2)
+    state.territories["brasil"].ownerId = p1.id;
+    state.territories["brasil"].armies = 3;
+
+    state.territories["argentina"].ownerId = p2.id;
+    state.territories["argentina"].armies = 2;
+
+    const initialSteelBuyPrice = state.marketPrices.steel.buyPrice;
+
+    // Alice proposes border trade: 1 steel for $6
+    state = applyAction(
+      state,
+      p1.id,
+      {
+        type: "propose_border_trade",
+        targetPlayerId: p2.id,
+        fromTerritoryId: "brasil",
+        toTerritoryId: "argentina",
+        resource: "steel",
+        price: 6,
+      },
+      rng
+    );
+
+    expect(state.borderTrades.length).toBe(1);
+    expect(state.borderTrades[0].status).toBe("pending");
+
+    // Bob accepts the deal
+    const dealId = state.borderTrades[0].id;
+    state = applyAction(state, p2.id, { type: "accept_border_trade", dealId }, rng);
+
+    // Resources transferred: Bob paid $6 and gained 1 steel; Alice gained $6 and lost 1 steel
+    expect(state.players.find((p) => p.id === p2.id)!.resources.money).toBe(9);
+    expect(state.players.find((p) => p.id === p2.id)!.resources.steel).toBe(1);
+    expect(state.players.find((p) => p.id === p1.id)!.resources.money).toBe(16);
+    expect(state.players.find((p) => p.id === p1.id)!.resources.steel).toBe(2);
+
+    // Global market price remains untouched (zero inflation from border trade)
+    expect(state.marketPrices.steel.buyPrice).toBe(initialSteelBuyPrice);
+  });
 });

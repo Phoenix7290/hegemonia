@@ -9,6 +9,7 @@
   } from "@hegemonia/maps";
   import {
     BUILDING_COSTS,
+    DEFAULT_MARKET_CONFIG,
     FORTIFICATION_LEVEL_2_COST,
     calculateTurnEconomy,
     findValidTradeTriplet,
@@ -16,8 +17,9 @@
     getTerritoryMaxBuildingSlots,
     getTradeBonusArmies,
     hasTerritoryBuilding,
+    playerHasMarket,
   } from "@hegemonia/engine";
-  import type { BuildingType, GameState, PlayerColor } from "@hegemonia/shared";
+  import type { BuildingType, GameState, PlayerColor, ResourceType } from "@hegemonia/shared";
   import { sound } from "./audio.js";
   import { estimateAttackWinOdds } from "./odds.js";
   import { auth } from "./lib/auth.svelte";
@@ -175,8 +177,9 @@
   let selectedAttackDice = $state<number | null>(null); // null = auto max dice
 
   // HUD Drawers (Mutually Exclusive on Right Panel to Prevent Overlap)
-  let activeRightDrawer = $state<"cards" | "objective" | "audio" | null>(null);
+  let activeRightDrawer = $state<"cards" | "objective" | "audio" | "market" | null>(null);
   let showContinents = $state(false);
+  let marketBatchQty = $state<number>(1);
 
   // Session Resilience & Reconnection State
   let isReconnecting = $state(false);
@@ -226,7 +229,7 @@
     isImmersiveMode = !isImmersiveMode;
   }
 
-  function toggleRightDrawer(drawer: "cards" | "objective" | "audio") {
+  function toggleRightDrawer(drawer: "cards" | "objective" | "audio" | "market") {
     sound.playClick();
     showHudManager = false;
     activeRightDrawer = activeRightDrawer === drawer ? null : drawer;
@@ -242,6 +245,53 @@
   let validTradeTriplet = $derived(myPlayerState ? findValidTradeTriplet(myPlayerState.cards) : null);
   let nextTradeBonus = $derived(game ? getTradeBonusArmies(game.tradeCount) : 4);
   let amIHost = $derived(lobbyPlayers.find((p) => p.token === myPlayerId)?.isHost ?? false);
+  let myHasMarket = $derived(
+    Boolean(game && myPlayerId && playerHasMarket(game, myPlayerId))
+  );
+  let eligibleInvestmentPartners = $derived.by(() => {
+    if (!game || !myPlayerId) return [];
+    return game.players.filter(
+      (p) =>
+        p.id !== myPlayerId &&
+        !p.eliminated &&
+        playerHasMarket(game, p.id) &&
+        (game.treaties ?? []).some(
+          (tr) =>
+            tr.status === "active" &&
+            ((tr.fromPlayerId === myPlayerId && tr.toPlayerId === p.id) ||
+              (tr.fromPlayerId === p.id && tr.toPlayerId === myPlayerId))
+        ) &&
+        !(game.investmentRoutes ?? []).some(
+          (ir) =>
+            (ir.playerAId === myPlayerId && ir.playerBId === p.id) ||
+            (ir.playerAId === p.id && ir.playerBId === myPlayerId)
+        )
+    );
+  });
+
+  function getEstBuyCost(resource: ResourceType, qty: number): number {
+    if (!game?.marketPrices) return 0;
+    const cfg = DEFAULT_MARKET_CONFIG[resource];
+    let cost = 0;
+    let p = game.marketPrices[resource].buyPrice;
+    for (let i = 0; i < qty; i++) {
+      cost += p;
+      p = Math.min(cfg.maxBuy, p + cfg.step);
+    }
+    return cost;
+  }
+
+  function getEstSellRevenue(resource: ResourceType, qty: number): number {
+    if (!game?.marketPrices) return 0;
+    const cfg = DEFAULT_MARKET_CONFIG[resource];
+    let rev = 0;
+    let p = game.marketPrices[resource].sellPrice;
+    for (let i = 0; i < qty; i++) {
+      rev += p;
+      p = Math.max(cfg.minSell, p - cfg.step);
+    }
+    return rev;
+  }
 
   // Diplomatic Dossier, World Tension & Treaties State
   let activeDiplomacyTargetId = $state<string | null>(null);
@@ -711,6 +761,50 @@
       type: "build_structure",
       territoryId,
       buildingType,
+    });
+  }
+
+  function handleMarketTrade(resource: ResourceType, operation: "buy" | "sell") {
+    sendAction({
+      type: "market_trade",
+      resource,
+      operation,
+      quantity: marketBatchQty,
+    });
+  }
+
+  function handleProposeInvestment(targetPlayerId: string) {
+    sendAction({
+      type: "propose_investment",
+      targetPlayerId,
+    });
+  }
+
+  function handleAcceptInvestment(routeId: string) {
+    sendAction({
+      type: "accept_investment",
+      routeId,
+    });
+  }
+
+  function handleRejectInvestment(routeId: string) {
+    sendAction({
+      type: "reject_investment",
+      routeId,
+    });
+  }
+
+  function handleAcceptBorderTrade(dealId: string) {
+    sendAction({
+      type: "accept_border_trade",
+      dealId,
+    });
+  }
+
+  function handleRejectBorderTrade(dealId: string) {
+    sendAction({
+      type: "reject_border_trade",
+      dealId,
     });
   }
 
@@ -1746,6 +1840,16 @@
 
             <button
               class="hud-btn"
+              class:highlight={Boolean(myHasMarket && isMyTurn)}
+              class:active={activeRightDrawer === "market"}
+              onclick={() => toggleRightDrawer("market")}
+              title={t("market_btn_open")}
+            >
+              <Icon name="market" size={14} /> {t("market_btn_open")}
+            </button>
+
+            <button
+              class="hud-btn"
               class:active={activeRightDrawer === "audio" || (ui.isMusicPlaying && !ui.isMuted)}
               onclick={() => toggleRightDrawer("audio")}
               title={t("audio_radio_eq")}
@@ -2126,6 +2230,211 @@
                     </button>
                   </div>
                 {/if}
+              </div>
+            {/if}
+          </div>
+        {/if}
+
+        <!-- Global Dynamic Market & Allied Trade Drawer (HEGEM-22) -->
+        {#if activeRightDrawer === "market" && myPlayerState && game}
+          <div class="floating-drawer market-drawer">
+            <div class="drawer-header">
+              <h4><Icon name="market" size={15} /> {t("market_modal_title")}</h4>
+              <button class="btn-close" onclick={() => (activeRightDrawer = null)}>✕</button>
+            </div>
+            <p class="drawer-sub">{t("market_modal_sub")}</p>
+
+            {#if !myHasMarket}
+              <div class="market-locked-box">
+                <Icon name="shield" size={16} />
+                <span>{t("market_locked_notice")}</span>
+              </div>
+            {:else}
+              <div class="market-active-banner">
+                <div class="market-status-tag">
+                  <Icon name="industry" size={13} /> {t("market_has_access")}
+                </div>
+                <div class="market-batch-selector">
+                  <span class="batch-label">{t("market_batch_qty", { qty: "" })}</span>
+                  <div class="batch-buttons">
+                    {#each [1, 5, 10] as qty}
+                      <button
+                        class="batch-btn"
+                        class:active={marketBatchQty === qty}
+                        onclick={() => (marketBatchQty = qty)}
+                      >
+                        {qty}x
+                      </button>
+                    {/each}
+                  </div>
+                </div>
+              </div>
+
+              <!-- Commodities Grid -->
+              <div class="market-commodities-grid">
+                {#each (["steel", "oil", "gold"] as const) as res}
+                  {@const stock = myPlayerState.resources[res] ?? 0}
+                  {@const buyCost = getEstBuyCost(res, marketBatchQty)}
+                  {@const sellRev = getEstSellRevenue(res, marketBatchQty)}
+                  {@const currentPrice = game.marketPrices[res]}
+                  {@const canAffordBuy = isMyTurn && myPlayerState.resources.money >= buyCost}
+                  {@const canSell = isMyTurn && stock >= marketBatchQty}
+                  <div class="commodity-card">
+                    <div class="commodity-head">
+                      <div class="res-badge">
+                        <Icon name={res} size={15} />
+                        <strong>{t(`res_${res}`)}</strong>
+                      </div>
+                      <span class="res-stock-count">{stock} {t("building_built_tag")}</span>
+                    </div>
+                    <div class="commodity-prices">
+                      <div class="price-pill buy">
+                        <span class="pill-lbl">{t("market_price_buy")}</span>
+                        <span class="pill-val">${currentPrice.buyPrice}</span>
+                      </div>
+                      <div class="price-pill sell">
+                        <span class="pill-lbl">{t("market_price_sell")}</span>
+                        <span class="pill-val">${currentPrice.sellPrice}</span>
+                      </div>
+                    </div>
+                    <div class="commodity-actions">
+                      <button
+                        class="btn-trade buy"
+                        disabled={!canAffordBuy}
+                        onclick={() => handleMarketTrade(res, "buy")}
+                        title={!isMyTurn ? "Apenas no seu turno" : !canAffordBuy ? "Dinheiro insuficiente" : ""}
+                      >
+                        {t("market_btn_buy")} {marketBatchQty}x (-${buyCost})
+                      </button>
+                      <button
+                        class="btn-trade sell"
+                        disabled={!canSell}
+                        onclick={() => handleMarketTrade(res, "sell")}
+                        title={!isMyTurn ? "Apenas no seu turno" : !canSell ? "Estoque insuficiente" : ""}
+                      >
+                        {t("market_btn_sell")} {marketBatchQty}x (+${sellRev})
+                      </button>
+                    </div>
+                  </div>
+                {/each}
+              </div>
+            {/if}
+
+            <!-- Allied Investment Routes -->
+            <div class="drawer-section-divider"></div>
+            <div class="routes-section">
+              <div class="routes-header">
+                <h5><Icon name="handshake" size={14} /> {t("investment_routes_title")}</h5>
+                <span class="routes-hint">{t("investment_routes_sub")}</span>
+              </div>
+
+              <!-- Active Routes -->
+              {#if game.investmentRoutes && game.investmentRoutes.filter(r => r.status === "active" && (r.playerAId === myPlayerId || r.playerBId === myPlayerId)).length > 0}
+                <div class="routes-list">
+                  {#each game.investmentRoutes.filter(r => r.status === "active" && (r.playerAId === myPlayerId || r.playerBId === myPlayerId)) as r}
+                    {@const partnerId = r.playerAId === myPlayerId ? r.playerBId : r.playerAId}
+                    {@const partner = game.players.find(p => p.id === partnerId)}
+                    <div class="route-item active">
+                      <div class="route-info">
+                        <FactionFlag color={partner?.color ?? "blue"} width={16} height={10} />
+                        <strong>{partner?.name ?? "Aliado"}</strong>
+                        <span class="route-badge">
+                          {t("investment_status_active", { income: r.roundsActive >= 3 ? 3 : 2, rounds: r.roundsActive })}
+                        </span>
+                      </div>
+                    </div>
+                  {/each}
+                </div>
+              {/if}
+
+              <!-- Pending Proposals to Me -->
+              {#if game.investmentRoutes && game.investmentRoutes.some(r => r.status === "pending" && r.playerBId === myPlayerId)}
+                <div class="pending-proposals-list">
+                  {#each game.investmentRoutes.filter(r => r.status === "pending" && r.playerBId === myPlayerId) as r}
+                    {@const proposer = game.players.find(p => p.id === r.playerAId)}
+                    <div class="route-item pending">
+                      <div class="route-info">
+                        <FactionFlag color={proposer?.color ?? "blue"} width={16} height={10} />
+                        <span>{proposer?.name}: {t("investment_status_pending")}</span>
+                      </div>
+                      <div class="route-actions">
+                        <button
+                          class="btn-route accept"
+                          disabled={myPlayerState.resources.money < 3}
+                          onclick={() => handleAcceptInvestment(r.id)}
+                        >
+                          {t("investment_btn_accept")}
+                        </button>
+                        <button
+                          class="btn-route reject"
+                          onclick={() => handleRejectInvestment(r.id)}
+                        >
+                          {t("investment_btn_reject")}
+                        </button>
+                      </div>
+                    </div>
+                  {/each}
+                </div>
+              {/if}
+
+              <!-- Eligible Partners to Propose -->
+              {#if eligibleInvestmentPartners.length > 0}
+                <div class="eligible-partners-list">
+                  {#each eligibleInvestmentPartners as partner}
+                    <div class="partner-row">
+                      <div class="partner-name">
+                        <FactionFlag color={partner.color} width={16} height={10} />
+                        <span>{partner.name}</span>
+                      </div>
+                      <button
+                        class="btn-propose-route"
+                        disabled={myPlayerState.resources.money < 3}
+                        onclick={() => handleProposeInvestment(partner.id)}
+                      >
+                        {t("investment_btn_propose")}
+                      </button>
+                    </div>
+                  {/each}
+                </div>
+              {:else if (!game.investmentRoutes || !game.investmentRoutes.some(r => r.playerAId === myPlayerId || r.playerBId === myPlayerId))}
+                <p class="empty-routes-hint">{t("investment_no_allies")}</p>
+              {/if}
+            </div>
+
+            <!-- Border Trade Pending Deals -->
+            {#if game.borderTrades && game.borderTrades.some(d => d.status === "pending" && d.toPlayerId === myPlayerId)}
+              <div class="drawer-section-divider"></div>
+              <div class="border-trade-section">
+                <div class="routes-header">
+                  <h5><Icon name="handshake" size={14} /> {t("border_trade_title")}</h5>
+                  <span class="routes-hint">{t("border_trade_sub")}</span>
+                </div>
+                <div class="pending-proposals-list">
+                  {#each game.borderTrades.filter(d => d.status === "pending" && d.toPlayerId === myPlayerId) as d}
+                    {@const seller = game.players.find(p => p.id === d.fromPlayerId)}
+                    <div class="route-item pending">
+                      <div class="route-info">
+                        <FactionFlag color={seller?.color ?? "blue"} width={16} height={10} />
+                        <span>{t("border_trade_pending_desc", { from: getTerritoryName(d.fromTerritoryId), to: getTerritoryName(d.toTerritoryId), resource: t(`res_${d.resource}`), price: d.price })}</span>
+                      </div>
+                      <div class="route-actions">
+                        <button
+                          class="btn-route accept"
+                          disabled={myPlayerState.resources.money < d.price}
+                          onclick={() => handleAcceptBorderTrade(d.id)}
+                        >
+                          {t("border_trade_accept_btn", { price: d.price })}
+                        </button>
+                        <button
+                          class="btn-route reject"
+                          onclick={() => handleRejectBorderTrade(d.id)}
+                        >
+                          {t("border_trade_reject_btn")}
+                        </button>
+                      </div>
+                    </div>
+                  {/each}
+                </div>
               </div>
             {/if}
           </div>
@@ -3689,6 +3998,280 @@
     gap: 0.45rem;
     max-height: 235px;
     overflow-y: auto;
+  }
+  .floating-drawer.market-drawer {
+    max-height: 480px;
+  }
+  .drawer-sub {
+    font-size: 0.74rem;
+    color: #94a3b8;
+    line-height: 1.35;
+    margin: 0;
+  }
+  .market-locked-box {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    background: rgba(239, 68, 68, 0.12);
+    border: 1px solid rgba(239, 68, 68, 0.35);
+    padding: 0.5rem 0.65rem;
+    border-radius: 4px;
+    color: #fca5a5;
+    font-size: 0.76rem;
+    line-height: 1.35;
+  }
+  .market-active-banner {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: rgba(16, 185, 129, 0.1);
+    border: 1px solid rgba(16, 185, 129, 0.3);
+    padding: 0.3rem 0.5rem;
+    border-radius: 4px;
+  }
+  .market-status-tag {
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+    font-size: 0.72rem;
+    color: #6ee7b7;
+    font-weight: 600;
+  }
+  .market-batch-selector {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+  }
+  .batch-label {
+    font-size: 0.68rem;
+    color: #94a3b8;
+  }
+  .batch-buttons {
+    display: flex;
+    gap: 2px;
+  }
+  .batch-btn {
+    background: rgba(15, 23, 42, 0.8);
+    border: 1px solid rgba(148, 163, 184, 0.3);
+    color: #94a3b8;
+    padding: 1px 6px;
+    font-size: 0.68rem;
+    border-radius: 3px;
+    cursor: pointer;
+  }
+  .batch-btn.active {
+    background: #eab308;
+    border-color: #fde047;
+    color: #020617;
+    font-weight: bold;
+  }
+  .market-commodities-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+  }
+  .commodity-card {
+    background: rgba(10, 17, 34, 0.85);
+    border: 1px solid rgba(148, 163, 184, 0.18);
+    border-radius: 4px;
+    padding: 0.4rem 0.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+  }
+  .commodity-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .res-badge {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    font-size: 0.78rem;
+    color: #f8fafc;
+  }
+  .res-stock-count {
+    font-size: 0.7rem;
+    color: #cbd5e1;
+    background: rgba(255, 255, 255, 0.06);
+    padding: 1px 5px;
+    border-radius: 3px;
+  }
+  .commodity-prices {
+    display: flex;
+    gap: 0.4rem;
+  }
+  .price-pill {
+    flex: 1;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-size: 0.7rem;
+  }
+  .price-pill.buy {
+    background: rgba(59, 130, 246, 0.12);
+    border: 1px solid rgba(59, 130, 246, 0.25);
+    color: #93c5fd;
+  }
+  .price-pill.sell {
+    background: rgba(234, 179, 8, 0.12);
+    border: 1px solid rgba(234, 179, 8, 0.25);
+    color: #fde047;
+  }
+  .commodity-actions {
+    display: flex;
+    gap: 0.35rem;
+  }
+  .btn-trade {
+    flex: 1;
+    padding: 3px 5px;
+    font-size: 0.72rem;
+    border-radius: 3px;
+    cursor: pointer;
+    font-weight: 600;
+  }
+  .btn-trade.buy {
+    background: #1e3a8a;
+    border: 1px solid #3b82f6;
+    color: #eff6ff;
+  }
+  .btn-trade.buy:hover:not(:disabled) {
+    background: #2563eb;
+  }
+  .btn-trade.sell {
+    background: #854d0e;
+    border: 1px solid #eab308;
+    color: #fefce8;
+  }
+  .btn-trade.sell:hover:not(:disabled) {
+    background: #ca8a04;
+  }
+  .btn-trade:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+  .drawer-section-divider {
+    height: 1px;
+    background: rgba(212, 175, 55, 0.2);
+    margin: 0.2rem 0;
+  }
+  .routes-section, .border-trade-section {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+  }
+  .routes-header {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .routes-header h5 {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    font-size: 0.78rem;
+    color: #fde047;
+    margin: 0;
+  }
+  .routes-hint {
+    font-size: 0.7rem;
+    color: #94a3b8;
+  }
+  .routes-list, .pending-proposals-list, .eligible-partners-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+  }
+  .route-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.3rem 0.5rem;
+    border-radius: 4px;
+    font-size: 0.74rem;
+    background: rgba(15, 23, 42, 0.7);
+    border: 1px solid rgba(148, 163, 184, 0.2);
+  }
+  .route-item.active {
+    border-color: rgba(16, 185, 129, 0.4);
+  }
+  .route-info {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    color: #f1f5f9;
+  }
+  .route-badge {
+    color: #6ee7b7;
+    font-size: 0.68rem;
+    font-weight: 600;
+  }
+  .route-actions {
+    display: flex;
+    gap: 0.3rem;
+  }
+  .btn-route {
+    padding: 2px 6px;
+    font-size: 0.68rem;
+    border-radius: 3px;
+    cursor: pointer;
+    font-weight: 600;
+  }
+  .btn-route.accept {
+    background: #065f46;
+    border: 1px solid #10b981;
+    color: #ecfdf5;
+  }
+  .btn-route.reject {
+    background: #7f1d1d;
+    border: 1px solid #ef4444;
+    color: #fef2f2;
+  }
+  .btn-route:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+  .partner-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.25rem 0.45rem;
+    background: rgba(15, 23, 42, 0.5);
+    border: 1px solid rgba(148, 163, 184, 0.15);
+    border-radius: 3px;
+  }
+  .partner-name {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    font-size: 0.74rem;
+    color: #f1f5f9;
+  }
+  .btn-propose-route {
+    background: #1e3a8a;
+    border: 1px solid #3b82f6;
+    color: #eff6ff;
+    padding: 2px 7px;
+    font-size: 0.7rem;
+    border-radius: 3px;
+    cursor: pointer;
+    font-weight: 600;
+  }
+  .btn-propose-route:hover:not(:disabled) {
+    background: #2563eb;
+  }
+  .btn-propose-route:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+  .empty-routes-hint {
+    font-size: 0.7rem;
+    color: #64748b;
+    margin: 0;
+    font-style: italic;
   }
   .drawer-header {
     display: flex;
