@@ -999,12 +999,12 @@ export const ROLEPLAY_OBJECTIVES: ObjectiveCard[] = [
   },
   {
     id: "obj_rp_golden_crescent",
-    descriptionPt: "Crescente Dourado (União & Al-Andalus): Controlar as 6 regiões do Crescente (Oriente Médio, Egito, Argélia, Sudão, Cazaquistão, Sumatra) e toda a Europa.",
-    descriptionEn: "Golden Crescent (Union & Al-Andalus): Conquer the 6 Crescent regions (Middle East, Egypt, Algeria, Sudan, Kazakhstan, Sumatra) and all of Europe.",
+    descriptionPt: "Crescente Dourado (União & Al-Andalus): Controlar as 8 regiões do Crescente (Oriente Médio, Egito, Argélia, Sudão, Cazaquistão, Índia, Sumatra e Bornéu) e toda a Europa.",
+    descriptionEn: "Golden Crescent (Union & Al-Andalus): Conquer the 8 Crescent regions (Middle East, Egypt, Algeria, Sudan, Kazakhstan, India, Sumatra and Borneo) and all of Europe.",
     rule: {
       type: "specific_territories",
       territoryIds: [
-        "oriente_medio", "egito", "argelia", "sudao", "aral", "sumatra",
+        "oriente_medio", "egito", "argelia", "sudao", "aral", "india", "sumatra", "borneu",
         "islandia", "inglaterra", "suecia", "alemanha", "franca", "polonia", "balcas", "moscou"
       ],
     },
