@@ -2461,6 +2461,34 @@
     align-items: center;
     gap: 0.4rem;
   }
+  .mode-btn.clean-mode-tab {
+    border-left: 1px solid rgba(148, 163, 184, 0.25);
+    margin-left: 0.15rem;
+    padding-left: 0.45rem;
+    color: #38bdf8;
+  }
+  .mode-btn.clean-mode-tab.active {
+    background: linear-gradient(135deg, #0284c7, #0369a1);
+    color: #ffffff;
+  }
+  .clean-map-indicator {
+    position: absolute;
+    top: 4.8rem;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(6, 11, 21, 0.9);
+    border: 1px solid rgba(56, 189, 248, 0.5);
+    color: #e0f2fe;
+    padding: 0.35rem 0.9rem;
+    border-radius: 20px;
+    font-size: 0.72rem;
+    font-weight: 600;
+    pointer-events: none;
+    z-index: 10;
+    box-shadow: 0 4px 18px rgba(0, 0, 0, 0.65);
+    letter-spacing: 0.02em;
+    backdrop-filter: blur(4px);
+  }
   .zoom-cluster {
     display: flex;
     flex-direction: column;
