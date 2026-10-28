@@ -156,10 +156,26 @@
     <polygon points="6 14 9 8 15 8 18 14 6 14" />
     <polygon points="3 20 6 14 12 14 15 20 3 20" />
     <polygon points="12 14 18 14 21 20 15 20 12 14" />
-  {:else if name === "anchor"}
+  {:else if name === "anchor" || name === "port"}
     <circle cx="12" cy="5" r="3" />
     <line x1="12" y1="22" x2="12" y2="8" />
     <path d="M5 12H2a10 10 0 0 0 20 0h-3" />
+  {:else if name === "market"}
+    <path d="M3 9l1.8-5h14.4L21 9" />
+    <path d="M3 9c0 1.7 1.3 3 3 3s3-1.3 3-3c0 1.7 1.3 3 3 3s3-1.3 3-3c0 1.7 1.3 3 3 3s3-1.3 3-3" />
+    <path d="M5 12v8h14v-8" />
+    <line x1="9" y1="20" x2="9" y2="15" />
+    <line x1="15" y1="20" x2="15" y2="15" />
+  {:else if name === "industry"}
+    <path d="M2 20h20" />
+    <path d="M4 20V10l5 3V10l5 3V6h5v14" />
+    <line x1="16" y1="10" x2="16" y2="10.01" />
+    <line x1="16" y1="14" x2="16" y2="14.01" />
+  {:else if name === "fortification" || name === "fortress"}
+    <path d="M3 20h18v-8l-3-2V5h-3v3h-2V5h-2v3H9V5H6v5l-3 2z" />
+    <path d="M10 20v-4a2 2 0 0 1 4 0v4" />
+  {:else if name === "airfield"}
+    <path d="M17.8 19.2 16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2z" />
   {:else}
     <circle cx="12" cy="12" r="9" />
   {/if}

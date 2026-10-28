@@ -224,6 +224,27 @@ export const ptBRGame: TranslationCatalog = {
   cards_buy_gold_only_btn: "Comprar (2 Ouro)",
   cards_buy_gold_money_btn: "Comprar (1 Ouro + $4)",
   cards_buy_gold_done: "Carta estratégica já adquirida neste turno",
+
+  // Territorial Infrastructure & Buildings (HEGEM-32)
+  building_section_title: "Infraestrutura Territorial",
+  building_slots_count: "Slots ({used}/{max})",
+  building_market: "Mercado",
+  building_market_desc: "+$2/turno · Libera Mercado Global e Investimento",
+  building_industry: "Indústria",
+  building_industry_desc: "Dobra extração (+2) ou +$2/turno · Produz Tanques/Artilharia",
+  building_fortification_l1: "Casamata Nv. 1",
+  building_fortification_l2: "Fortaleza Nv. 2",
+  building_fortification_l1_desc: "+1 no maior dado de defesa do território",
+  building_fortification_l2_desc: "+1 na defesa e -1 no maior dado de ataque inimigo",
+  building_airfield: "Aeródromo",
+  building_airfield_desc: "Opera Força Aérea · Habilita Ponte Aérea Estratégica",
+  building_port: "Porto Naval",
+  building_port_desc: "Ancora Marinha · +$1/turno em Polo Comercial",
+  building_btn_construct: "Construir",
+  building_btn_upgrade_l2: "Evoluir Nv. 2",
+  building_built_tag: "Ativo",
+  building_coastal_only: "Apenas Costeiro",
+  airlift_btn_label: "Ponte Aérea (Aeródromo)",
 };
 
 export const game = ptBRGame;

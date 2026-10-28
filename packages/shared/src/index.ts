@@ -39,6 +39,20 @@ export type TurnPhase = z.infer<typeof TurnPhaseSchema>;
 export const ResourceTypeSchema = z.enum(["steel", "oil", "gold"]);
 export type ResourceType = z.infer<typeof ResourceTypeSchema>;
 
+export const BuildingTypeSchema = z.enum([
+  "market",
+  "industry",
+  "fortification",
+  "airfield",
+  "port",
+]);
+export type BuildingType = z.infer<typeof BuildingTypeSchema>;
+
+export interface TerritoryBuilding {
+  type: BuildingType;
+  level: number;
+}
+
 export interface PlayerResources {
   money: number;
   steel: number;
@@ -170,6 +184,10 @@ export interface TerritoryState {
   armies: number;
   /** Armies that already moved into this territory during the maneuver phase */
   movedInArmies: number;
+  /** Constructed infrastructure buildings on this territory (max 2 regular, 3 in active capital) */
+  buildings?: TerritoryBuilding[];
+  /** Whether this territory's airfield has already performed a strategic airlift this turn */
+  airliftedThisTurn?: boolean;
 }
 
 export interface PendingConquest {
@@ -190,6 +208,7 @@ export interface CombatRollResult {
   attackerModifier?: number;
   defenderModifier?: number;
   lastStandBonus?: boolean;
+  fortificationLevel?: number;
 }
 
 export interface GameState {
@@ -236,6 +255,19 @@ export const TradeCardsActionSchema = z.object({
 export const BuyCardWithGoldActionSchema = z.object({
   type: z.literal("buy_card_with_gold"),
   paymentMode: z.enum(["gold_only", "gold_and_money"]).optional(),
+});
+
+export const BuildStructureActionSchema = z.object({
+  type: z.literal("build_structure"),
+  territoryId: z.string(),
+  buildingType: BuildingTypeSchema,
+});
+
+export const AirliftActionSchema = z.object({
+  type: z.literal("airlift"),
+  fromTerritoryId: z.string(),
+  toTerritoryId: z.string(),
+  armies: z.number().int().min(1),
 });
 
 export const AttackActionSchema = z.object({
@@ -301,6 +333,8 @@ export const GameActionSchema = z.discriminatedUnion("type", [
   DeployActionSchema,
   TradeCardsActionSchema,
   BuyCardWithGoldActionSchema,
+  BuildStructureActionSchema,
+  AirliftActionSchema,
   AttackActionSchema,
   OccupyActionSchema,
   EndAttackPhaseActionSchema,
