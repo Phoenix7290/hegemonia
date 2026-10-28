@@ -985,13 +985,13 @@ export const ROLEPLAY_OBJECTIVES: ObjectiveCard[] = [
   },
   {
     id: "obj_rp_russia_third_rome",
-    descriptionPt: "Império Russo (Terceira Roma): Controlar todas as 6 províncias russas (Moscou, Omsk, Dudinka, Sibéria, Tchita, Vladivostok), Cazaquistão, Japão, Alasca e toda a Europa.",
-    descriptionEn: "Russian Empire (Third Rome): Conquer all 6 Russian regions (Moscow, Omsk, Dudinka, Siberia, Tchita, Vladivostok), Kazakhstan, Japan, Alaska and all of Europe.",
+    descriptionPt: "Império Russo (Terceira Roma): Controlar todas as 6 províncias russas (Moscou, Omsk, Dudinka, Sibéria, Tchita, Vladivostok), Japão, Alasca e toda a Europa.",
+    descriptionEn: "Russian Empire (Third Rome): Conquer all 6 Russian regions (Moscow, Omsk, Dudinka, Siberia, Tchita, Vladivostok), Japan, Alaska and all of Europe.",
     rule: {
       type: "specific_territories",
       territoryIds: [
         "moscou", "omsk", "dudinka", "siberia", "tchita", "vladivostok",
-        "aral", "japao", "alasca",
+        "japao", "alasca",
         "islandia", "inglaterra", "suecia", "alemanha", "franca", "polonia", "balcas"
       ],
     },

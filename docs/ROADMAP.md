@@ -15,22 +15,13 @@ This document outlines the architectural roadmap and upcoming milestone features
     1. *Japão Imperial (Sol Nascente)*: 13 territórios (Leste Asiático + Oceania + Arco do Pacífico).
     2. *Estados Unidos (Destino Manifesto)*: 15–16 territórios (Todas as Américas + [China & Mongólia] OU Moscou).
     3. *Império Lusitano (Três Oceanos)*: 10 territórios (América do Sul + entrepostos em França, Argélia, Congo, África do Sul, Índia e Sumatra).
-    4. *Império Russo (Terceira Roma)*: 16 territórios (6 províncias russas + Aral + Japão + Alasca + toda a Europa).
+    4. *Império Russo (Terceira Roma)*: 15 territórios (6 províncias russas + Japão + Alasca + toda a Europa).
     5. *Crescente Dourado (União & Al-Andalus)*: 14 territórios (6 regiões islâmicas + toda a Europa).
     6. *Pacto Austral (Aliança dos Três Oceanos)*: 14 territórios (América do Sul + África + Oceania).
     7. *Ordem Central Germânica (Mitteleuropa & Atlântico)*: 15 territórios (Toda a Europa + Oriente Médio, Omsk, Cazaquistão + Corredor do Atlântico Norte).
     8. *Império das Ilhas (Talassocracia Global)*: 10 territórios (Todos os 10 territórios insulares/arquipélagos do planeta).
     9. *Pax Britannica (O Império Onde o Sol Nunca se Põe)*: 12 territórios da Commonwealth global.
     10. *Império do Meio (Mandato do Céu & Rota da Seda)*: 14 territórios (China, Mongólia, Indo-Arábia, Oceania e Europa Oriental/Central).
-  - **Filtro Estrito de Elegibilidade de Objetivos**: O jogador só recebe um objetivo Roleplay / Alt-History se possuir pelo menos 1 território nuclear da facção na rodada inicial.
-  - **Guia Visual Interativo de Objetivos no Mapa**:
-    - Iluminação em tempo real dos alvos ao clicar no card de objetivo secreto (Verde neon nos já conquistados, Vermelho pulsante nos pendentes, opacidade reduzida nos territórios neutros).
-    - Barra de progresso com porcentagem dinâmica e contagem fracionária `(X / Y Territórios)`.
-  - **Mesa de Som Tática (Equalizador SFX vs Música)**:
-    - Sliders independentes com percentual exibido para trilha sonora e efeitos sonoros militares.
-    - Botão de Silenciador Geral (Mute) com persistência automática no `localStorage`.
-  - **Fluxo de Encerramento & Retorno ao Lobby**:
-    - Modal de vitória com estatísticas consolidadas e botão de reset para reiniciar o lobby sem derrubar a sala.
   - Strict 120s turn timers with automated fallback resolution.
   - Colyseus WebSocket server with transactional PostgreSQL match persistence.
   - Versioned database schema for accounts, authentication, seasons, rankings, and player statistics.
@@ -134,25 +125,8 @@ This document outlines the architectural roadmap and upcoming milestone features
 ### Epic XI — Supply Lines & Attrition
 - Units isolated from friendly ports or capital suffer logistical attrition (-1 army if over garrison limit).
 
-### Epic XII — Sistema de Tensão Mundial Global & Infâmia com Coalizões Dinâmicas
-- **1. Medidor de Tensão Global (World Tension 0-100%)**:
-  - Índice compartilhado por toda a mesa internacional.
-  - Escala dinamicamente com declarações de guerra, grandes ofensivas, quebra de tratados diplomáticos e eliminação de jogadores.
-  - Modifica a conjuntura global (desbloqueia sanções, embargos e eventos táticos).
-- **2. Barra de Infâmia Individual do Jogador (Player Infamy %)**:
-  - Cada general possui seu próprio termômetro de reputação internacional:
-    - **Nível Baixo (0% – 33%)**: Nenhuma coalizão defensiva permitida contra o jogador.
-    - **Nível Médio (34% – 66%)**: Jogador considerado agressor regional. Generais adjacentes ou ameaçados podem formar uma **Coalizão Bilateral (2 jogadores)** com pacto defensivo mútuo.
-    - **Nível Alto (67% – 100%)**: Ameaça existencial à ordem mundial. Permite formar uma **Grande Coalizão (até 3 jogadores)** contra o warmonger, habilitando livre passagem e esforço militar conjunto.
-
-### Epic XIII — Rádio Diplomático Clandestino & Intercepção de Sinais
-- **Comunicações Bilaterais Secretas**:
-  - Dois generais podem abrir um canal confidencial de texto e áudio de voz criptografado (WebRTC).
-  - O conteúdo da conversa é estritamente privado entre os dois interlocutores.
-- **Detecção de Inteligência & Intriga Geopolítica**:
-  - Embora a mensagem/voz seja privada, os demais jogadores na mesa recebem um alerta de inteligência no feed global:
-    - *\"Alerta: Frequência de rádio clandestina detectada entre [Facção A] e [Facção B]...\"*
-  - Isso gera tensão tática, desconfiança e paranoia entre aliados sem violar o sigilo do plano.
+### Epic XII — International Coalitions & Global Tension
+- High conquest speed raises World Tension. At 75% tension, weaker nations can form an automatic mutual-defense alliance.
 
 ---
 

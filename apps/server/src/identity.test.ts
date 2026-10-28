@@ -52,6 +52,7 @@ database("identidade e social HTTP", () => {
     expect(stored.rows[0].hash_length).toBe(32);
     expect(stored.rows[0].password_hash).not.toContain(token);
 
+    await connection.query("UPDATE auth_sessions SET last_seen_at = now() - interval '20 minutes'");
     const me = await request("/api/auth/me", "GET", undefined, cookie);
     expect(me.body.user.username).toBe("alice");
     await request("/api/auth/logout", "POST", undefined, cookie);
