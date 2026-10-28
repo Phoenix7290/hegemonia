@@ -1,13 +1,13 @@
-// Hegemonia Grand Strategy Audio Engine (Web Audio API + Custom MP3 Player)
+// Hegemonia Grand Strategy Audio Engine (Web Audio API + Custom MP3 Player + Independent SFX/Music Equalizer)
 
 class SoundEngine {
   private ctx: AudioContext | null = null;
   private musicGain: GainNode | null = null;
   private sfxGain: GainNode | null = null;
   private isMusicPlaying = false;
+  private isMuted = false;
   private volume = 0.5;
   private sfxVolume = 0.7;
-  private isMuted = false;
   private currentTrack = "ambient_procedural";
   private audioEl: HTMLAudioElement | null = null;
   private musicInterval: number | null = null;
@@ -17,11 +17,19 @@ class SoundEngine {
   constructor() {
     if (typeof window !== "undefined") {
       const savedVol = localStorage.getItem("hegemonia_music_volume");
-      if (savedVol !== null) this.volume = parseFloat(savedVol);
-      const savedSfxVol = localStorage.getItem("hegemonia_sfx_volume");
-      if (savedSfxVol !== null) this.sfxVolume = parseFloat(savedSfxVol);
-      const savedMuted = localStorage.getItem("hegemonia_muted");
-      if (savedMuted !== null) this.isMuted = savedMuted === "true";
+      if (savedVol !== null) {
+        const parsed = parseFloat(savedVol);
+        if (!Number.isNaN(parsed)) this.volume = Math.max(0, Math.min(1, parsed));
+      }
+      const savedSfx = localStorage.getItem("hegemonia_sfx_volume");
+      if (savedSfx !== null) {
+        const parsed = parseFloat(savedSfx);
+        if (!Number.isNaN(parsed)) this.sfxVolume = Math.max(0, Math.min(1, parsed));
+      }
+      const savedMuted = localStorage.getItem("hegemonia_audio_muted");
+      if (savedMuted !== null) {
+        this.isMuted = savedMuted === "true";
+      }
       const savedTrack = localStorage.getItem("hegemonia_music_track");
       if (savedTrack) this.currentTrack = savedTrack;
     }
@@ -29,7 +37,9 @@ class SoundEngine {
 
   private initContext() {
     if (!this.ctx && typeof window !== "undefined") {
-      const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+      const AudioCtx =
+        window.AudioContext ||
+        (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
       this.ctx = new AudioCtx();
       this.musicGain = this.ctx.createGain();
       this.musicGain.gain.value = this.isMuted ? 0 : this.volume;
@@ -81,8 +91,25 @@ class SoundEngine {
     }
   }
 
+  private applyGains() {
+    const effectiveMusic = this.isMuted ? 0 : this.volume;
+    const effectiveSfx = this.isMuted ? 0 : this.sfxVolume;
+
+    if (this.musicGain && this.ctx) {
+      this.musicGain.gain.setValueAtTime(effectiveMusic, this.ctx.currentTime);
+    }
+    if (this.sfxGain && this.ctx) {
+      this.sfxGain.gain.setValueAtTime(effectiveSfx, this.ctx.currentTime);
+    }
+    if (this.audioEl) {
+      this.audioEl.volume = effectiveMusic;
+      this.audioEl.muted = this.isMuted;
+    }
+  }
+
   // --- Sound Effects ---
   public playClick() {
+    if (this.isMuted || this.sfxVolume <= 0) return;
     this.initContext();
     if (!this.ctx || !this.sfxGain) return;
     const osc = this.ctx.createOscillator();
@@ -99,10 +126,10 @@ class SoundEngine {
   }
 
   public playDiceRoll() {
+    if (this.isMuted || this.sfxVolume <= 0) return;
     this.initContext();
     if (this.playBuffer("dice")) return;
     if (!this.ctx || !this.sfxGain) return;
-    // Fallback: Rattle of 4 clicks
     for (let i = 0; i < 4; i++) {
       const time = this.ctx.currentTime + i * 0.06;
       const osc = this.ctx.createOscillator();
@@ -119,10 +146,10 @@ class SoundEngine {
   }
 
   public playCombatAttack() {
+    if (this.isMuted || this.sfxVolume <= 0) return;
     this.initContext();
     if (this.playBuffer("combat")) return;
     if (!this.ctx || !this.sfxGain) return;
-    // Fallback: Heavy artillery thud
     const osc = this.ctx.createOscillator();
     const g = this.ctx.createGain();
     osc.type = "sawtooth";
@@ -137,10 +164,10 @@ class SoundEngine {
   }
 
   public playConquest() {
+    if (this.isMuted || this.sfxVolume <= 0) return;
     this.initContext();
     if (this.playBuffer("conquest")) return;
     if (!this.ctx || !this.sfxGain) return;
-    // Fallback: Triumphant rising two-tone horn
     const chord = [330, 440, 554];
     chord.forEach((freq, idx) => {
       const osc = this.ctx!.createOscillator();
@@ -157,10 +184,10 @@ class SoundEngine {
   }
 
   public playTurnChime() {
+    if (this.isMuted || this.sfxVolume <= 0) return;
     this.initContext();
     if (this.playBuffer("turn")) return;
     if (!this.ctx || !this.sfxGain) return;
-    // Fallback: 3-tone arpeggio
     const osc = this.ctx.createOscillator();
     const g = this.ctx.createGain();
     osc.type = "sine";
@@ -178,16 +205,26 @@ class SoundEngine {
   // --- Procedural Grand Strategy Ambient Music ---
   private startProceduralMusic() {
     if (!this.ctx || !this.musicGain) return;
+    if (this.musicInterval) {
+      clearInterval(this.musicInterval);
+      this.musicInterval = null;
+    }
     const chords = [
       [110, 164.81, 220], // A minor
-      [98, 146.83, 196],  // G major
+      [98, 146.83, 196], // G major
       [87.31, 130.81, 174.61], // F major
       [82.41, 123.47, 164.81], // E minor
     ];
     let chordIdx = 0;
 
     const playChord = () => {
-      if (!this.isMusicPlaying || this.currentTrack !== "ambient_procedural" || !this.ctx || !this.musicGain) return;
+      if (
+        !this.isMusicPlaying ||
+        this.currentTrack !== "ambient_procedural" ||
+        !this.ctx ||
+        !this.musicGain
+      )
+        return;
       const notes = chords[chordIdx % chords.length];
       chordIdx++;
 
@@ -203,7 +240,7 @@ class SoundEngine {
         filter.frequency.setValueAtTime(450, this.ctx!.currentTime);
 
         g.gain.setValueAtTime(0.001, this.ctx!.currentTime);
-        g.gain.linearRampToValueAtTime(0.04 * this.volume, this.ctx!.currentTime + 2.5);
+        g.gain.linearRampToValueAtTime(0.04 * (this.isMuted ? 0 : this.volume), this.ctx!.currentTime + 2.5);
         g.gain.exponentialRampToValueAtTime(0.001, this.ctx!.currentTime + 7.5);
 
         osc.connect(filter);
@@ -238,12 +275,7 @@ class SoundEngine {
 
   public setVolume(val: number) {
     this.volume = Math.max(0, Math.min(1, val));
-    if (this.musicGain && this.ctx && !this.isMuted) {
-      this.musicGain.gain.setValueAtTime(this.volume, this.ctx.currentTime);
-    }
-    if (this.audioEl) {
-      this.audioEl.volume = this.isMuted ? 0 : this.volume;
-    }
+    this.applyGains();
     localStorage.setItem("hegemonia_music_volume", this.volume.toString());
   }
 
@@ -253,9 +285,7 @@ class SoundEngine {
 
   public setSfxVolume(val: number) {
     this.sfxVolume = Math.max(0, Math.min(1, val));
-    if (this.sfxGain && this.ctx && !this.isMuted) {
-      this.sfxGain.gain.setValueAtTime(this.sfxVolume, this.ctx.currentTime);
-    }
+    this.applyGains();
     localStorage.setItem("hegemonia_sfx_volume", this.sfxVolume.toString());
   }
 
@@ -264,21 +294,16 @@ class SoundEngine {
   }
 
   public toggleMute(): boolean {
-    this.initContext();
     this.isMuted = !this.isMuted;
-    const effectiveMusic = this.isMuted ? 0 : this.volume;
-    const effectiveSfx = this.isMuted ? 0 : this.sfxVolume;
-    if (this.musicGain && this.ctx) {
-      this.musicGain.gain.setValueAtTime(effectiveMusic, this.ctx.currentTime);
-    }
-    if (this.sfxGain && this.ctx) {
-      this.sfxGain.gain.setValueAtTime(effectiveSfx, this.ctx.currentTime);
-    }
-    if (this.audioEl) {
-      this.audioEl.volume = effectiveMusic;
-    }
-    localStorage.setItem("hegemonia_muted", this.isMuted.toString());
+    this.applyGains();
+    localStorage.setItem("hegemonia_audio_muted", String(this.isMuted));
     return this.isMuted;
+  }
+
+  public setMuted(muted: boolean) {
+    this.isMuted = muted;
+    this.applyGains();
+    localStorage.setItem("hegemonia_audio_muted", String(this.isMuted));
   }
 
   public getIsMuted(): boolean {
@@ -314,7 +339,8 @@ class SoundEngine {
     } else {
       this.audioEl.src = `/music/${fileName}`;
     }
-    this.audioEl.volume = this.volume;
+    this.audioEl.volume = this.isMuted ? 0 : this.volume;
+    this.audioEl.muted = this.isMuted;
     this.audioEl.play().catch(() => {
       // Fallback to procedural if file missing
       this.currentTrack = "ambient_procedural";

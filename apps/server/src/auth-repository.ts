@@ -90,11 +90,10 @@ export async function findSession(tokenHash: Buffer): Promise<SessionIdentity | 
   const row = result.rows[0];
   if (!row) return null;
   if (Date.now() - row.last_seen_at.getTime() > 15 * 60 * 1000) {
-    await query(
-      `UPDATE auth_sessions SET last_seen_at = now() WHERE id = $1;
-       UPDATE users SET last_seen_at = now() WHERE id = $2`,
-      [row.session_id, row.id]
-    );
+    await Promise.all([
+      query("UPDATE auth_sessions SET last_seen_at = now() WHERE id = $1", [row.session_id]),
+      query("UPDATE users SET last_seen_at = now() WHERE id = $1", [row.id]),
+    ]);
   }
   return { sessionId: row.session_id, user: toAuthUser(row) };
 }

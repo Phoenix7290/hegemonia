@@ -7,10 +7,20 @@
     MAP_HEIGHT,
     MAP_WIDTH,
   } from "@hegemonia/maps";
-  import { findValidTradeTriplet } from "@hegemonia/engine";
+  import { findValidTradeTriplet, getTradeBonusArmies } from "@hegemonia/engine";
   import type { GameState, PlayerColor } from "@hegemonia/shared";
   import { sound } from "./audio.js";
   import { estimateAttackWinOdds } from "./odds.js";
+  import { auth } from "./lib/auth.svelte";
+  import { ui } from "./lib/ui.svelte";
+  import CommandCenter, {
+    type LobbyChatMsg,
+    type LobbyPlayerView,
+  } from "./components/CommandCenter.svelte";
+  import FactionFlag from "./components/FactionFlag.svelte";
+  import Icon from "./components/Icon.svelte";
+  import VictoryModal from "./components/VictoryModal.svelte";
+  import WarJournal from "./components/WarJournal.svelte";
 
   const COLOR_HEX: Record<PlayerColor, string> = {
     blue: "#3b82f6",
@@ -29,15 +39,6 @@
     black: "Legião de Ferro (Preto)",
     white: "Coalizão Boreal (Branco)",
   };
-
-  interface LobbyPlayerView {
-    token: string;
-    name: string;
-    color: PlayerColor;
-    isHost: boolean;
-    isBot: boolean;
-    connected: boolean;
-  }
 
   function getOrCreateToken(): string {
     const saved = localStorage.getItem("hegemonia_token");
@@ -60,14 +61,31 @@
   let playerName = $state(getInitialPlayerName());
   let roomCodeInput = $state("");
   let connectedRoom = $state<Room | null>(null);
+  let connecting = $state(false);
   let roomCode = $state("");
   let roomStatus = $state<"disconnected" | "lobby" | "playing">("disconnected");
   let myPlayerId = $state<string | null>(null);
   let lobbyPlayers = $state<LobbyPlayerView[]>([]);
+  let lobbyMessages = $state<LobbyChatMsg[]>([]);
   let game = $state<GameState | null>(null);
   let turnDeadline = $state(0);
   let remainingSeconds = $state(120);
   let errorBanner = $state("");
+
+  // Sync playerName with authenticated user display name when available
+  $effect(() => {
+    if (auth.user?.displayName) {
+      playerName = auth.user.displayName;
+    }
+  });
+
+  // Notify Shell whether we are in an active battle so global header hides during combat
+  $effect(() => {
+    ui.inActiveBattle = roomStatus === "playing";
+    return () => {
+      ui.inActiveBattle = false;
+    };
+  });
 
   // Map Rendering Mode: "cartographic" (HOI4 physical satellite relief + borders), "geopolitical" (Crisp War colors), or "regional" (Continents & Sub-Regions)
   let mapMode = $state<"cartographic" | "geopolitical" | "regional">("cartographic");
@@ -130,124 +148,20 @@
   // Keyboard WASD + Arrow Smooth Panning State
   const pressedKeys = new Set<string>();
 
-  // Map Selection State
+  // Map Selection & Hover Intelligence State
   let selectedFromId = $state<string | null>(null);
   let selectedToId = $state<string | null>(null);
+  let hoveredTerritoryId = $state<string | null>(null);
   let sliderArmies = $state(1);
+  let selectedAttackDice = $state<number | null>(null); // null = auto max dice
 
-  // HUD Visibility Toggles
-  let showObjective = $state(false);
-  let showCards = $state(false);
+  // HUD Drawers (Mutually Exclusive on Right Panel to Prevent Overlap)
+  let activeRightDrawer = $state<"cards" | "objective" | "audio" | null>(null);
   let showContinents = $state(false);
-  let showMusicPanel = $state(false);
-  let logCollapsed = $state(false);
-  let activeLogTab = $state<"log" | "chat">("log");
-  let chatInput = $state("");
 
-  // Audio State
-  let isMusicPlaying = $state(sound.getIsPlaying());
-  let musicVolume = $state(sound.getVolume());
-  let sfxVolume = $state(sound.getSfxVolume());
-  let isMuted = $state(sound.getIsMuted());
-  let selectedTrack = $state(sound.getCurrentTrack());
-
-  const SOUNDTRACKS = [
-    { id: "ambient_procedural", label: "Marcha Tática (Sintetizador Web Audio)" },
-    { id: "hoi4_axis_theme.mp3", label: "Hearts of Iron IV — Axis Theme (Slowed & Pitch)" },
-    { id: "hoi4_katyusha.mp3", label: "Hearts of Iron IV — Katyusha" },
-    { id: "hoi4_great_patriotic_war.mp3", label: "Hearts of Iron IV — The Great Patriotic War" },
-    { id: "hoi4_bella_ciao.mp3", label: "Hearts of Iron IV — Bella Ciao" },
-    { id: "the_second_european_war.mp3", label: "The Fire Rises — The Second European War" },
-    { id: "tno_taboritsky_theme.mp3", label: "TNO — The Mad Regent's Lullaby (Taboritsky)" },
-    { id: "tno_burgundian_lullaby.mp3", label: "TNO — Burgundian Lullaby" },
-    { id: "teufelslied.mp3", label: "Histórico — Teufelslied" },
-  ];
-
-  // Tactical Objective Map Highlight State
-  let highlightObjectiveTerritories = $state(false);
-
-  let objectiveTargetTerritoryIds = $derived.by(() => {
-    if (!myPlayerState) return new Set<string>();
-    const rule = myPlayerState.objective.rule;
-    if (rule.type === "specific_territories") {
-      const set = new Set(rule.territoryIds);
-      if (rule.extraAnyOf) {
-        for (const grp of rule.extraAnyOf) {
-          for (const tid of grp) set.add(tid);
-        }
-      }
-      return set;
-    }
-    if (rule.type === "continents") {
-      const set = new Set<string>();
-      for (const t of CLASSIC_MAP.territories) {
-        if (rule.continents.includes(t.continent)) set.add(t.id);
-      }
-      return set;
-    }
-    if (rule.type === "destroy_color") {
-      const targetPlayer = game?.players.find((p) => p.color === rule.targetColor);
-      if (targetPlayer && !targetPlayer.eliminated && targetPlayer.id !== myPlayerId) {
-        const set = new Set<string>();
-        for (const t of CLASSIC_MAP.territories) {
-          if (game?.territories[t.id]?.ownerId === targetPlayer.id) set.add(t.id);
-        }
-        return set;
-      }
-    }
-    return new Set<string>();
-  });
-
-  let objectiveProgress = $derived.by(() => {
-    if (!myPlayerState || objectiveTargetTerritoryIds.size === 0) return null;
-    let owned = 0;
-    for (const tid of objectiveTargetTerritoryIds) {
-      if (game?.territories[tid]?.ownerId === myPlayerId) owned++;
-    }
-    const total = objectiveTargetTerritoryIds.size;
-    const pct = Math.round((owned / total) * 100);
-    return { owned, total, pct };
-  });
-
-  function toggleObjectiveHighlight() {
+  function toggleRightDrawer(drawer: "cards" | "objective" | "audio") {
     sound.playClick();
-    highlightObjectiveTerritories = !highlightObjectiveTerritories;
-  }
-
-  // Victory & Lobby Controls
-  let showVictoryModal = $state(true);
-  let lastAnnouncedWinner = $state<string | null>(null);
-  let amIHost = $derived(
-    lobbyPlayers.find((p) => p.token === myPlayerId)?.isHost ?? false
-  );
-
-  $effect(() => {
-    if (game?.winnerId && game.winnerId !== lastAnnouncedWinner) {
-      lastAnnouncedWinner = game.winnerId;
-      showVictoryModal = true;
-      sound.playConquest();
-    }
-    if (!game?.winnerId) {
-      lastAnnouncedWinner = null;
-    }
-  });
-
-  function returnRoomToLobby() {
-    sound.playClick();
-    connectedRoom?.send("return_to_lobby");
-  }
-
-  function leaveToMainMenu() {
-    sound.playClick();
-    if (connectedRoom) {
-      connectedRoom.leave();
-      connectedRoom = null;
-    }
-    game = null;
-    roomStatus = "disconnected";
-    selectedFromId = null;
-    selectedToId = null;
-    showVictoryModal = false;
+    activeRightDrawer = activeRightDrawer === drawer ? null : drawer;
   }
 
   // Derived calculations
@@ -255,6 +169,45 @@
   let isMyTurn = $derived(Boolean(game && currentTurnPlayer && currentTurnPlayer.id === myPlayerId));
   let myPlayerState = $derived(game?.players.find((p) => p.id === myPlayerId) ?? null);
   let validTradeTriplet = $derived(myPlayerState ? findValidTradeTriplet(myPlayerState.cards) : null);
+  let nextTradeBonus = $derived(game ? getTradeBonusArmies(game.tradeCount) : 4);
+  let amIHost = $derived(lobbyPlayers.find((p) => p.token === myPlayerId)?.isHost ?? false);
+
+  const SOUNDTRACKS = [
+    { id: "ambient_procedural", label: "Marcha Tática (Sintetizador Web Audio)" },
+    { id: "hoi4_axis_theme.mp3", label: "Hearts of Iron IV — Axis Theme" },
+    { id: "hoi4_katyusha.mp3", label: "Hearts of Iron IV — Katyusha" },
+    { id: "hoi4_great_patriotic_war.mp3", label: "Hearts of Iron IV — The Great Patriotic War" },
+    { id: "hoi4_bella_ciao.mp3", label: "Hearts of Iron IV — Bella Ciao" },
+    { id: "the_second_european_war.mp3", label: "The Fire Rises — The Second European War" },
+    { id: "tno_taboritsky_theme.mp3", label: "TNO — The Mad Regent's Lullaby" },
+    { id: "tno_burgundian_lullaby.mp3", label: "TNO — Burgundian Lullaby" },
+    { id: "teufelslied.mp3", label: "Histórico — Teufelslied" },
+  ];
+
+  let objectiveProgress = $derived.by(() => {
+    if (!myPlayerState || !game) return null;
+    const rule = myPlayerState.objective.rule;
+    const targetIds = new Set<string>();
+    if (rule.type === "specific_territories") {
+      for (const tid of rule.territoryIds) targetIds.add(tid);
+      if (rule.extraAnyOf) {
+        for (const grp of rule.extraAnyOf) {
+          for (const tid of grp) targetIds.add(tid);
+        }
+      }
+    } else if (rule.type === "continents") {
+      for (const t of CLASSIC_MAP.territories) {
+        if (rule.continents.includes(t.continent)) targetIds.add(t.id);
+      }
+    }
+    if (targetIds.size === 0) return null;
+    let owned = 0;
+    for (const tid of targetIds) {
+      if (game.territories[tid]?.ownerId === myPlayerId) owned++;
+    }
+    const total = targetIds.size;
+    return { owned, total, pct: Math.round((owned / total) * 100) };
+  });
 
   let currentAttackOdds = $derived.by(() => {
     if (!game || !selectedFromId || !selectedToId) return null;
@@ -262,6 +215,13 @@
     const toT = game.territories[selectedToId];
     if (!fromT || !toT) return null;
     return estimateAttackWinOdds(fromT.armies, toT.armies);
+  });
+
+  let maxAttackerDice = $derived.by(() => {
+    if (!game || !selectedFromId) return 3;
+    const fromT = game.territories[selectedFromId];
+    if (!fromT) return 3;
+    return Math.max(1, Math.min(3, fromT.armies - 1));
   });
 
   let playerMetrics = $derived.by(() => {
@@ -282,6 +242,25 @@
   });
 
   const territoryById = new Map(CLASSIC_MAP.territories.map((t) => [t.id, t]));
+  const continentById = new Map(CLASSIC_MAP.continents.map((c) => [c.id, c]));
+
+  let inspectedTerritory = $derived.by(() => {
+    if (!game) return null;
+    const targetId = hoveredTerritoryId ?? selectedToId ?? selectedFromId;
+    if (!targetId) return null;
+    const def = territoryById.get(targetId);
+    const state = game.territories[targetId];
+    if (!def || !state) return null;
+    const owner = game.players.find((p) => p.id === state.ownerId) ?? null;
+    const cont = continentById.get(def.continent);
+    const asiaSub = ASIA_SUBREGIONS.find((s) => s.territoryIds.includes(def.id));
+    return {
+      def,
+      state,
+      owner,
+      regionName: asiaSub ? `Ásia — ${asiaSub.namePt} (+${asiaSub.bonus})` : `${cont?.namePt ?? def.continent} (+${cont?.bonus ?? 0})`,
+    };
+  });
 
   // Direct Intra-Tile Sea Links
   const DIRECT_SEA_LINKS: [string, string][] = [
@@ -318,7 +297,7 @@
 
   function wrapCamX(x: number): number {
     const half = MAP_WIDTH / 2;
-    let res = ((x + half) % MAP_WIDTH + MAP_WIDTH) % MAP_WIDTH - half;
+    let res = (((x + half) % MAP_WIDTH) + MAP_WIDTH) % MAP_WIDTH - half;
     return res;
   }
 
@@ -332,6 +311,8 @@
   $effect(() => {
     if (game && currentTurnPlayer && currentTurnPlayer.id !== lastTurnPlayerId) {
       lastTurnPlayerId = currentTurnPlayer.id;
+      selectedFromId = null;
+      selectedToId = null;
       if (currentTurnPlayer.id === myPlayerId) {
         sound.playTurnChime();
       }
@@ -394,6 +375,10 @@
     } else if (e.key === "F3" || k === "3") {
       e.preventDefault();
       mapMode = "regional";
+    } else if (e.key === "Escape") {
+      selectedFromId = null;
+      selectedToId = null;
+      activeRightDrawer = null;
     }
   }
 
@@ -414,11 +399,12 @@
   async function joinOrCreateRoom(createNew: boolean) {
     errorBanner = "";
     sound.playClick();
-    const cleanName = playerName.trim() || "General";
+    const cleanName = (auth.user?.displayName || playerName).trim() || "General";
     playerName = cleanName;
     localStorage.setItem("hegemonia_name", cleanName);
     const client = new Client(resolveWsUrl());
     const token = getOrCreateToken();
+    connecting = true;
 
     try {
       const code = createNew ? undefined : roomCodeInput.trim().toUpperCase();
@@ -429,6 +415,8 @@
       });
 
       connectedRoom = room;
+      lobbyMessages = [];
+
       room.onMessage("room_state", (payload) => {
         const prevLastCombat = game?.lastCombat;
         roomCode = payload.roomCode;
@@ -451,15 +439,47 @@
         }
       });
 
+      room.onMessage("chat_msg", (payload: { from: string; color: PlayerColor; text: string }) => {
+        lobbyMessages = [
+          ...lobbyMessages.slice(-49),
+          {
+            from: payload.from,
+            color: payload.color,
+            text: payload.text,
+            time: new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }),
+          },
+        ];
+      });
+
       room.onMessage("error_msg", (payload: { message: string }) => {
         errorBanner = payload.message;
         setTimeout(() => {
           if (errorBanner === payload.message) errorBanner = "";
-        }, 4000);
+        }, 4200);
       });
     } catch (err: unknown) {
       errorBanner = err instanceof Error ? err.message : "Falha ao conectar ao servidor Hegemonia.";
+    } finally {
+      connecting = false;
     }
+  }
+
+  function leaveCurrentRoom() {
+    sound.playClick();
+    try {
+      connectedRoom?.leave();
+    } catch {
+      // ignore disconnect errors
+    }
+    connectedRoom = null;
+    roomStatus = "disconnected";
+    roomCode = "";
+    game = null;
+    lobbyPlayers = [];
+    lobbyMessages = [];
+    selectedFromId = null;
+    selectedToId = null;
+    activeRightDrawer = null;
   }
 
   function sendAction(action: unknown) {
@@ -485,6 +505,7 @@
       if (tState.ownerId === myPlayerId && tState.armies >= 2) {
         selectedFromId = terrId;
         selectedToId = null;
+        selectedAttackDice = null;
       } else if (
         selectedFromId &&
         tState.ownerId !== myPlayerId &&
@@ -507,9 +528,10 @@
         tDef.neighbors.includes(selectedFromId)
       ) {
         selectedToId = terrId;
-      } else if (tState.ownerId === myPlayerId) {
+      } else if (tState.ownerId === myPlayerId && tState.armies - tState.movedInArmies >= 2) {
         selectedFromId = terrId;
         selectedToId = null;
+        sliderArmies = tState.armies - tState.movedInArmies - 1;
       }
     }
   }
@@ -522,11 +544,20 @@
 
   function confirmAttack() {
     if (!selectedFromId || !selectedToId) return;
-    sendAction({
+    const payload: {
+      type: "attack";
+      fromTerritoryId: string;
+      toTerritoryId: string;
+      diceCount?: number;
+    } = {
       type: "attack",
       fromTerritoryId: selectedFromId,
       toTerritoryId: selectedToId,
-    });
+    };
+    if (selectedAttackDice !== null) {
+      payload.diceCount = Math.min(selectedAttackDice, maxAttackerDice);
+    }
+    sendAction(payload);
   }
 
   function confirmManeuver() {
@@ -541,17 +572,16 @@
     selectedToId = null;
   }
 
-  function sendChat() {
-    if (!chatInput.trim()) return;
-    connectedRoom?.send("chat", { text: chatInput });
-    chatInput = "";
+  function sendChatText(text: string) {
+    if (!text.trim()) return;
+    connectedRoom?.send("chat", { text: text.trim() });
   }
 
   // --- Mouse Drag & Wheel Camera Controls ---
   function onMouseDown(e: MouseEvent) {
     if (e.button !== 0 && e.button !== 1) return;
     const target = e.target as Element;
-    if (target.closest(".hud-panel")) return;
+    if (target.closest(".hud-panel") || target.closest(".war-journal-panel")) return;
     isDragging = true;
     lastMouseX = e.clientX;
     lastMouseY = e.clientY;
@@ -590,28 +620,6 @@
     camX = 0;
     camY = 0;
   }
-
-  function toggleMusic() {
-    isMusicPlaying = sound.toggleMusic();
-  }
-  function onVolumeChange(e: Event) {
-    const val = parseFloat((e.target as HTMLInputElement).value);
-    musicVolume = val;
-    sound.setVolume(val);
-  }
-  function onSfxVolumeChange(e: Event) {
-    const val = parseFloat((e.target as HTMLInputElement).value);
-    sfxVolume = val;
-    sound.setSfxVolume(val);
-  }
-  function toggleMuteAll() {
-    isMuted = sound.toggleMute();
-  }
-  function onTrackSelect(trackId: string) {
-    selectedTrack = trackId;
-    sound.setTrack(trackId);
-    isMusicPlaying = sound.getIsPlaying();
-  }
 </script>
 
 <svelte:window
@@ -621,208 +629,35 @@
   onkeyup={onKeyUp}
 />
 
-<!-- HERALDIC FACTION FLAGS (PURE VECTOR SVG - ZERO EMOJIS) -->
-{#snippet flagBadge(color: PlayerColor, width = 22, height = 14)}
-  <svg
-    {width}
-    {height}
-    viewBox="0 0 24 16"
-    class="faction-flag-svg"
-    style="border-radius: 2px; box-shadow: 0 1px 3px rgba(0,0,0,0.75); flex-shrink: 0;"
-  >
-    {#if color === "blue"}
-      <rect width="24" height="16" fill="#1d4ed8" />
-      <rect y="6.5" width="24" height="3" fill="#93c5fd" opacity="0.45" />
-      <rect x="10.5" width="3" height="16" fill="#93c5fd" opacity="0.45" />
-      <polygon points="12,2 14,6 18,8 14,10 12,14 10,10 6,8 10,6" fill="#f8fafc" />
-    {:else if color === "red"}
-      <rect width="24" height="16" fill="#b91c1c" />
-      <path d="M0,0 L24,16 M24,0 L0,16" stroke="#fca5a5" stroke-width="2.2" opacity="0.5" />
-      <polygon points="12,3 16,8 12,13 8,8" fill="#facc15" stroke="#7f1d1d" stroke-width="0.8" />
-    {:else if color === "green"}
-      <rect width="24" height="16" fill="#047857" />
-      <polygon points="0,0 10,8 0,16" fill="#064e3b" />
-      <polygon points="0,0 10,8 0,16" fill="none" stroke="#fcd34d" stroke-width="1.2" />
-      <circle cx="15.5" cy="8" r="3.5" fill="none" stroke="#ecfdf5" stroke-width="1.5" />
-    {:else if color === "yellow"}
-      <rect width="24" height="16" fill="#d97706" />
-      <rect y="0" width="24" height="4" fill="#1e293b" />
-      <rect y="12" width="24" height="4" fill="#1e293b" />
-      <circle cx="12" cy="8" r="3.2" fill="#fef08a" stroke="#0f172a" stroke-width="1" />
-    {:else if color === "black"}
-      <rect width="24" height="16" fill="#1e293b" />
-      <path d="M0,8 H24 M12,0 V16" stroke="#94a3b8" stroke-width="3.2" />
-      <path d="M0,8 H24 M12,0 V16" stroke="#0f172a" stroke-width="1.4" />
-      <rect x="9.5" y="5.5" width="5" height="5" fill="#e2e8f0" />
-    {:else}
-      <rect width="24" height="16" fill="#e2e8f0" />
-      <path d="M0,8 H24 M9,0 V16" stroke="#334155" stroke-width="3" />
-      <circle cx="9" cy="8" r="2.2" fill="#f59e0b" />
-    {/if}
-    <rect width="24" height="16" fill="none" stroke="rgba(255,255,255,0.35)" stroke-width="1" />
-  </svg>
-{/snippet}
-
-<!-- TACTICAL MONOCHROME / BRASS VECTOR ICONS (ZERO EMOJIS) -->
-{#snippet icon(name: string, size = 15)}
-  <svg
-    width={size}
-    height={size}
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    stroke-width="2"
-    stroke-linecap="round"
-    stroke-linejoin="round"
-    class="ui-svg-icon"
-  >
-    {#if name === "swords"}
-      <polyline points="14.5 17.5 3 6 3 3 6 3 17.5 14.5" />
-      <line x1="13" y1="19" x2="19" y2="13" />
-      <line x1="16" y1="16" x2="20" y2="20" />
-      <polyline points="9.5 17.5 21 6 21 3 18 3 6.5 14.5" />
-      <line x1="5" y1="13" x2="11" y2="19" />
-      <line x1="4" y1="20" x2="8" y2="16" />
-    {:else if name === "shield"}
-      <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
-    {:else if name === "globe"}
-      <circle cx="12" cy="12" r="10" />
-      <line x1="2" y1="12" x2="22" y2="12" />
-      <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
-    {:else if name === "cards"}
-      <rect x="3" y="4" width="13" height="17" rx="2" />
-      <path d="M16 7h3a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2v-1" />
-    {:else if name === "target"}
-      <circle cx="12" cy="12" r="10" />
-      <circle cx="12" cy="12" r="6" />
-      <circle cx="12" cy="12" r="2" />
-    {:else if name === "radio"}
-      <path d="M4.9 19.1C1 15.2 1 8.8 4.9 4.9" />
-      <path d="M7.8 16.2c-2.3-2.3-2.3-6.1 0-8.5" />
-      <circle cx="12" cy="12" r="2" />
-      <path d="M16.2 7.8c2.3 2.3 2.3 6.1 0 8.5" />
-      <path d="M19.1 4.9C23 8.8 23 15.2 19.1 19.1" />
-    {:else if name === "crown"}
-      <polygon points="2 18 5 7 9.5 12 12 5 14.5 12 19 7 22 18 2 18" />
-    {:else if name === "clock"}
-      <circle cx="12" cy="12" r="10" />
-      <polyline points="12 6 12 12 16 14" />
-    {:else if name === "log"}
-      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-      <polyline points="14 2 14 8 20 8" />
-      <line x1="8" y1="13" x2="16" y2="13" />
-      <line x1="8" y1="17" x2="16" y2="17" />
-    {:else if name === "chat"}
-      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-    {:else if name === "bot"}
-      <rect x="3" y="8" width="18" height="12" rx="2" />
-      <path d="M12 2v6" />
-      <line x1="8" y1="14" x2="8" y2="14.01" />
-      <line x1="16" y1="14" x2="16" y2="14.01" />
-    {:else if name === "check"}
-      <polyline points="20 6 9 17 4 12" />
-    {:else if name === "plus"}
-      <line x1="12" y1="5" x2="12" y2="19" />
-      <line x1="5" y1="12" x2="19" y2="12" />
-    {/if}
-  </svg>
-{/snippet}
-
 <main class="hegemonia-app">
   {#if errorBanner}
-    <div class="alert-toast">{errorBanner}</div>
+    <div class="alert-toast" role="alert">
+      <Icon name="shield" size={16} />
+      <span>{errorBanner}</span>
+    </div>
   {/if}
 
-  {#if roomStatus === "disconnected"}
-    <!-- FRONT SCREEN: GRAND STRATEGY COMMAND CENTER -->
-    <div class="landing-overlay">
-      <div class="war-room-modal">
-        <div class="brand-crest">
-          {@render icon("globe", 38)}
-        </div>
-        <div class="title-lockup">
-          <span class="kicker">SIMULADOR GEOPOLÍTICO GLOBAL</span>
-          <h1>HEGEMONIA</h1>
-          <div class="brass-rule"></div>
-        </div>
-        <p class="subtitle">Comando Estratégico Multijogador • Cartografia Natural Earth • IPv6 Nativo</p>
-
-        <div class="form-group">
-          <label for="pname">PATENTE / IDENTIFICAÇÃO DE COMANDO</label>
-          <input id="pname" bind:value={playerName} maxlength="24" placeholder="General" />
-        </div>
-
-        <button class="btn primary-gold" onclick={() => joinOrCreateRoom(true)}>
-          {@render icon("plus", 16)} Criar Nova Sala de Guerra
-        </button>
-
-        <div class="divider"><span>OU INGRESSAR EM OPERAÇÃO EXISTENTE</span></div>
-
-        <div class="join-box">
-          <input bind:value={roomCodeInput} maxlength="6" placeholder="CÓDIGO (EX: A1B2C3)" />
-          <button class="btn secondary" onclick={() => joinOrCreateRoom(false)}>Conectar</button>
-        </div>
-      </div>
-    </div>
-
-  {:else if roomStatus === "lobby"}
-    <!-- PRE-GAME LOBBY WAR ROOM -->
-    <div class="landing-overlay">
-      <div class="war-room-modal lobby-modal">
-        <div class="lobby-brand-header">
-          <span class="lobby-brand-tag">HEGEMONIA // SALA DE COMANDO</span>
-          <div class="row-between">
-            <h2>Operação: <span class="code-highlight">{roomCode}</span></h2>
-            <span class="badge-players">{lobbyPlayers.length}/6 Generais</span>
-          </div>
-        </div>
-        <p class="subtitle">Compartilhe o código da operação ou adicione comandantes de IA para iniciar.</p>
-
-        <div class="player-roster">
-          {#each lobbyPlayers as p}
-            <div class="roster-card">
-              {@render flagBadge(p.color, 26, 17)}
-              <div class="roster-meta">
-                <strong>{p.name}</strong>
-                <small>{FACTION_NAME_PT[p.color]}</small>
-              </div>
-              {#if p.isHost}<span class="tag-host">COMANDANTE</span>{/if}
-              {#if p.isBot}<span class="tag-bot">IA</span>{/if}
-              {#if p.isBot}
-                <button class="btn-remove" onclick={() => connectedRoom?.send("remove_bot", { token: p.token })} title="Remover IA">✕</button>
-              {/if}
-            </div>
-          {/each}
-        </div>
-
-        <div class="color-selector">
-          <span>Selecione sua Bandeira de Facção:</span>
-          <div class="swatches">
-            {#each ["blue", "red", "green", "yellow", "black", "white"] as PlayerColor[] as c}
-              <button
-                class="flag-swatch-btn"
-                title={FACTION_NAME_PT[c]}
-                onclick={() => connectedRoom?.send("choose_color", { color: c })}
-              >
-                {@render flagBadge(c, 32, 20)}
-              </button>
-            {/each}
-          </div>
-        </div>
-
-        <div class="modal-actions">
-          <button class="btn secondary" onclick={() => connectedRoom?.send("add_bot")}>
-            {@render icon("bot", 16)} Adicionar General IA
-          </button>
-          <button class="btn primary-gold" onclick={() => connectedRoom?.send("start_game")}>
-            {@render icon("swords", 16)} Iniciar Campanha Global
-          </button>
-        </div>
-      </div>
-    </div>
-
+  {#if roomStatus === "disconnected" || roomStatus === "lobby"}
+    <CommandCenter
+      {roomStatus}
+      bind:playerName
+      bind:roomCodeInput
+      {roomCode}
+      {myPlayerId}
+      {lobbyPlayers}
+      {lobbyMessages}
+      {connecting}
+      onCreateRoom={() => joinOrCreateRoom(true)}
+      onJoinRoom={() => joinOrCreateRoom(false)}
+      onLeaveRoom={leaveCurrentRoom}
+      onChooseColor={(color) => connectedRoom?.send("choose_color", { color })}
+      onAddBot={() => connectedRoom?.send("add_bot")}
+      onRemoveBot={(token) => connectedRoom?.send("remove_bot", { token })}
+      onStartGame={() => connectedRoom?.send("start_game")}
+      onSendLobbyChat={sendChatText}
+    />
   {:else if game}
-    <!-- FULLSCREEN CONTINUOUS WRAPAROUND GEOPOLITICAL & CARTOGRAPHIC MAP -->
+    <!-- FULLSCREEN CONTINUOUS WRAPAROUND GEOPOLITICAL & CARTOGRAPHIC MAP (UNTOUCHED) -->
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div class="map-viewport" onwheel={onWheel} onmousedown={onMouseDown}>
       <svg
@@ -844,14 +679,6 @@
           <!-- Selection & Target Glow -->
           <filter id="glow-gold" x="-20%" y="-20%" width="140%" height="140%">
             <feDropShadow dx="0" dy="0" stdDeviation="3.5" flood-color="#facc15" flood-opacity="0.95" />
-          </filter>
-
-          <!-- Objective Highlight Glows -->
-          <filter id="glow-red" x="-20%" y="-20%" width="140%" height="140%">
-            <feDropShadow dx="0" dy="0" stdDeviation="4.5" flood-color="#ef4444" flood-opacity="1" />
-          </filter>
-          <filter id="glow-green" x="-20%" y="-20%" width="140%" height="140%">
-            <feDropShadow dx="0" dy="0" stdDeviation="4.5" flood-color="#10b981" flood-opacity="1" />
           </filter>
         </defs>
 
@@ -956,63 +783,44 @@
                   territoryById.get(selectedFromId)?.neighbors.includes(t.id) &&
                   ((game.phase === "attack" && tState.ownerId !== myPlayerId) ||
                     (game.phase === "maneuver" && tState.ownerId === myPlayerId))}
-                {@const isObjectiveTarget = highlightObjectiveTerritories && objectiveTargetTerritoryIds.has(t.id)}
-                {@const isObjectiveOwned = isObjectiveTarget && tState.ownerId === myPlayerId}
-                {@const isObjectiveMissing = isObjectiveTarget && tState.ownerId !== myPlayerId}
-                {@const isDimmedByObjective = highlightObjectiveTerritories && objectiveTargetTerritoryIds.size > 0 && !isObjectiveTarget}
 
                 <!-- svelte-ignore a11y_click_events_have_key_events -->
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
                 <g
                   class="territory-group"
-                  style={isDimmedByObjective ? "opacity: 0.32; transition: opacity 0.25s;" : "transition: opacity 0.25s;"}
                   onclick={() => onTerritoryClick(t.id)}
+                  onmouseenter={() => (hoveredTerritoryId = t.id)}
+                  onmouseleave={() => {
+                    if (hoveredTerritoryId === t.id) hoveredTerritoryId = null;
+                  }}
                 >
                   <!-- Political or Regional Fill + Frontier Border -->
                   <path
                     d={t.svgPath}
-                    fill={isObjectiveMissing
-                      ? "#7f1d1d"
-                      : isObjectiveOwned
-                        ? "#064e3b"
-                        : activeFill}
+                    fill={activeFill}
                     fill-opacity={isSelected
-                      ? "0.92"
-                      : isObjectiveMissing || isObjectiveOwned
-                        ? "0.85"
-                        : mapMode === "cartographic"
-                          ? "0.42"
-                          : mapMode === "regional"
-                            ? "0.72"
-                            : "0.84"}
+                      ? "0.88"
+                      : mapMode === "cartographic"
+                        ? "0.42"
+                        : mapMode === "regional"
+                          ? "0.72"
+                          : "0.84"}
                     stroke={isSelected
                       ? "#ffffff"
-                      : isObjectiveMissing
-                        ? "#ef4444"
-                        : isObjectiveOwned
-                          ? "#10b981"
-                          : isValidTarget
-                            ? "#facc15"
-                            : mapMode === "cartographic"
-                              ? ownerColor
-                              : "rgba(9, 13, 22, 0.9)"}
+                      : isValidTarget
+                        ? "#facc15"
+                        : mapMode === "cartographic"
+                          ? ownerColor
+                          : "rgba(9, 13, 22, 0.9)"}
                     stroke-width={isSelected
-                      ? "2.8"
-                      : isObjectiveMissing || isObjectiveOwned
-                        ? "2.6"
-                        : isValidTarget
-                          ? "2.2"
-                          : mapMode === "cartographic"
-                            ? "1.6"
-                            : "1.0"}
+                      ? "2.6"
+                      : isValidTarget
+                        ? "2.2"
+                        : mapMode === "cartographic"
+                          ? "1.6"
+                          : "1.0"}
                     stroke-linejoin="round"
-                    filter={isSelected || isValidTarget
-                      ? "url(#glow-gold)"
-                      : isObjectiveMissing
-                        ? "url(#glow-red)"
-                        : isObjectiveOwned
-                          ? "url(#glow-green)"
-                          : undefined}
+                    filter={isSelected || isValidTarget ? "url(#glow-gold)" : undefined}
                   />
 
                   {#if mapMode === "cartographic"}
@@ -1136,27 +944,57 @@
       </svg>
     </div>
 
-    <!-- FLOATING HUD (Z-INDEX OVERLAY - HOI4 / EU4 GRAND STRATEGY STYLE) -->
+    <!-- POST-VICTORY DOSSIER MODAL (HEGEM-9) -->
+    {#if game.winnerId}
+      <VictoryModal
+        {game}
+        {myPlayerId}
+        {playerMetrics}
+        {amIHost}
+        onReturnRoomToLobby={() => connectedRoom?.send("return_to_lobby")}
+        onReturnToLobby={leaveCurrentRoom}
+      />
+    {/if}
+
+    <!-- FLOATING SUPREME COMMAND HUD LAYER -->
     <div class="hud-layer">
       <!-- ↖ TOP-LEFT: HEGEMONIA BRANDING, BALANCE OF POWER & CONTINENT/ASIA SUB-REGIONS -->
       <aside class="hud-panel top-left-panel">
         <div class="panel-header">
           <div class="brand-row">
-            <span class="brass-icon">{@render icon("globe", 16)}</span>
-            <strong>HEGEMONIA</strong>
-            <span class="room-tag">OP: {roomCode} • R{game.round}</span>
+            <img src="/hegemonia-logo.webp" alt="Hegemonia" class="hud-mini-logo" />
+            <div class="brand-lockup">
+              <strong>HEGEMONIA</strong>
+              <small>OPERAÇÃO {roomCode}</small>
+            </div>
+            <span class="round-tag" title="Rodada Atual">
+              RODADA {game.round}
+            </span>
           </div>
         </div>
 
+        {#if game.round === 1}
+          <div class="round1-treaty-banner">
+            <Icon name="shield" size={13} />
+            <span>Rodada 1: Tratado de Mobilização (Apenas Reforços)</span>
+          </div>
+        {/if}
+
         <!-- Hegemony Power Bar (Segmented World Dominance %) -->
-        <div class="hegemony-bar" title="Balanço de Poder Global (% de Territórios)">
-          {#each playerMetrics as m}
-            <div
-              class="hegemony-segment"
-              style="width: {m.sharePct}%; background: {COLOR_HEX[m.player.color]};"
-              title="{m.player.name}: {m.sharePct}% do Mundo ({m.terrCount} territórios, {m.totalArmies} divisões)"
-            ></div>
-          {/each}
+        <div class="hegemony-bar-wrap">
+          <div class="hegemony-bar-label">
+            <span>BALANÇO DE PODER GLOBAL</span>
+            <span>44 TERRITÓRIOS</span>
+          </div>
+          <div class="hegemony-bar" title="Balanço de Poder Global (% de Territórios)">
+            {#each playerMetrics as m}
+              <div
+                class="hegemony-segment"
+                style="width: {m.sharePct}%; background: {COLOR_HEX[m.player.color]};"
+                title="{m.player.name}: {m.sharePct}% do Mundo ({m.terrCount} territórios, {m.totalArmies} divisões)"
+              ></div>
+            {/each}
+          </div>
         </div>
 
         <!-- Generals Roster with Heraldic Flags & Strengths -->
@@ -1170,18 +1008,21 @@
               style="border-left-color: {COLOR_HEX[m.player.color]};"
             >
               <div class="g-info">
-                {@render flagBadge(m.player.color, 20, 13)}
+                <FactionFlag color={m.player.color} width={20} height={13} />
                 <span class="g-name">
-                  {m.player.name} {m.player.id === myPlayerId ? "(Você)" : ""}
+                  {m.player.name}
+                  {#if m.player.id === myPlayerId}
+                    <small class="you-badge">VOCÊ</small>
+                  {/if}
                 </span>
                 {#if isTurn}
-                  <span class="turn-indicator" title="Turno Ativo">{@render icon("crown", 13)}</span>
+                  <span class="turn-indicator" title="Turno Ativo"><Icon name="crown" size={13} /></span>
                 {/if}
               </div>
               <div class="g-stats">
                 <span title="Territórios Controlados" class="stat-pill">T: {m.terrCount}</span>
                 <span title="Total de Divisões" class="stat-pill">D: {m.totalArmies}</span>
-                <span title="Cartas Táticas" class="stat-pill">C: {m.player.cards.length}</span>
+                <span title="Cartas de Suprimento" class="stat-pill">C: {m.player.cards.length}</span>
               </div>
             </div>
           {/each}
@@ -1190,7 +1031,7 @@
         <!-- Continents & Asian Sub-Regions Toggle -->
         <div class="continents-toggle-row">
           <button class="btn-ghost" onclick={() => (showContinents = !showContinents)}>
-            <span>{@render icon("globe", 14)} Teatros & Bônus Regionais</span>
+            <span><Icon name="globe" size={14} /> Teatros & Bônus Regionais</span>
             <span>{showContinents ? "▲" : "▼"}</span>
           </button>
         </div>
@@ -1207,7 +1048,7 @@
                 <div class="cont-right">
                   {#if isMonopoly}
                     {@const p = game.players.find((plr) => plr.id === ownerId)}
-                    {#if p}{@render flagBadge(p.color, 16, 10)}{/if}
+                    {#if p}<FactionFlag color={p.color} width={16} height={10} />{/if}
                   {/if}
                   <span class="bonus-tag">+{c.bonus}</span>
                 </div>
@@ -1223,7 +1064,7 @@
                 <div class="cont-right">
                   {#if isMonopoly}
                     {@const p = game.players.find((plr) => plr.id === ownerId)}
-                    {#if p}{@render flagBadge(p.color, 16, 10)}{/if}
+                    {#if p}<FactionFlag color={p.color} width={16} height={10} />{/if}
                   {/if}
                   <span class="bonus-tag">+{sub.bonus}</span>
                 </div>
@@ -1233,18 +1074,55 @@
         {/if}
       </aside>
 
-      <!-- ↗ TOP-RIGHT: PLAYER HEADQUARTERS, MAP MODE SWITCHER, CARDS & RADIO -->
+      <!-- ⬆ TOP-CENTER: ACTIVE COMMANDER BANNER & OPERATIONAL DIRECTIVE -->
+      <div class="top-center-banner" class:my-turn-banner={isMyTurn}>
+        {#if currentTurnPlayer}
+          <div class="tc-main-row">
+            <FactionFlag color={currentTurnPlayer.color} width={24} height={15} />
+            <div class="tc-text">
+              <span class="tc-kicker">
+                {isMyTurn ? "SEU TURNO DE COMANDO ATIVO" : `OPERANDO: ${currentTurnPlayer.name.toUpperCase()}`}
+              </span>
+              <strong class="tc-directive">
+                {#if game.pendingConquest}
+                  Ocupação Militar: Avance divisões para o território recém-conquistado
+                {:else if game.phase === "deploy"}
+                  {isMyTurn
+                    ? `Fase 1 — Posicione +${myPlayerState?.unplacedArmies ?? 0} divisões de reserva nos seus territórios`
+                    : "Fase 1 — Posicionamento de reservas estratégicas"}
+                {:else if game.phase === "attack"}
+                  {isMyTurn
+                    ? "Fase 2 — Selecione um território aliado (≥2 divisões) e um alvo inimigo adjacente"
+                    : "Fase 2 — Operações ofensivas em andamento"}
+                {:else if game.phase === "maneuver"}
+                  {isMyTurn
+                    ? "Fase 3 — Realize 1 manobra tática entre territórios aliados ou encerre o turno"
+                    : "Fase 3 — Remanejamento tático de forças"}
+                {:else}
+                  Campanha Encerrada
+                {/if}
+              </strong>
+            </div>
+            <div class="tc-timer" class:timer-danger={remainingSeconds <= 20}>
+              <Icon name="clock" size={14} />
+              <span>{remainingSeconds}s</span>
+            </div>
+          </div>
+        {/if}
+      </div>
+
+      <!-- ↗ TOP-RIGHT: PLAYER HEADQUARTERS, MAP MODE SWITCHER, CARDS, OBJECTIVE & EQUALIZER -->
       <aside class="hud-panel top-right-panel">
         <div class="my-hq-row">
           {#if myPlayerState}
             <div class="hq-general">
-              {@render flagBadge(myPlayerState.color, 24, 15)}
+              <FactionFlag color={myPlayerState.color} width={24} height={15} />
               <span class="hq-name">{myPlayerState.name}</span>
             </div>
 
             {#if isMyTurn && myPlayerState.unplacedArmies > 0}
-              <div class="reserve-badge pulse">
-                {@render icon("shield", 14)} +{myPlayerState.unplacedArmies} Reservas
+              <div class="reserve-badge">
+                <Icon name="shield" size={13} /> +{myPlayerState.unplacedArmies} Reservas
               </div>
             {/if}
           {/if}
@@ -1253,29 +1131,39 @@
             <button
               class="hud-btn"
               class:highlight={Boolean(validTradeTriplet)}
-              class:active={showCards}
-              onclick={() => (showCards = !showCards)}
-              title="Cartas de Território"
+              class:mandatory={Boolean(myPlayerState && myPlayerState.cards.length >= 5)}
+              class:active={activeRightDrawer === "cards"}
+              onclick={() => toggleRightDrawer("cards")}
+              title="Cartas de Suprimento"
             >
-              {@render icon("cards", 14)} {myPlayerState?.cards.length ?? 0}/5
+              <Icon name="cards" size={14} /> {myPlayerState?.cards.length ?? 0}/5
             </button>
 
             <button
               class="hud-btn"
-              class:active={showObjective}
-              onclick={() => (showObjective = !showObjective)}
-              title="Diretriz de Objetivo Secreto"
+              class:active={activeRightDrawer === "objective"}
+              onclick={() => toggleRightDrawer("objective")}
+              title="Diretriz Secreta de Alto Comando"
             >
-              {@render icon("target", 14)} Objetivo
+              <Icon name="target" size={14} /> Objetivo
             </button>
 
             <button
               class="hud-btn"
-              class:active={isMusicPlaying}
-              onclick={() => (showMusicPanel = !showMusicPanel)}
-              title="Rádio Militar & Trilha Sonora"
+              class:active={activeRightDrawer === "audio" || (ui.isMusicPlaying && !ui.isMuted)}
+              onclick={() => toggleRightDrawer("audio")}
+              title="Rádio Militar & Equalizador (Música / SFX)"
             >
-              {@render icon("radio", 14)} {isMusicPlaying ? "ON" : "OFF"}
+              <Icon name={ui.isMuted ? "mute" : "radio"} size={14} />
+              {ui.isMuted ? "Mudo" : ui.isMusicPlaying ? "ON" : "Áudio"}
+            </button>
+
+            <button
+              class="hud-btn btn-exit-room"
+              onclick={leaveCurrentRoom}
+              title="Retornar ao Quartel-General (Sair da Sala)"
+            >
+              <Icon name="back" size={14} />
             </button>
           </div>
         </div>
@@ -1316,65 +1204,66 @@
           </div>
         </div>
 
-        <!-- Music Radio Drawer (Dual Equalization: SFX vs Music) -->
-        {#if showMusicPanel}
+        <!-- Audio Equalizer Drawer (HEGEM-10: Independent Music + SFX Sliders + Master Mute) -->
+        {#if activeRightDrawer === "audio"}
           <div class="floating-drawer music-drawer">
             <div class="drawer-header">
-              <h4>{@render icon("radio", 15)} Rádio Tático & Equalização</h4>
-              <button class="btn-close" onclick={() => (showMusicPanel = false)}>✕</button>
+              <h4><Icon name="radio" size={15} /> Equalizador & Rádio Militar</h4>
+              <button class="btn-close" onclick={() => (activeRightDrawer = null)}>✕</button>
             </div>
             <div class="radio-controls">
-              <div class="radio-playback-row">
-                <button class="btn primary-gold" onclick={toggleMusic}>
-                  {isMusicPlaying ? "⏸ Pausar Música" : "▶ Iniciar Música"}
+              <div class="radio-top-btns">
+                <button class="btn primary-gold" style="flex: 1;" onclick={() => ui.toggleMusic()}>
+                  {ui.isMusicPlaying ? "Pausar Trilha" : "Iniciar Trilha"}
                 </button>
-                <button class="btn {isMuted ? 'danger' : 'secondary'}" onclick={toggleMuteAll}>
-                  {isMuted ? "🔇 Desmutar" : "🔊 Mutar Tudo"}
+                <button
+                  class="btn secondary"
+                  onclick={() => ui.toggleMute()}
+                  title="Mute Geral (Música + SFX)"
+                >
+                  <Icon name={ui.isMuted ? "mute" : "volume"} size={15} />
+                  {ui.isMuted ? "Ativar Som" : "Mute Geral"}
                 </button>
               </div>
 
-              <div class="volume-slider-group">
-                <div class="volume-slider-row">
-                  <div class="vol-label-row">
-                    <span>MÚSICA:</span>
-                    <strong>{isMuted ? "0 (Mudo)" : Math.round(musicVolume * 100) + "%"}</strong>
-                  </div>
-                  <input
-                    type="range"
-                    min="0"
-                    max="1"
-                    step="0.05"
-                    value={musicVolume}
-                    oninput={onVolumeChange}
-                    disabled={isMuted}
-                  />
+              <div class="eq-slider-block">
+                <div class="eq-label-row">
+                  <span>Volume da Música</span>
+                  <strong>{Math.round(ui.musicVolume * 100)}%</strong>
                 </div>
+                <input
+                  type="range"
+                  min="0"
+                  max="1"
+                  step="0.05"
+                  value={ui.musicVolume}
+                  oninput={(e) => ui.setMusicVolume(parseFloat((e.currentTarget as HTMLInputElement).value))}
+                />
+              </div>
 
-                <div class="volume-slider-row">
-                  <div class="vol-label-row">
-                    <span>SFX / DADOS / COMBATE:</span>
-                    <strong>{isMuted ? "0 (Mudo)" : Math.round(sfxVolume * 100) + "%"}</strong>
-                  </div>
-                  <input
-                    type="range"
-                    min="0"
-                    max="1"
-                    step="0.05"
-                    value={sfxVolume}
-                    oninput={onSfxVolumeChange}
-                    disabled={isMuted}
-                  />
+              <div class="eq-slider-block">
+                <div class="eq-label-row">
+                  <span>Efeitos de Combate (SFX)</span>
+                  <strong>{Math.round(ui.sfxVolume * 100)}%</strong>
                 </div>
+                <input
+                  type="range"
+                  min="0"
+                  max="1"
+                  step="0.05"
+                  value={ui.sfxVolume}
+                  oninput={(e) => ui.setSfxVolume(parseFloat((e.currentTarget as HTMLInputElement).value))}
+                />
               </div>
 
               <div class="track-select">
-                <span class="track-title-label">Canal de Áudio / Frequência:</span>
+                <span>Canal de Transmissão:</span>
                 <div class="track-list-scroll">
                   {#each SOUNDTRACKS as track}
                     <button
                       class="track-option"
-                      class:selected={selectedTrack === track.id}
-                      onclick={() => onTrackSelect(track.id)}
+                      class:selected={ui.selectedTrack === track.id}
+                      onclick={() => ui.setTrack(track.id)}
                     >
                       {track.label}
                     </button>
@@ -1385,70 +1274,65 @@
           </div>
         {/if}
 
-        <!-- Objective Drawer -->
-        {#if showObjective && myPlayerState}
+        <!-- Secret Objective Drawer -->
+        {#if activeRightDrawer === "objective" && myPlayerState}
           <div class="floating-drawer objective-drawer">
             <div class="drawer-header">
-              <h4>{@render icon("target", 15)} Diretriz Secreta de Alto Comando</h4>
-              <button class="btn-close" onclick={() => (showObjective = false)}>✕</button>
+              <h4><Icon name="target" size={15} /> Diretriz Secreta de Alto Comando</h4>
+              <button class="btn-close" onclick={() => (activeRightDrawer = null)}>✕</button>
             </div>
             <p class="objective-body">{myPlayerState.objective.descriptionPt}</p>
-
             {#if objectiveProgress}
               <div class="objective-progress-box">
                 <div class="progress-bar-header">
                   <span>Progresso da Operação:</span>
-                  <strong class="pct-val">{objectiveProgress.pct}% ({objectiveProgress.owned}/{objectiveProgress.total} Territórios)</strong>
+                  <strong>{objectiveProgress.pct}% ({objectiveProgress.owned}/{objectiveProgress.total})</strong>
                 </div>
                 <div class="progress-track">
                   <div class="progress-fill" style="width: {objectiveProgress.pct}%;"></div>
                 </div>
               </div>
             {/if}
-
-            <div class="objective-highlight-toggle-row">
-              <button
-                class="btn {highlightObjectiveTerritories ? 'primary-gold' : 'secondary'} highlight-toggle-btn"
-                onclick={toggleObjectiveHighlight}
-              >
-                {highlightObjectiveTerritories ? "🎯 Ocultar Destaque Visual no Mapa" : "🎯 Iluminar Territórios do Objetivo no Mapa"}
-              </button>
-            </div>
-
             <small class="objective-note">
-              {highlightObjectiveTerritories
-                ? "🟢 VERDE: Províncias já sob seu controle | 🔴 VERMELHO: Alvos pendentes para vitória."
-                : "Clique no botão acima para acender o mapa com os territórios necessários para vencer."}
+              Documento confidencial mascarado no servidor. O cumprimento garante vitória imediata.
             </small>
           </div>
         {/if}
 
-        <!-- Cards & Trades Drawer -->
-        {#if showCards && myPlayerState}
+        <!-- Supply Cards & Escalation Drawer -->
+        {#if activeRightDrawer === "cards" && myPlayerState}
           <div class="floating-drawer cards-drawer">
             <div class="drawer-header">
-              <h4>{@render icon("cards", 15)} Cartas de Suprimento ({myPlayerState.cards.length}/5)</h4>
-              <button class="btn-close" onclick={() => (showCards = false)}>✕</button>
+              <h4><Icon name="cards" size={15} /> Cartas de Suprimento ({myPlayerState.cards.length}/5)</h4>
+              <button class="btn-close" onclick={() => (activeRightDrawer = null)}>✕</button>
             </div>
+
+            <div class="escalation-banner">
+              <span>Próxima Requisição (#{(game.tradeCount ?? 0) + 1}):</span>
+              <strong>+{nextTradeBonus} Divisões</strong>
+            </div>
+
             <div class="cards-grid">
               {#each myPlayerState.cards as c}
                 <div class="card-item">
                   <span class="card-symbol">
                     {c.symbol === "circle"
-                      ? "INFANTARIA (Círculo)"
+                      ? "INFANTARIA (●)"
                       : c.symbol === "square"
-                        ? "BLINDADOS (Quadrado)"
+                        ? "BLINDADOS (■)"
                         : c.symbol === "triangle"
-                          ? "ARTILHARIA (Triângulo)"
-                          : "COMANDO TOTAL (Coringa)"}
+                          ? "ARTILHARIA (▲)"
+                          : "COMANDO TOTAL (★)"}
                   </span>
                   <span class="card-territory">
-                    {c.territoryId ? territoryById.get(c.territoryId)?.namePt : "Qualquer Região"}
+                    {c.territoryId ? territoryById.get(c.territoryId)?.namePt : "Coringa Estratégico"}
                   </span>
                 </div>
               {/each}
               {#if myPlayerState.cards.length === 0}
-                <p class="subtitle">Conquiste ao menos um território no turno para receber suprimentos.</p>
+                <p class="empty-cards-note">
+                  Conquiste ao menos um território no seu turno para receber 1 carta de suprimento.
+                </p>
               {/if}
             </div>
 
@@ -1457,57 +1341,76 @@
                 class="btn primary-gold full-width"
                 onclick={() => sendAction({ type: "trade_cards", cardIds: validTradeTriplet })}
               >
-                Requisitar Divisões Extras (Trocar 3 Cartas)
+                <Icon name="shield" size={15} /> Requisitar +{nextTradeBonus} Divisões (Trocar 3 Cartas)
               </button>
             {/if}
           </div>
         {/if}
       </aside>
 
-      <!-- ↙ BOTTOM-LEFT: NAVIGATION HINT -->
-      <div class="bottom-left-hint">
-        <span>WASD / Setas: Mover Mapa</span>
-        <span>•</span>
-        <span>Q / E / Scroll: Zoom</span>
-        <span>•</span>
-        <span>Globo Contínuo (Pacífico ↔ Atlântico)</span>
+      <!-- ↙ BOTTOM-LEFT: LIVE TERRITORY RECON INSPECTOR & CONTROLS HINT -->
+      <div class="bottom-left-stack">
+        {#if inspectedTerritory}
+          <div class="recon-inspector-card">
+            <div class="recon-head">
+              {#if inspectedTerritory.owner}
+                <FactionFlag color={inspectedTerritory.owner.color} width={20} height={13} />
+              {/if}
+              <strong>{inspectedTerritory.def.namePt}</strong>
+              <span class="recon-garrison">{inspectedTerritory.state.armies} DIV</span>
+            </div>
+            <div class="recon-meta">
+              <span>{inspectedTerritory.regionName}</span>
+              <span>•</span>
+              <span>Ocupante: {inspectedTerritory.owner?.name ?? "Neutro"}</span>
+              <span>•</span>
+              <span>{inspectedTerritory.def.neighbors.length} Fronteiras</span>
+            </div>
+          </div>
+        {/if}
+
+        <div class="bottom-left-hint">
+          <span>WASD / Setas: Mover</span>
+          <span>•</span>
+          <span>Q / E / Scroll: Zoom</span>
+          <span>•</span>
+          <span>F1-F3: Modos de Mapa</span>
+        </div>
       </div>
 
-      <!-- ⬇ BOTTOM-CENTER: 1-2-3 PHASE DOCK & TACTICAL ORDERS -->
+      <!-- ⬇ BOTTOM-CENTER: TACTICAL ORDER CONSOLE & 1-2-3 PHASE STEPPER -->
       <footer class="hud-panel bottom-center-dock">
-        {#if game.winnerId}
-          {@const winner = game.players.find((p) => p.id === game!.winnerId)}
-          <div class="action-popup victory-popup">
-            <h3>HEGEMONIA ALCANÇADA POR {winner?.name?.toUpperCase()}</h3>
-            <p>{winner?.objective.descriptionPt}</p>
-            <div class="victory-dock-buttons">
-              <button class="btn primary-gold" onclick={() => (showVictoryModal = true)}>
-                📊 Ver Relatório da Partida
-              </button>
-              {#if amIHost}
-                <button class="btn gold-outline" onclick={returnRoomToLobby}>
-                  🔄 Voltar ao Lobby
-                </button>
-              {/if}
-              <button class="btn secondary" onclick={leaveToMainMenu}>
-                🚪 Sair da Sala
-              </button>
-            </div>
-            <small>Verificação Criptográfica (Seed): {game.revealedSeed}</small>
-          </div>
-
-        {:else if isMyTurn}
+        {#if isMyTurn && !game.winnerId}
           {#if game.pendingConquest}
             <div class="action-popup">
-              <h4>Território Conquistado — Quantas divisões avançar para ocupação?</h4>
+              <div class="popup-head">
+                <h4>
+                  <Icon name="flag" size={14} /> Território Conquistado — Quantas divisões avançar para ocupação?
+                </h4>
+              </div>
               <div class="slider-row">
+                <button
+                  class="preset-btn"
+                  onclick={() => (sliderArmies = game!.pendingConquest!.minMove)}
+                >
+                  Mín ({game.pendingConquest.minMove})
+                </button>
                 <input
                   type="range"
                   min={game.pendingConquest.minMove}
                   max={game.pendingConquest.maxMove}
                   bind:value={sliderArmies}
                 />
-                <button class="btn primary-gold" onclick={() => sendAction({ type: "occupy", armies: sliderArmies })}>
+                <button
+                  class="preset-btn"
+                  onclick={() => (sliderArmies = game!.pendingConquest!.maxMove)}
+                >
+                  Máx ({game.pendingConquest.maxMove})
+                </button>
+                <button
+                  class="btn primary-gold"
+                  onclick={() => sendAction({ type: "occupy", armies: sliderArmies })}
+                >
                   Avançar {sliderArmies} Divisões
                 </button>
               </div>
@@ -1515,15 +1418,27 @@
 
           {:else if game.phase === "deploy"}
             {#if selectedFromId}
+              {@const maxD = myPlayerState?.unplacedArmies ?? 1}
               <div class="action-popup">
-                <h4>Posicionar reservas em <strong>{territoryById.get(selectedFromId)?.namePt}</strong>:</h4>
+                <div class="popup-head">
+                  <h4>
+                    Posicionar reservas em <strong>{territoryById.get(selectedFromId)?.namePt}</strong>:
+                  </h4>
+                  <div class="quick-presets">
+                    <button class="preset-btn" onclick={() => (sliderArmies = 1)}>+1</button>
+                    {#if maxD >= 3}
+                      <button class="preset-btn" onclick={() => (sliderArmies = Math.max(1, Math.floor(maxD / 2)))}>
+                        50%
+                      </button>
+                    {/if}
+                    <button class="preset-btn" onclick={() => (sliderArmies = maxD)}>
+                      Tudo ({maxD})
+                    </button>
+                    <button class="preset-btn" onclick={() => (selectedFromId = null)}>✕</button>
+                  </div>
+                </div>
                 <div class="slider-row">
-                  <input
-                    type="range"
-                    min="1"
-                    max={myPlayerState?.unplacedArmies ?? 1}
-                    bind:value={sliderArmies}
-                  />
+                  <input type="range" min="1" max={maxD} bind:value={sliderArmies} />
                   <button class="btn primary-gold" onclick={confirmDeploy}>
                     Confirmar +{sliderArmies} Divisões
                   </button>
@@ -1535,26 +1450,74 @@
             {#if selectedFromId && selectedToId}
               <div class="action-popup attack-popup">
                 <div class="attack-matchup">
-                  <span>Origem: <strong>{territoryById.get(selectedFromId)?.namePt}</strong> ({game.territories[selectedFromId].armies})</span>
+                  <span>
+                    Origem: <strong>{territoryById.get(selectedFromId)?.namePt}</strong> ({game.territories[selectedFromId].armies})
+                  </span>
                   <span class="vs">VS</span>
-                  <span>Alvo: <strong>{territoryById.get(selectedToId)?.namePt}</strong> ({game.territories[selectedToId].armies})</span>
+                  <span>
+                    Alvo: <strong>{territoryById.get(selectedToId)?.namePt}</strong> ({game.territories[selectedToId].armies})
+                  </span>
+                </div>
+
+                <div class="attack-controls-row">
+                  <div class="dice-selector">
+                    <span>Dados de Ataque:</span>
+                    <button
+                      class="preset-btn"
+                      class:active={selectedAttackDice === null}
+                      onclick={() => (selectedAttackDice = null)}
+                    >
+                      Máx ({maxAttackerDice}D)
+                    </button>
+                    {#each [1, 2, 3] as dCount}
+                      {#if dCount <= maxAttackerDice}
+                        <button
+                          class="preset-btn"
+                          class:active={selectedAttackDice === dCount}
+                          onclick={() => (selectedAttackDice = dCount)}
+                        >
+                          {dCount}D
+                        </button>
+                      {/if}
+                    {/each}
+                  </div>
+
+                  {#if currentAttackOdds !== null}
+                    <div class="odds-inline">
+                      <span>Vitória Estimada:</span>
+                      <strong
+                        style="color: {currentAttackOdds >= 60
+                          ? '#6ee7b7'
+                          : currentAttackOdds >= 40
+                            ? '#fde047'
+                            : '#fca5a5'}"
+                      >
+                        {currentAttackOdds}%
+                      </strong>
+                    </div>
+                  {/if}
                 </div>
 
                 {#if currentAttackOdds !== null}
-                  <div class="odds-bar-container">
-                    <div class="odds-label">
-                      <span>Projeção Tática de Vitória:</span>
-                      <strong>{currentAttackOdds}%</strong>
-                    </div>
-                    <div class="odds-bar">
-                      <div class="odds-fill" style="width: {currentAttackOdds}%"></div>
-                    </div>
+                  <div class="odds-bar">
+                    <div class="odds-fill" style="width: {currentAttackOdds}%"></div>
                   </div>
                 {/if}
 
-                <button class="btn btn-attack full-width" onclick={confirmAttack}>
-                  {@render icon("swords", 15)} Executar Ofensiva
-                </button>
+                <div class="attack-cta-row">
+                  <button
+                    class="btn secondary"
+                    onclick={() => {
+                      selectedFromId = null;
+                      selectedToId = null;
+                    }}
+                  >
+                    Cancelar
+                  </button>
+                  <button class="btn btn-attack" style="flex: 1;" onclick={confirmAttack}>
+                    <Icon name="swords" size={15} /> Executar Ofensiva
+                  </button>
+                </div>
               </div>
             {/if}
 
@@ -1563,11 +1526,29 @@
               {@const fromT = game.territories[selectedFromId]}
               {@const maxM = Math.max(1, fromT.armies - fromT.movedInArmies - 1)}
               <div class="action-popup">
-                <h4>Remanejar de {territoryById.get(selectedFromId)?.namePt} para {territoryById.get(selectedToId)?.namePt}:</h4>
+                <div class="popup-head">
+                  <h4>
+                    Remanejar de <strong>{territoryById.get(selectedFromId)?.namePt}</strong> para
+                    <strong>{territoryById.get(selectedToId)?.namePt}</strong>:
+                  </h4>
+                  <div class="quick-presets">
+                    <button class="preset-btn" onclick={() => (sliderArmies = 1)}>Mín (1)</button>
+                    <button class="preset-btn" onclick={() => (sliderArmies = maxM)}>Máx ({maxM})</button>
+                    <button
+                      class="preset-btn"
+                      onclick={() => {
+                        selectedFromId = null;
+                        selectedToId = null;
+                      }}
+                    >
+                      ✕
+                    </button>
+                  </div>
+                </div>
                 <div class="slider-row">
                   <input type="range" min="1" max={maxM} bind:value={sliderArmies} />
                   <button class="btn primary-gold" onclick={confirmManeuver}>
-                    Transferir {sliderArmies}
+                    Transferir {sliderArmies} Divisões
                   </button>
                 </div>
               </div>
@@ -1584,7 +1565,7 @@
           <div class="phase-arrow">›</div>
           <div class="phase-step" class:active-phase={game.phase === "attack"}>
             <span class="num">2</span>
-            <span class="label">Ofensiva</span>
+            <span class="label">Ofensiva {game.round === 1 ? "(R1 Tratado)" : ""}</span>
           </div>
           <div class="phase-arrow">›</div>
           <div class="phase-step" class:active-phase={game.phase === "maneuver"}>
@@ -1592,183 +1573,40 @@
             <span class="label">Manobra</span>
           </div>
 
-          <div class="turn-timer" class:timer-danger={remainingSeconds <= 20}>
-            {@render icon("clock", 14)} {remainingSeconds}s
-          </div>
-
-          {#if isMyTurn}
-            {#if game.phase === "attack"}
-              <button class="btn secondary" onclick={() => sendAction({ type: "end_attack" })}>
-                Avançar para Manobra ›
-              </button>
-            {:else if game.phase === "maneuver"}
-              <button class="btn primary-gold" onclick={() => sendAction({ type: "end_turn" })}>
-                {@render icon("check", 15)} Encerrar Turno
-              </button>
-            {/if}
+          {#if isMyTurn && !game.winnerId}
+            <div class="phase-action-slot">
+              {#if game.phase === "attack" && !game.pendingConquest}
+                <button class="btn secondary" onclick={() => sendAction({ type: "end_attack" })}>
+                  Avançar para Manobra ›
+                </button>
+              {:else if game.phase === "maneuver"}
+                <button class="btn primary-gold" onclick={() => sendAction({ type: "end_turn" })}>
+                  <Icon name="check" size={15} /> Encerrar Turno
+                </button>
+              {/if}
+            </div>
           {/if}
         </div>
       </footer>
 
-      <!-- ↘ BOTTOM-RIGHT: WAR JOURNAL, DICE COMBAT TELEMETRY & COMMS -->
-      <aside class="hud-panel bottom-right-panel" class:collapsed={logCollapsed}>
-        <div class="panel-header">
-          <div class="tab-buttons">
-            <button class="tab-btn" class:active={activeLogTab === "log"} onclick={() => (activeLogTab = "log")}>
-              {@render icon("log", 13)} Diário de Guerra
-            </button>
-            <button class="tab-btn" class:active={activeLogTab === "chat"} onclick={() => (activeLogTab = "chat")}>
-              {@render icon("chat", 13)} Comms
-            </button>
-          </div>
-          <button class="btn-collapse" onclick={() => (logCollapsed = !logCollapsed)}>
-            {logCollapsed ? "▲" : "▼"}
-          </button>
-        </div>
-
-        {#if !logCollapsed}
-          {#if game.lastCombat}
-            <div class="dice-history-box">
-              <span class="dice-att">ATQ [{game.lastCombat.attackerDice.join(" • ")}]</span>
-              <span class="dice-def">DEF [{game.lastCombat.defenderDice.join(" • ")}]</span>
-            </div>
-          {/if}
-
-          {#if activeLogTab === "log"}
-            <div class="log-scroller">
-              {#each game.log.slice(-25) as entry}
-                <div class="log-line">{entry}</div>
-              {/each}
-            </div>
-          {:else}
-            <div class="log-scroller chat-scroller">
-              {#each game.log.filter((l) => l.startsWith("[COMMS]")).slice(-25) as entry}
-                <div class="log-line chat-line">{entry.replace("[COMMS] ", "")}</div>
-              {/each}
-            </div>
-            <div class="chat-input-row">
-              <input
-                bind:value={chatInput}
-                placeholder="Transmitir mensagem..."
-                onkeydown={(e) => e.key === "Enter" && sendChat()}
-              />
-              <button class="btn secondary" onclick={sendChat}>Enviar</button>
-            </div>
-          {/if}
-        {/if}
-      </aside>
-
-      <!-- 🏆 VICTORY & SUMMARY MODAL -->
-      {#if game.winnerId && showVictoryModal}
-        {@const winner = game.players.find((p) => p.id === game!.winnerId)}
-        <div
-          class="modal-backdrop victory-modal-backdrop"
-          role="presentation"
-          onclick={(e) => { if (e.target === e.currentTarget) showVictoryModal = false; }}
-          onkeydown={(e) => { if (e.key === "Escape") showVictoryModal = false; }}
-        >
-          <div class="victory-modal-card" role="dialog" aria-modal="true">
-            <div class="victory-modal-header">
-              <span class="victory-laurel">★ ★ ★</span>
-              <h2>HEGEMONIA CONQUISTADA</h2>
-              <span class="victory-sub">O DESTINO DO MUNDO FOI DECIDIDO</span>
-            </div>
-
-            <div class="winner-hero" style="border-color: {COLOR_HEX[winner?.color ?? 'blue']};">
-              <div class="winner-avatar" style="background-color: {COLOR_HEX[winner?.color ?? 'blue']};">
-                {winner?.name.slice(0, 2).toUpperCase()}
-              </div>
-              <div class="winner-details">
-                <h3>{winner?.name}</h3>
-                <span class="winner-faction" style="color: {COLOR_HEX[winner?.color ?? 'blue']};">
-                  {FACTION_NAME_PT[winner?.color ?? 'blue']}
-                </span>
-              </div>
-            </div>
-
-            <div class="victory-objective-box">
-              <h4>Objetivo Secreto Cumprido</h4>
-              <p class="obj-text">{winner?.objective.descriptionPt}</p>
-              <div class="crypto-seed-row">
-                <span>Semente Criptográfica:</span>
-                <code>{game.revealedSeed}</code>
-              </div>
-            </div>
-
-            <div class="victory-stats-summary">
-              <h4>Relatório do Estado-Maior (Rodada {game.round})</h4>
-              <div class="stats-table">
-                {#each game.players as p}
-                  {@const count = Object.values(game.territories).filter((t) => t.ownerId === p.id).length}
-                  {@const armiesCount = Object.values(game.territories).filter((t) => t.ownerId === p.id).reduce((acc, t) => acc + t.armies, 0)}
-                  <div class="stat-player-row {p.id === game.winnerId ? 'is-winner' : ''}">
-                    <div class="stat-player-name">
-                      <span class="color-dot" style="background-color: {COLOR_HEX[p.color]};"></span>
-                      <span>{p.name} {p.id === game.winnerId ? '(VENCEDOR)' : ''}</span>
-                    </div>
-                    <div class="stat-metrics">
-                      <span>{count} Territórios</span>
-                      <span class="sep">•</span>
-                      <span>{armiesCount} Divisões</span>
-                    </div>
-                  </div>
-                {/each}
-              </div>
-            </div>
-
-            <div class="victory-actions">
-              {#if amIHost}
-                <button class="btn primary-gold btn-lg" onclick={returnRoomToLobby}>
-                  🔄 Retornar a Sala para o Lobby
-                </button>
-              {:else}
-                <div class="waiting-host-notice">
-                  Aguardando o comandante da sala retornar ao lobby...
-                </div>
-              {/if}
-              <div class="secondary-actions-row">
-                <button class="btn secondary" onclick={() => (showVictoryModal = false)}>
-                  🗺️ Inspecionar Mapa Final
-                </button>
-                <button class="btn danger" onclick={leaveToMainMenu}>
-                  🚪 Sair para o Menu Principal
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      {/if}
+      <!-- ↘ BOTTOM-RIGHT: WAR JOURNAL, DICE COMBAT TELEMETRY & COMMS (HEGEM-12) -->
+      <WarJournal
+        logs={game.log}
+        lastCombat={game.lastCombat}
+        players={game.players}
+        onSendChat={sendChatText}
+      />
     </div>
   {/if}
 </main>
 
 <style>
-  :global(*) {
-    box-sizing: border-box;
-    margin: 0;
-    padding: 0;
-  }
-  :global(body) {
-    background: #050b16;
-    color: #f8fafc;
-    font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-    overflow: hidden;
-    height: 100vh;
-    width: 100vw;
-    user-select: none;
-  }
-
-  .ui-svg-icon {
-    display: inline-block;
-    vertical-align: -2px;
-    flex-shrink: 0;
-  }
-
   .hegemonia-app {
     position: relative;
     width: 100vw;
     height: 100vh;
     overflow: hidden;
+    user-select: none;
   }
 
   /* --- Fullscreen Continuous Map Viewport --- */
@@ -1806,52 +1644,98 @@
     pointer-events: none;
     z-index: 20;
     display: grid;
-    grid-template-columns: 350px 1fr 370px;
+    grid-template-columns: 335px 1fr 365px;
     grid-template-rows: auto 1fr auto;
-    padding: 0.85rem;
-    gap: 0.85rem;
+    padding: 0.75rem;
+    gap: 0.65rem;
   }
 
   .hud-panel {
     pointer-events: auto;
     backdrop-filter: blur(14px);
-    background: linear-gradient(180deg, rgba(13, 20, 36, 0.93) 0%, rgba(8, 13, 24, 0.93) 100%);
-    border: 1px solid rgba(180, 140, 68, 0.42);
-    border-radius: 8px;
-    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.75), inset 0 1px 0 rgba(255, 255, 255, 0.06);
-    padding: 0.8rem;
+    background: linear-gradient(180deg, rgba(11, 18, 33, 0.94) 0%, rgba(6, 11, 21, 0.96) 100%);
+    border: 1px solid rgba(212, 175, 55, 0.44);
+    border-radius: 7px;
+    box-shadow: 0 14px 36px rgba(0, 0, 0, 0.8), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+    padding: 0.7rem 0.78rem;
     display: flex;
     flex-direction: column;
-    gap: 0.55rem;
+    gap: 0.5rem;
   }
 
   /* Top-Left Panel */
   .top-left-panel {
     grid-column: 1;
-    grid-row: 1;
+    grid-row: 1 / span 2;
     align-self: start;
+    max-height: calc(100vh - 115px);
+    overflow: hidden;
   }
   .brand-row {
     display: flex;
     align-items: center;
-    gap: 0.45rem;
-    font-size: 0.95rem;
+    gap: 0.55rem;
+  }
+  .hud-mini-logo {
+    height: 36px;
+    width: auto;
+    object-fit: contain;
+    filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.8));
+  }
+  .brand-lockup {
+    display: flex;
+    flex-direction: column;
+  }
+  .brand-lockup strong {
+    font-family: var(--font-display);
+    font-size: 0.92rem;
     letter-spacing: 0.14em;
-    color: #f8fafc;
+    color: #fef08a;
   }
-  .brass-icon {
-    color: #eab308;
-    display: inline-flex;
+  .brand-lockup small {
+    font-family: var(--font-mono);
+    font-size: 0.62rem;
+    color: #94a3b8;
   }
-  .room-tag {
-    font-size: 0.7rem;
-    letter-spacing: 0.05em;
-    background: rgba(30, 41, 59, 0.85);
-    border: 1px solid rgba(100, 116, 139, 0.35);
-    padding: 0.15rem 0.45rem;
-    border-radius: 4px;
-    color: #cbd5e1;
+  .round-tag {
     margin-left: auto;
+    font-family: var(--font-mono);
+    font-size: 0.68rem;
+    font-weight: 800;
+    letter-spacing: 0.06em;
+    background: rgba(202, 138, 4, 0.16);
+    border: 1px solid rgba(234, 179, 8, 0.45);
+    padding: 0.2rem 0.5rem;
+    border-radius: 4px;
+    color: #fef08a;
+  }
+
+  .round1-treaty-banner {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.3rem 0.5rem;
+    background: rgba(56, 189, 248, 0.14);
+    border: 1px solid rgba(56, 189, 248, 0.35);
+    border-radius: 4px;
+    font-size: 0.68rem;
+    font-weight: 600;
+    color: #bae6fd;
+  }
+
+  .hegemony-bar-wrap {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+  }
+  .hegemony-bar-label {
+    display: flex;
+    justify-content: space-between;
+    font-family: var(--font-tactical);
+    font-size: 0.62rem;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    color: #94a3b8;
   }
   .hegemony-bar {
     display: flex;
@@ -1866,24 +1750,25 @@
     height: 100%;
     transition: width 0.35s ease;
   }
+
   .generals-table {
     display: flex;
     flex-direction: column;
-    gap: 0.32rem;
+    gap: 0.28rem;
   }
   .general-row {
     display: flex;
     justify-content: space-between;
     align-items: center;
     background: rgba(15, 23, 42, 0.65);
-    padding: 0.38rem 0.55rem;
-    border-radius: 5px;
+    padding: 0.34rem 0.5rem;
+    border-radius: 4px;
     border-left: 3px solid transparent;
-    font-size: 0.8rem;
+    font-size: 0.78rem;
   }
   .general-row.active-turn {
-    background: rgba(234, 179, 8, 0.14);
-    border-right: 1px solid rgba(250, 204, 21, 0.45);
+    background: linear-gradient(90deg, rgba(234, 179, 8, 0.2), rgba(15, 23, 42, 0.75));
+    border-right: 1px solid rgba(250, 204, 21, 0.5);
   }
   .general-row.eliminated {
     opacity: 0.38;
@@ -1892,10 +1777,26 @@
   .g-info {
     display: flex;
     align-items: center;
-    gap: 0.45rem;
+    gap: 0.42rem;
+    min-width: 0;
   }
   .g-name {
     font-weight: 600;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .you-badge {
+    font-family: var(--font-mono);
+    font-size: 0.55rem;
+    font-weight: 800;
+    background: rgba(234, 179, 8, 0.22);
+    color: #fef08a;
+    padding: 1px 4px;
+    border-radius: 2px;
   }
   .turn-indicator {
     color: #facc15;
@@ -1903,57 +1804,55 @@
   }
   .g-stats {
     display: flex;
-    gap: 0.35rem;
+    gap: 0.28rem;
     color: #cbd5e1;
-    font-size: 0.72rem;
+    font-family: var(--font-mono);
+    font-size: 0.66rem;
     font-weight: 700;
   }
   .stat-pill {
-    background: rgba(30, 41, 59, 0.8);
-    padding: 0.1rem 0.35rem;
+    background: rgba(5, 9, 18, 0.75);
+    padding: 0.1rem 0.32rem;
     border-radius: 3px;
   }
+
   .btn-ghost {
     background: rgba(30, 41, 59, 0.45);
     border: 1px solid rgba(100, 116, 139, 0.35);
     color: #cbd5e1;
     width: 100%;
-    padding: 0.35rem 0.55rem;
+    padding: 0.32rem 0.55rem;
     border-radius: 5px;
-    font-size: 0.75rem;
-    font-weight: 600;
-    cursor: pointer;
+    font-size: 0.74rem;
+    font-weight: 700;
     display: flex;
     justify-content: space-between;
     align-items: center;
   }
-  .btn-ghost:hover {
-    background: rgba(51, 65, 85, 0.55);
-    color: #ffffff;
-  }
   .continents-dropdown {
     display: flex;
     flex-direction: column;
-    gap: 0.25rem;
-    max-height: 220px;
+    gap: 0.22rem;
+    max-height: 175px;
     overflow-y: auto;
-    padding-top: 0.2rem;
+    padding-top: 0.15rem;
   }
   .dropdown-section-title {
-    font-size: 0.66rem;
+    font-family: var(--font-tactical);
+    font-size: 0.65rem;
     text-transform: uppercase;
-    letter-spacing: 0.08em;
+    letter-spacing: 0.1em;
     color: #eab308;
-    margin-top: 0.25rem;
-    font-weight: 700;
+    margin-top: 0.2rem;
+    font-weight: 800;
   }
   .cont-pill {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    font-size: 0.75rem;
-    padding: 0.24rem 0.45rem;
-    background: rgba(15, 23, 42, 0.75);
+    font-size: 0.72rem;
+    padding: 0.22rem 0.45rem;
+    background: rgba(5, 9, 18, 0.75);
     border-radius: 4px;
   }
   .asia-sub-pill {
@@ -1965,14 +1864,76 @@
     gap: 0.4rem;
   }
   .bonus-tag {
+    font-family: var(--font-mono);
     color: #facc15;
     font-weight: 700;
+  }
+
+  /* Top-Center Active Commander Banner */
+  .top-center-banner {
+    pointer-events: auto;
+    grid-column: 2;
+    grid-row: 1;
+    justify-self: center;
+    align-self: start;
+    background: linear-gradient(180deg, rgba(11, 18, 33, 0.94) 0%, rgba(6, 11, 21, 0.96) 100%);
+    border: 1px solid rgba(148, 163, 184, 0.35);
+    border-radius: 7px;
+    padding: 0.48rem 0.95rem;
+    box-shadow: 0 12px 30px rgba(0, 0, 0, 0.75);
+    backdrop-filter: blur(14px);
+    max-width: 620px;
+    width: fit-content;
+  }
+  .top-center-banner.my-turn-banner {
+    border-color: rgba(234, 179, 8, 0.75);
+    box-shadow: 0 12px 30px rgba(0, 0, 0, 0.8), 0 0 20px rgba(234, 179, 8, 0.18);
+  }
+  .tc-main-row {
+    display: flex;
+    align-items: center;
+    gap: 0.7rem;
+  }
+  .tc-text {
+    display: flex;
+    flex-direction: column;
+  }
+  .tc-kicker {
+    font-family: var(--font-tactical);
+    font-size: 0.64rem;
+    font-weight: 800;
+    letter-spacing: 0.16em;
+    color: #eab308;
+  }
+  .tc-directive {
+    font-size: 0.78rem;
+    color: #f8fafc;
+    font-weight: 600;
+  }
+  .tc-timer {
+    margin-left: 0.4rem;
+    font-family: var(--font-mono);
+    font-size: 0.86rem;
+    font-weight: 800;
+    padding: 0.25rem 0.55rem;
+    border-radius: 4px;
+    background: rgba(5, 9, 18, 0.9);
+    border: 1px solid rgba(148, 163, 184, 0.3);
+    color: #fef08a;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+  }
+  .tc-timer.timer-danger {
+    color: #fca5a5;
+    border-color: #ef4444;
+    background: rgba(127, 29, 29, 0.45);
   }
 
   /* Top-Right Panel */
   .top-right-panel {
     grid-column: 3;
-    grid-row: 1;
+    grid-row: 1 / span 2;
     align-self: start;
     position: relative;
   }
@@ -1980,50 +1941,53 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 0.45rem;
+    gap: 0.35rem;
     flex-wrap: wrap;
   }
   .hq-general {
     display: flex;
     align-items: center;
-    gap: 0.45rem;
+    gap: 0.4rem;
+    font-family: var(--font-tactical);
     font-weight: 700;
     font-size: 0.88rem;
+    color: #f8fafc;
   }
   .reserve-badge {
     background: rgba(234, 179, 8, 0.2);
     border: 1px solid #facc15;
     color: #fef08a;
-    padding: 0.18rem 0.5rem;
+    padding: 0.14rem 0.45rem;
     border-radius: 4px;
-    font-size: 0.74rem;
-    font-weight: 700;
+    font-family: var(--font-tactical);
+    font-size: 0.72rem;
+    font-weight: 800;
     display: inline-flex;
     align-items: center;
-    gap: 0.3rem;
+    gap: 0.25rem;
   }
   .hq-buttons {
     display: flex;
     align-items: center;
-    gap: 0.35rem;
+    gap: 0.28rem;
     margin-left: auto;
   }
   .hud-btn {
-    background: #162032;
-    border: 1px solid #334155;
+    background: rgba(15, 23, 42, 0.85);
+    border: 1px solid rgba(148, 163, 184, 0.28);
     color: #e2e8f0;
-    padding: 0.32rem 0.55rem;
-    border-radius: 5px;
-    font-size: 0.76rem;
-    font-weight: 600;
-    cursor: pointer;
+    padding: 0.28rem 0.5rem;
+    border-radius: 4px;
+    font-family: var(--font-tactical);
+    font-size: 0.74rem;
+    font-weight: 700;
     display: inline-flex;
     align-items: center;
-    gap: 0.3rem;
+    gap: 0.28rem;
   }
   .hud-btn:hover,
   .hud-btn.active {
-    background: #1e293b;
+    background: rgba(202, 138, 4, 0.2);
     border-color: #eab308;
     color: #fef08a;
   }
@@ -2032,32 +1996,43 @@
     border-color: #10b981;
     color: #a7f3d0;
   }
+  .hud-btn.mandatory {
+    background: rgba(220, 38, 38, 0.28);
+    border-color: #ef4444;
+    color: #fecaca;
+  }
+  .btn-exit-room {
+    padding: 0.28rem 0.42rem;
+    color: #fca5a5;
+    border-color: rgba(239, 68, 68, 0.35);
+  }
 
   .map-mode-bar {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 0.4rem;
-    padding-top: 0.35rem;
-    border-top: 1px solid rgba(51, 65, 85, 0.5);
+    gap: 0.35rem;
+    padding-top: 0.32rem;
+    border-top: 1px solid rgba(148, 163, 184, 0.16);
   }
   .mode-tabs {
     display: flex;
-    gap: 0.25rem;
-    background: #090e1a;
-    padding: 0.18rem;
-    border-radius: 5px;
-    border: 1px solid #1e293b;
+    gap: 0.2rem;
+    background: rgba(5, 9, 18, 0.85);
+    padding: 0.16rem;
+    border-radius: 4px;
+    border: 1px solid rgba(148, 163, 184, 0.18);
   }
   .mode-btn {
     background: transparent;
     border: none;
     color: #94a3b8;
-    padding: 0.25rem 0.55rem;
-    border-radius: 4px;
+    padding: 0.22rem 0.5rem;
+    border-radius: 3px;
+    font-family: var(--font-tactical);
     font-size: 0.72rem;
     font-weight: 700;
-    cursor: pointer;
+    text-transform: uppercase;
   }
   .mode-btn.active {
     background: linear-gradient(135deg, #ca8a04, #a16207);
@@ -2068,37 +2043,38 @@
     gap: 0.2rem;
   }
   .tool-btn {
-    background: #0f172a;
-    border: 1px solid #334155;
+    background: rgba(5, 9, 18, 0.85);
+    border: 1px solid rgba(148, 163, 184, 0.25);
     color: #cbd5e1;
-    min-width: 26px;
-    height: 24px;
-    padding: 0 0.35rem;
-    border-radius: 4px;
-    cursor: pointer;
-    font-size: 0.7rem;
+    min-width: 25px;
+    height: 23px;
+    padding: 0 0.32rem;
+    border-radius: 3px;
+    font-family: var(--font-mono);
+    font-size: 0.68rem;
     font-weight: 700;
-  }
-  .tool-btn:hover {
-    background: #334155;
-    color: #ffffff;
   }
 
   /* Floating Drawers */
   .floating-drawer {
-    margin-top: 0.35rem;
-    padding-top: 0.55rem;
-    border-top: 1px solid #334155;
+    margin-top: 0.25rem;
+    padding-top: 0.5rem;
+    border-top: 1px solid rgba(212, 175, 55, 0.3);
     display: flex;
     flex-direction: column;
     gap: 0.45rem;
+    max-height: 235px;
+    overflow-y: auto;
   }
   .drawer-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
+    font-family: var(--font-tactical);
     font-size: 0.82rem;
-    color: #facc15;
+    color: #fde047;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
   }
   .drawer-header h4 {
     display: flex;
@@ -2109,190 +2085,210 @@
     background: transparent;
     border: none;
     color: #94a3b8;
-    cursor: pointer;
-    font-size: 0.9rem;
+    padding: 2px 6px;
+    font-size: 0.85rem;
   }
   .objective-body {
-    font-size: 0.86rem;
-    line-height: 1.4;
+    font-size: 0.82rem;
+    line-height: 1.45;
     color: #f1f5f9;
-    background: rgba(15, 23, 42, 0.8);
+    background: rgba(5, 9, 18, 0.85);
     padding: 0.6rem;
-    border-radius: 5px;
-    border-left: 3px solid #eab308;
-  }
-  .objective-note {
-    font-size: 0.7rem;
-    color: #94a3b8;
-  }
-  .cards-grid {
-    display: flex;
-    flex-direction: column;
-    gap: 0.3rem;
-  }
-  .card-item {
-    display: flex;
-    justify-content: space-between;
-    background: rgba(15, 23, 42, 0.85);
-    padding: 0.4rem 0.55rem;
     border-radius: 4px;
-    border: 1px solid rgba(71, 85, 105, 0.4);
-    font-size: 0.75rem;
-  }
-  .card-symbol {
-    font-weight: 700;
-    color: #eab308;
-  }
-  .radio-controls {
-    display: flex;
-    flex-direction: column;
-    gap: 0.45rem;
-  }
-  .radio-playback-row {
-    display: flex;
-    gap: 0.4rem;
-  }
-  .radio-playback-row .btn {
-    flex: 1;
-    font-size: 0.75rem;
-    padding: 0.35rem 0.5rem;
-  }
-  .volume-slider-group {
-    display: flex;
-    flex-direction: column;
-    gap: 0.45rem;
-    background: rgba(15, 23, 42, 0.7);
-    padding: 0.45rem 0.55rem;
-    border-radius: 6px;
-    border: 1px solid rgba(51, 65, 85, 0.4);
-  }
-  .volume-slider-row {
-    display: flex;
-    flex-direction: column;
-    gap: 0.2rem;
-  }
-  .vol-label-row {
-    display: flex;
-    justify-content: space-between;
-    font-size: 0.68rem;
-    color: #94a3b8;
-  }
-  .vol-label-row strong {
-    color: #facc15;
-  }
-  .volume-slider-row input {
-    width: 100%;
-    accent-color: #eab308;
-    height: 4px;
-    cursor: pointer;
+    border-left: 3px solid #eab308;
   }
   .objective-progress-box {
     display: flex;
     flex-direction: column;
     gap: 0.25rem;
-    background: rgba(15, 23, 42, 0.7);
-    padding: 0.5rem;
-    border-radius: 6px;
-    border: 1px solid rgba(51, 65, 85, 0.4);
+    background: rgba(5, 9, 18, 0.65);
+    padding: 0.45rem 0.55rem;
+    border-radius: 4px;
+    border: 1px solid rgba(148, 163, 184, 0.2);
   }
   .progress-bar-header {
     display: flex;
     justify-content: space-between;
     font-size: 0.72rem;
-    color: #94a3b8;
+    color: #cbd5e1;
   }
-  .progress-bar-header .pct-val {
-    color: #10b981;
+  .progress-bar-header strong {
+    font-family: var(--font-mono);
+    color: #facc15;
   }
   .progress-track {
-    width: 100%;
     height: 6px;
-    background: #1e293b;
-    border-radius: 3px;
+    background: rgba(15, 23, 42, 0.9);
+    border-radius: 99px;
     overflow: hidden;
   }
   .progress-fill {
     height: 100%;
-    background: linear-gradient(90deg, #10b981, #34d399);
+    background: linear-gradient(90deg, #ca8a04, #10b981);
     transition: width 0.3s ease;
-  }
-  .objective-highlight-toggle-row {
-    margin-top: 0.25rem;
-  }
-  .highlight-toggle-btn {
-    width: 100%;
-    font-size: 0.78rem;
-    font-weight: 700;
-    padding: 0.5rem;
-  }
-
-  .track-select {
-    display: flex;
-    flex-direction: column;
-    gap: 0.35rem;
-    font-size: 0.74rem;
-  }
-  .track-title-label {
-    font-weight: 700;
-    color: #94a3b8;
-    text-transform: uppercase;
-    font-size: 0.68rem;
-    letter-spacing: 0.05em;
   }
   .track-list-scroll {
     display: flex;
     flex-direction: column;
     gap: 0.25rem;
-    max-height: 160px;
+    max-height: 110px;
     overflow-y: auto;
-    padding-right: 0.25rem;
   }
-  .track-list-scroll::-webkit-scrollbar {
-    width: 4px;
+  .objective-note {
+    font-size: 0.68rem;
+    color: #94a3b8;
   }
-  .track-list-scroll::-webkit-scrollbar-thumb {
-    background: #475569;
-    border-radius: 2px;
+
+  .escalation-banner {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: rgba(202, 138, 4, 0.14);
+    border: 1px solid rgba(234, 179, 8, 0.35);
+    padding: 0.32rem 0.55rem;
+    border-radius: 4px;
+    font-size: 0.72rem;
+    color: #cbd5e1;
+  }
+  .escalation-banner strong {
+    font-family: var(--font-mono);
+    color: #fde047;
+  }
+
+  .cards-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+  }
+  .card-item {
+    display: flex;
+    justify-content: space-between;
+    background: rgba(5, 9, 18, 0.85);
+    padding: 0.36rem 0.55rem;
+    border-radius: 4px;
+    border: 1px solid rgba(148, 163, 184, 0.22);
+    font-size: 0.73rem;
+  }
+  .card-symbol {
+    font-family: var(--font-tactical);
+    font-weight: 800;
+    color: #eab308;
+  }
+  .empty-cards-note {
+    font-size: 0.74rem;
+    color: #94a3b8;
+    text-align: center;
+    padding: 0.5rem;
+  }
+
+  .radio-controls {
+    display: flex;
+    flex-direction: column;
+    gap: 0.45rem;
+  }
+  .radio-top-btns {
+    display: flex;
+    gap: 0.4rem;
+  }
+  .eq-slider-block {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+  }
+  .eq-label-row {
+    display: flex;
+    justify-content: space-between;
+    font-family: var(--font-tactical);
+    font-size: 0.7rem;
+    font-weight: 700;
+    color: #cbd5e1;
+    text-transform: uppercase;
+  }
+  .eq-label-row strong {
+    font-family: var(--font-mono);
+    color: #fde047;
+  }
+  .track-select {
+    display: flex;
+    flex-direction: column;
+    gap: 0.22rem;
+    font-size: 0.72rem;
+    color: #94a3b8;
   }
   .track-option {
-    background: #0f172a;
-    border: 1px solid #334155;
+    background: rgba(5, 9, 18, 0.85);
+    border: 1px solid rgba(148, 163, 184, 0.22);
     color: #cbd5e1;
-    padding: 0.35rem 0.5rem;
+    padding: 0.32rem 0.5rem;
     border-radius: 4px;
     text-align: left;
-    cursor: pointer;
     font-size: 0.72rem;
-    line-height: 1.25;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    transition: all 0.15s ease;
-  }
-  .track-option:hover {
-    border-color: #64748b;
-    background: #1e293b;
   }
   .track-option.selected {
     border-color: #eab308;
     color: #fef08a;
-    background: rgba(234, 179, 8, 0.14);
+    background: rgba(234, 179, 8, 0.16);
   }
 
-  /* Bottom-Left Hint */
-  .bottom-left-hint {
+  /* Bottom-Left Recon & Controls Stack */
+  .bottom-left-stack {
     grid-column: 1;
     grid-row: 3;
     align-self: end;
     display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+  }
+  .recon-inspector-card {
+    background: linear-gradient(160deg, rgba(11, 18, 33, 0.94), rgba(6, 11, 21, 0.96));
+    border: 1px solid rgba(212, 175, 55, 0.45);
+    border-radius: 6px;
+    padding: 0.5rem 0.65rem;
+    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.75);
+    display: flex;
+    flex-direction: column;
+    gap: 0.22rem;
+  }
+  .recon-head {
+    display: flex;
     align-items: center;
     gap: 0.45rem;
+  }
+  .recon-head strong {
+    font-family: var(--font-display);
+    font-size: 0.86rem;
+    color: #f8fafc;
+  }
+  .recon-garrison {
+    margin-left: auto;
+    font-family: var(--font-mono);
     font-size: 0.7rem;
+    font-weight: 800;
+    color: #fef08a;
+    background: rgba(202, 138, 4, 0.18);
+    border: 1px solid rgba(234, 179, 8, 0.4);
+    padding: 1px 6px;
+    border-radius: 3px;
+  }
+  .recon-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+    font-size: 0.68rem;
     color: #94a3b8;
-    background: rgba(9, 14, 26, 0.82);
-    border: 1px solid rgba(51, 65, 85, 0.6);
-    padding: 0.4rem 0.65rem;
-    border-radius: 6px;
+  }
+  .bottom-left-hint {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-family: var(--font-tactical);
+    font-size: 0.68rem;
+    font-weight: 600;
+    color: #94a3b8;
+    background: rgba(6, 11, 21, 0.86);
+    border: 1px solid rgba(148, 163, 184, 0.25);
+    padding: 0.35rem 0.6rem;
+    border-radius: 5px;
     width: fit-content;
   }
 
@@ -2302,65 +2298,101 @@
     grid-row: 3;
     justify-self: center;
     align-self: end;
-    min-width: 500px;
-    max-width: 680px;
+    width: min(100%, 640px);
   }
   .action-popup {
-    background: rgba(15, 23, 42, 0.94);
-    border: 1px solid rgba(234, 179, 8, 0.45);
-    padding: 0.65rem;
-    border-radius: 6px;
+    background: rgba(5, 9, 18, 0.92);
+    border: 1px solid rgba(234, 179, 8, 0.5);
+    padding: 0.6rem 0.7rem;
+    border-radius: 5px;
     display: flex;
     flex-direction: column;
+    gap: 0.45rem;
+  }
+  .popup-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
     gap: 0.5rem;
+    flex-wrap: wrap;
   }
   .action-popup h4 {
-    font-size: 0.84rem;
+    font-size: 0.8rem;
     font-weight: 600;
+    color: #f1f5f9;
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
   }
-  .victory-popup {
-    border-color: #facc15;
-    text-align: center;
+  .quick-presets {
+    display: flex;
+    gap: 0.25rem;
   }
-  .victory-popup h3 {
-    color: #facc15;
-    letter-spacing: 0.08em;
+  .preset-btn {
+    background: rgba(15, 23, 42, 0.9);
+    border: 1px solid rgba(148, 163, 184, 0.3);
+    color: #cbd5e1;
+    padding: 0.18rem 0.45rem;
+    border-radius: 3px;
+    font-family: var(--font-mono);
+    font-size: 0.68rem;
+    font-weight: 700;
   }
+  .preset-btn.active {
+    background: rgba(202, 138, 4, 0.25);
+    border-color: #fde047;
+    color: #fef08a;
+  }
+
   .slider-row {
     display: flex;
     align-items: center;
-    gap: 0.75rem;
+    gap: 0.55rem;
   }
   .slider-row input {
     flex: 1;
   }
+
   .attack-matchup {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    font-size: 0.84rem;
+    font-size: 0.8rem;
   }
   .vs {
     background: #991b1b;
     color: #fecaca;
     padding: 0.1rem 0.45rem;
-    border-radius: 4px;
+    border-radius: 3px;
+    font-family: var(--font-tactical);
     font-weight: 800;
-    font-size: 0.72rem;
+    font-size: 0.7rem;
   }
-  .odds-bar-container {
-    display: flex;
-    flex-direction: column;
-    gap: 0.22rem;
-  }
-  .odds-label {
+  .attack-controls-row {
     display: flex;
     justify-content: space-between;
-    font-size: 0.74rem;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    font-size: 0.72rem;
+  }
+  .dice-selector {
+    display: flex;
+    align-items: center;
+    gap: 0.28rem;
+    color: #94a3b8;
+  }
+  .odds-inline {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
     color: #cbd5e1;
   }
+  .odds-inline strong {
+    font-family: var(--font-mono);
+  }
   .odds-bar {
-    height: 6px;
+    height: 5px;
     background: #7f1d1d;
     border-radius: 999px;
     overflow: hidden;
@@ -2369,34 +2401,43 @@
     height: 100%;
     background: #10b981;
   }
+  .attack-cta-row {
+    display: flex;
+    gap: 0.45rem;
+  }
 
   .phase-stepper-row {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 0.55rem;
+    gap: 0.4rem;
+    flex-wrap: wrap;
   }
   .phase-step {
     display: flex;
     align-items: center;
-    gap: 0.4rem;
-    padding: 0.35rem 0.65rem;
-    border-radius: 5px;
-    background: rgba(15, 23, 42, 0.7);
+    gap: 0.35rem;
+    padding: 0.3rem 0.55rem;
+    border-radius: 4px;
+    background: rgba(5, 9, 18, 0.75);
     color: #64748b;
-    font-size: 0.78rem;
+    font-family: var(--font-tactical);
+    font-size: 0.76rem;
     font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
     border: 1px solid transparent;
   }
   .phase-step .num {
-    width: 19px;
-    height: 19px;
-    border-radius: 4px;
+    width: 18px;
+    height: 18px;
+    border-radius: 3px;
     background: #1e293b;
+    font-family: var(--font-mono);
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    font-size: 0.72rem;
+    font-size: 0.68rem;
   }
   .phase-step.active-phase {
     background: rgba(234, 179, 8, 0.16);
@@ -2409,241 +2450,30 @@
   }
   .phase-arrow {
     color: #475569;
-    font-size: 1rem;
+    font-size: 0.95rem;
     font-weight: 700;
   }
-  .turn-timer {
-    font-family: monospace;
-    font-size: 0.85rem;
-    font-weight: 700;
-    padding: 0.28rem 0.5rem;
+  .phase-action-slot {
+    margin-left: auto;
+  }
+
+  .btn {
     border-radius: 5px;
-    background: #0f172a;
-    border: 1px solid #334155;
-    color: #e2e8f0;
+    padding: 0.48rem 0.85rem;
+    font-family: var(--font-tactical);
+    font-weight: 800;
+    font-size: 0.8rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
     display: inline-flex;
     align-items: center;
-    gap: 0.3rem;
-  }
-  .turn-timer.timer-danger {
-    color: #f87171;
-    border-color: #ef4444;
-  }
-
-  /* Bottom-Right War Journal & Comms */
-  .bottom-right-panel {
-    grid-column: 3;
-    grid-row: 3;
-    align-self: end;
-    max-height: 270px;
-  }
-  .bottom-right-panel.collapsed {
-    max-height: 46px;
-  }
-  .panel-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-  }
-  .tab-buttons {
-    display: flex;
-    gap: 0.35rem;
-  }
-  .tab-btn {
-    background: transparent;
-    border: none;
-    color: #94a3b8;
-    font-size: 0.76rem;
-    font-weight: 700;
-    padding: 0.22rem 0.5rem;
-    border-radius: 4px;
-    cursor: pointer;
-    display: inline-flex;
-    align-items: center;
-    gap: 0.3rem;
-  }
-  .tab-btn.active {
-    background: #1e293b;
-    color: #facc15;
-  }
-  .btn-collapse {
-    background: transparent;
-    border: none;
-    color: #94a3b8;
-    cursor: pointer;
-  }
-  .dice-history-box {
-    display: flex;
-    justify-content: space-between;
-    background: rgba(15, 23, 42, 0.9);
-    padding: 0.32rem 0.55rem;
-    border-radius: 4px;
-    border: 1px solid rgba(71, 85, 105, 0.4);
-    font-size: 0.72rem;
-    font-weight: 800;
-    letter-spacing: 0.04em;
-  }
-  .dice-att {
-    color: #f87171;
-  }
-  .dice-def {
-    color: #93c5fd;
-  }
-  .log-scroller {
-    overflow-y: auto;
-    height: 135px;
-    display: flex;
-    flex-direction: column;
-    gap: 0.25rem;
-    font-size: 0.74rem;
-    color: #cbd5e1;
-    padding-right: 0.25rem;
-  }
-  .log-line {
-    padding: 0.2rem 0.35rem;
-    background: rgba(15, 23, 42, 0.45);
-    border-radius: 3px;
-    line-height: 1.35;
-  }
-  .chat-input-row {
-    display: flex;
-    gap: 0.35rem;
-  }
-  .chat-input-row input {
-    flex: 1;
-    background: #090e1a;
-    border: 1px solid #334155;
-    color: white;
-    padding: 0.35rem 0.5rem;
-    border-radius: 4px;
-    font-size: 0.76rem;
-  }
-
-  /* --- Front Screen & Lobby Modals --- */
-  .landing-overlay {
-    position: fixed;
-    inset: 0;
-    display: flex;
-    align-items: center;
     justify-content: center;
-    background:
-      radial-gradient(circle at center, rgba(20, 32, 58, 0.92), rgba(5, 10, 20, 0.98));
-    z-index: 50;
-  }
-  .war-room-modal {
-    width: 100%;
-    max-width: 470px;
-    background: linear-gradient(180deg, #0f172a 0%, #090e1a 100%);
-    border: 1px solid rgba(202, 138, 4, 0.55);
-    border-radius: 10px;
-    padding: 2.1rem;
-    display: flex;
-    flex-direction: column;
-    gap: 1.05rem;
-    box-shadow: 0 25px 60px rgba(0, 0, 0, 0.85), inset 0 1px 0 rgba(255, 255, 255, 0.08);
-  }
-  .lobby-modal {
-    max-width: 560px;
-  }
-  .brand-crest {
-    width: 64px;
-    height: 64px;
-    margin: 0 auto;
-    border-radius: 50%;
-    background: rgba(234, 179, 8, 0.12);
-    border: 1px solid rgba(234, 179, 8, 0.5);
-    color: #eab308;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-  }
-  .title-lockup {
-    text-align: center;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 0.25rem;
-  }
-  .kicker {
-    font-size: 0.68rem;
-    letter-spacing: 0.24em;
-    color: #eab308;
-    font-weight: 700;
-  }
-  .war-room-modal h1 {
-    text-align: center;
-    letter-spacing: 0.22em;
-    font-size: 2.25rem;
-    font-weight: 900;
-    color: #f8fafc;
-    text-shadow: 0 2px 12px rgba(234, 179, 8, 0.25);
-  }
-  .brass-rule {
-    width: 120px;
-    height: 2px;
-    background: linear-gradient(90deg, transparent, #eab308, transparent);
-    margin-top: 0.2rem;
-  }
-  .lobby-brand-header {
-    display: flex;
-    flex-direction: column;
-    gap: 0.3rem;
-  }
-  .lobby-brand-tag {
-    font-size: 0.68rem;
-    letter-spacing: 0.18em;
-    color: #eab308;
-    font-weight: 800;
-  }
-  .subtitle {
-    text-align: center;
-    color: #94a3b8;
-    font-size: 0.82rem;
-    line-height: 1.4;
-  }
-  .form-group {
-    display: flex;
-    flex-direction: column;
     gap: 0.38rem;
   }
-  .form-group label {
-    font-size: 0.72rem;
-    letter-spacing: 0.08em;
-    color: #cbd5e1;
-    font-weight: 700;
-  }
-  input {
-    background: #060a12;
-    border: 1px solid #334155;
-    color: white;
-    padding: 0.68rem 0.8rem;
-    border-radius: 6px;
-    font-size: 0.92rem;
-  }
-  input:focus {
-    outline: none;
-    border-color: #eab308;
-  }
-  .btn {
-    border: none;
-    border-radius: 6px;
-    padding: 0.68rem 1rem;
-    font-weight: 700;
-    cursor: pointer;
-    font-size: 0.85rem;
-    transition: filter 0.15s, transform 0.1s;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.45rem;
-  }
-  .btn:hover {
-    filter: brightness(1.12);
-  }
   .btn.primary-gold {
-    background: linear-gradient(135deg, #ca8a04, #a16207);
-    border: 1px solid rgba(254, 240, 138, 0.35);
-    color: #ffffff;
+    background: linear-gradient(135deg, #eab308, #a16207);
+    border: 1px solid #fef08a;
+    color: #050911;
   }
   .btn.secondary {
     background: #1e293b;
@@ -2652,328 +2482,58 @@
   }
   .btn.btn-attack {
     background: linear-gradient(135deg, #dc2626, #991b1b);
-    border: 1px solid rgba(252, 165, 165, 0.4);
+    border: 1px solid rgba(252, 165, 165, 0.5);
     color: white;
   }
   .full-width {
     width: 100%;
   }
-  .divider {
-    text-align: center;
-    font-size: 0.68rem;
-    color: #64748b;
-    letter-spacing: 0.12em;
-    font-weight: 700;
-  }
-  .join-box {
-    display: flex;
-    gap: 0.5rem;
-  }
-  .join-box input {
-    flex: 1;
-    text-transform: uppercase;
-  }
-  .row-between {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-  }
-  .code-highlight {
-    color: #facc15;
-    font-family: monospace;
-    letter-spacing: 0.08em;
-  }
-  .badge-players {
-    background: #1e293b;
-    border: 1px solid #334155;
-    padding: 0.25rem 0.6rem;
-    border-radius: 4px;
-    font-size: 0.76rem;
-    font-weight: 700;
-  }
-  .player-roster {
-    display: flex;
-    flex-direction: column;
-    gap: 0.45rem;
-  }
-  .roster-card {
-    display: flex;
-    align-items: center;
-    gap: 0.65rem;
-    background: #060a12;
-    padding: 0.55rem 0.75rem;
-    border-radius: 6px;
-    border: 1px solid #1e293b;
-  }
-  .roster-meta {
-    display: flex;
-    flex-direction: column;
-    gap: 0.1rem;
-  }
-  .roster-meta small {
-    font-size: 0.7rem;
-    color: #94a3b8;
-  }
-  .tag-host,
-  .tag-bot {
-    font-size: 0.66rem;
-    padding: 0.15rem 0.45rem;
-    border-radius: 3px;
-    background: #1e293b;
-    color: #eab308;
-    font-weight: 700;
-    letter-spacing: 0.06em;
-    margin-left: auto;
-  }
-  .btn-remove {
-    background: transparent;
-    border: none;
-    color: #ef4444;
-    cursor: pointer;
-    font-weight: 700;
-  }
-  .color-selector {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    font-size: 0.82rem;
-    font-weight: 600;
-  }
-  .swatches {
-    display: flex;
-    gap: 0.4rem;
-  }
-  .flag-swatch-btn {
-    background: #060a12;
-    border: 1px solid #334155;
-    padding: 0.2rem;
-    border-radius: 4px;
-    cursor: pointer;
-    display: inline-flex;
-    transition: transform 0.12s, border-color 0.12s;
-  }
-  .flag-swatch-btn:hover {
-    transform: translateY(-1px);
-    border-color: #eab308;
-  }
-  .modal-actions {
-    display: flex;
-    gap: 0.6rem;
-    justify-content: flex-end;
-  }
+
   .alert-toast {
     position: fixed;
-    top: 1rem;
+    top: 78px;
     left: 50%;
     transform: translateX(-50%);
-    background: #991b1b;
+    background: linear-gradient(135deg, #991b1b, #7f1d1d);
+    border: 1px solid #f87171;
     color: white;
     padding: 0.6rem 1.2rem;
     border-radius: 6px;
-    z-index: 100;
+    z-index: 250;
+    font-family: var(--font-tactical);
+    font-size: 0.86rem;
     font-weight: 700;
-    box-shadow: 0 8px 25px rgba(0, 0, 0, 0.6);
+    letter-spacing: 0.05em;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.8);
   }
 
-  /* Victory Modal & Post-Game UX */
-  .victory-dock-buttons {
-    display: flex;
-    gap: 0.5rem;
-    justify-content: center;
-    margin: 0.4rem 0;
-    flex-wrap: wrap;
-  }
-  .victory-modal-backdrop {
-    position: fixed;
-    inset: 0;
-    background: rgba(3, 7, 18, 0.88);
-    backdrop-filter: blur(8px);
-    z-index: 999;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 1.5rem;
-  }
-  .victory-modal-card {
-    background: linear-gradient(180deg, #0f172a 0%, #070d1a 100%);
-    border: 2px solid #eab308;
-    box-shadow: 0 0 50px rgba(234, 179, 8, 0.35), 0 25px 60px rgba(0, 0, 0, 0.9);
-    border-radius: 12px;
-    width: 100%;
-    max-width: 580px;
-    padding: 2rem;
-    display: flex;
-    flex-direction: column;
-    gap: 1.25rem;
-    color: #f8fafc;
-    animation: modalPop 0.25s ease-out;
-  }
-  @keyframes modalPop {
-    from {
-      opacity: 0;
-      transform: scale(0.95);
+  /* Responsive Widescreen & Laptop Adaptations (1366x768 -> 21:9) */
+  @media (max-height: 800px) {
+    .hud-layer {
+      padding: 0.5rem;
+      gap: 0.45rem;
     }
-    to {
-      opacity: 1;
-      transform: scale(1);
+    .hud-panel {
+      padding: 0.55rem 0.65rem;
+      gap: 0.38rem;
+    }
+    .continents-dropdown {
+      max-height: 120px;
+    }
+    .floating-drawer {
+      max-height: 185px;
     }
   }
-  .victory-modal-header {
-    text-align: center;
-  }
-  .victory-laurel {
-    color: #facc15;
-    font-size: 1.4rem;
-    letter-spacing: 0.3em;
-  }
-  .victory-modal-header h2 {
-    color: #facc15;
-    font-size: 1.6rem;
-    letter-spacing: 0.1em;
-    font-weight: 800;
-    margin: 0.25rem 0;
-  }
-  .victory-sub {
-    font-size: 0.75rem;
-    letter-spacing: 0.15em;
-    color: #94a3b8;
-    text-transform: uppercase;
-  }
-  .winner-hero {
-    display: flex;
-    align-items: center;
-    gap: 1rem;
-    background: rgba(15, 23, 42, 0.7);
-    border: 2px solid;
-    padding: 1rem;
-    border-radius: 8px;
-  }
-  .winner-avatar {
-    width: 52px;
-    height: 52px;
-    border-radius: 50%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 1.3rem;
-    font-weight: 800;
-    color: white;
-    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.5);
-  }
-  .winner-details h3 {
-    font-size: 1.25rem;
-    font-weight: 700;
-  }
-  .winner-faction {
-    font-size: 0.85rem;
-    font-weight: 600;
-  }
-  .victory-objective-box {
-    background: rgba(30, 41, 59, 0.55);
-    border: 1px solid rgba(148, 163, 184, 0.25);
-    border-radius: 8px;
-    padding: 0.85rem;
-  }
-  .victory-objective-box h4 {
-    font-size: 0.8rem;
-    text-transform: uppercase;
-    color: #fbbf24;
-    letter-spacing: 0.05em;
-    margin-bottom: 0.35rem;
-  }
-  .obj-text {
-    font-size: 0.9rem;
-    line-height: 1.4;
-    color: #e2e8f0;
-  }
-  .crypto-seed-row {
-    margin-top: 0.5rem;
-    font-size: 0.72rem;
-    color: #64748b;
-    display: flex;
-    gap: 0.4rem;
-    align-items: center;
-  }
-  .crypto-seed-row code {
-    background: #020617;
-    color: #38bdf8;
-    padding: 0.15rem 0.35rem;
-    border-radius: 4px;
-    font-family: monospace;
-  }
-  .victory-stats-summary h4 {
-    font-size: 0.8rem;
-    text-transform: uppercase;
-    color: #94a3b8;
-    letter-spacing: 0.05em;
-    margin-bottom: 0.5rem;
-  }
-  .stats-table {
-    display: flex;
-    flex-direction: column;
-    gap: 0.35rem;
-  }
-  .stat-player-row {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    background: rgba(15, 23, 42, 0.6);
-    border: 1px solid rgba(51, 65, 85, 0.4);
-    padding: 0.45rem 0.75rem;
-    border-radius: 6px;
-    font-size: 0.82rem;
-  }
-  .stat-player-row.is-winner {
-    border-color: rgba(234, 179, 8, 0.6);
-    background: rgba(234, 179, 8, 0.1);
-    font-weight: 700;
-  }
-  .stat-player-name {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-  }
-  .stat-metrics {
-    color: #94a3b8;
-    display: flex;
-    align-items: center;
-    gap: 0.4rem;
-  }
-  .stat-metrics .sep {
-    opacity: 0.5;
-  }
-  .victory-actions {
-    display: flex;
-    flex-direction: column;
-    gap: 0.75rem;
-    margin-top: 0.5rem;
-  }
-  .btn-lg {
-    padding: 0.75rem 1.25rem;
-    font-size: 0.95rem;
-    font-weight: 700;
-    width: 100%;
-  }
-  .secondary-actions-row {
-    display: flex;
-    gap: 0.5rem;
-  }
-  .secondary-actions-row .btn {
-    flex: 1;
-  }
-  .waiting-host-notice {
-    font-size: 0.82rem;
-    text-align: center;
-    color: #94a3b8;
-    font-style: italic;
-    padding: 0.5rem;
-  }
-  .gold-outline {
-    background: transparent;
-    border: 1px solid #facc15;
-    color: #facc15;
-  }
-  .gold-outline:hover {
-    background: rgba(250, 204, 21, 0.15);
+
+  @media (max-width: 1180px) {
+    .hud-layer {
+      grid-template-columns: 290px 1fr 310px;
+    }
+    .top-center-banner {
+      max-width: 460px;
+    }
   }
 </style>
