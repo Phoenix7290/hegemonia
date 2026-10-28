@@ -1,23 +1,24 @@
 <script lang="ts">
   import type { CombatRollResult, PlayerState } from "@hegemonia/shared";
   import { CLASSIC_MAP } from "@hegemonia/maps";
+  import type { CommunicationsController } from "../lib/communications.svelte";
+  import CommunicationsCenter from "./CommunicationsCenter.svelte";
   import Icon from "./Icon.svelte";
 
   let {
     logs,
     lastCombat,
     players,
-    onSendChat,
+    communications,
   }: {
     logs: string[];
     lastCombat: CombatRollResult | null;
     players: PlayerState[];
-    onSendChat: (text: string) => void;
+    communications: CommunicationsController;
   } = $props();
 
   let collapsed = $state(false);
   let activeTab = $state<"log" | "chat">("log");
-  let chatInput = $state("");
 
   const territoryNameMap = new Map(CLASSIC_MAP.territories.map((t) => [t.id, t.namePt]));
 
@@ -150,23 +151,13 @@
       .slice(-35)
       .map(parseLogEntry)
   );
-
-  let commsLogs = $derived(
-    logs
-      .filter((l) => l.startsWith("[COMMS]"))
-      .slice(-35)
-      .map(parseLogEntry)
-  );
-
-  function submitChat() {
-    const clean = chatInput.trim();
-    if (!clean) return;
-    onSendChat(clean);
-    chatInput = "";
-  }
 </script>
 
-<aside class="war-journal-panel" class:collapsed>
+<aside
+  class="war-journal-panel"
+  class:collapsed
+  class:communications-open={activeTab === "chat" && !collapsed}
+>
   <div class="journal-header">
     <div class="journal-tabs">
       <button
@@ -192,8 +183,8 @@
       >
         <Icon name="chat" size={13} />
         <span>Rádio Comms</span>
-        {#if commsLogs.length > 0}
-          <small class="j-count comms-count">{commsLogs.length}</small>
+        {#if communications.totalUnread > 0}
+          <small class="j-count comms-count">{communications.totalUnread}</small>
         {/if}
       </button>
     </div>
@@ -272,28 +263,8 @@
         {/each}
       </div>
     {:else}
-      <div class="journal-scroller comms-scroller">
-        {#each commsLogs as entry}
-          <div
-            class="journal-entry kind-comms"
-            style={entry.playerColor ? `border-left-color: ${entry.playerColor};` : ""}
-          >
-            <span class="entry-tag tag-comms">COMMS</span>
-            <p class="entry-text">{entry.text}</p>
-          </div>
-        {:else}
-          <div class="journal-empty">Canal de rádio aberto. Transmita mensagens aos demais generais.</div>
-        {/each}
-      </div>
-
-      <div class="comms-input-bar">
-        <input
-          bind:value={chatInput}
-          maxlength="220"
-          placeholder="Transmitir comunicado no rádio..."
-          onkeydown={(e) => e.key === "Enter" && submitChat()}
-        />
-        <button class="comms-send-btn" onclick={submitChat}>Transmitir</button>
+      <div class="journal-communications">
+        <CommunicationsCenter controller={communications} compact />
       </div>
     {/if}
   {/if}
@@ -319,6 +290,9 @@
   }
   .war-journal-panel.collapsed {
     max-height: 44px;
+  }
+  .war-journal-panel.communications-open {
+    max-height: calc(100vh - 100px);
   }
 
   .journal-header {
@@ -564,23 +538,9 @@
     padding: 1.5rem 0.5rem;
   }
 
-  .comms-input-bar {
+  .journal-communications {
     display: flex;
-    gap: 0.35rem;
-    padding-top: 0.2rem;
-  }
-  .comms-input-bar input {
-    flex: 1;
-    padding: 0.35rem 0.55rem;
-    font-size: 0.75rem;
-    background: rgba(5, 9, 18, 0.92);
-  }
-  .comms-send-btn {
-    padding: 0.35rem 0.65rem;
-    font-size: 0.74rem;
-    background: linear-gradient(135deg, #eab308, #a16207);
-    color: #060a12;
-    border-color: #fef08a;
-    font-weight: 800;
+    min-height: 260px;
+    height: min(380px, calc(100vh - 190px));
   }
 </style>

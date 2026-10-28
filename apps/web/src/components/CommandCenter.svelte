@@ -2,7 +2,9 @@
   import type { LeaderboardRow, PlayerColor } from "@hegemonia/shared";
   import { api, navigate } from "../lib/api";
   import { auth } from "../lib/auth.svelte";
+  import type { CommunicationsController } from "../lib/communications.svelte";
   import Avatar from "./Avatar.svelte";
+  import CommunicationsCenter from "./CommunicationsCenter.svelte";
   import FactionFlag from "./FactionFlag.svelte";
   import Icon from "./Icon.svelte";
 
@@ -18,13 +20,6 @@
     avatarUrl?: string | null;
   }
 
-  export interface LobbyChatMsg {
-    from: string;
-    color: PlayerColor;
-    text: string;
-    time: string;
-  }
-
   let {
     roomStatus,
     playerName = $bindable(),
@@ -32,7 +27,7 @@
     roomCode,
     myPlayerId,
     lobbyPlayers,
-    lobbyMessages,
+    communications,
     connecting,
     onCreateRoom,
     onJoinRoom,
@@ -41,7 +36,6 @@
     onAddBot,
     onRemoveBot,
     onStartGame,
-    onSendLobbyChat,
   }: {
     roomStatus: "disconnected" | "lobby";
     playerName: string;
@@ -49,7 +43,7 @@
     roomCode: string;
     myPlayerId: string | null;
     lobbyPlayers: LobbyPlayerView[];
-    lobbyMessages: LobbyChatMsg[];
+    communications: CommunicationsController;
     connecting: boolean;
     onCreateRoom: () => void;
     onJoinRoom: () => void;
@@ -58,7 +52,6 @@
     onAddBot: () => void;
     onRemoveBot: (token: string) => void;
     onStartGame: () => void;
-    onSendLobbyChat: (text: string) => void;
   } = $props();
 
   const ALL_COLORS: PlayerColor[] = ["blue", "red", "green", "yellow", "black", "white"];
@@ -83,7 +76,6 @@
 
   let topCommanders = $state<LeaderboardRow[]>([]);
   let copiedCode = $state(false);
-  let lobbyChatText = $state("");
 
   $effect(() => {
     api<{ leaderboard: LeaderboardRow[] }>("/api/leaderboard?limit=5")
@@ -106,13 +98,6 @@
     setTimeout(() => {
       copiedCode = false;
     }, 2000);
-  }
-
-  function submitLobbyChat() {
-    const clean = lobbyChatText.trim();
-    if (!clean) return;
-    onSendLobbyChat(clean);
-    lobbyChatText = "";
   }
 </script>
 
@@ -460,37 +445,7 @@
           <!-- RIGHT: BRIEFING RADIO COMMS & CAMPAIGN RULES SUMMARY -->
           <aside class="briefing-side-col">
             <div class="lobby-comms-box">
-              <div class="comms-box-header">
-                <strong><Icon name="radio" size={14} /> Rádio da Sala de Guerra</strong>
-                <small>Canal Seguro</small>
-              </div>
-
-              <div class="lobby-comms-messages">
-                {#each lobbyMessages as msg}
-                  <div class="l-msg">
-                    <div class="l-msg-head">
-                      <FactionFlag color={msg.color} width={16} height={10} />
-                      <strong>{msg.from}</strong>
-                      <small>{msg.time}</small>
-                    </div>
-                    <p>{msg.text}</p>
-                  </div>
-                {:else}
-                  <div class="l-msg-empty">
-                    Canal de comunicações pronto. Use o código <strong>{roomCode}</strong> para convidar aliados.
-                  </div>
-                {/each}
-              </div>
-
-              <div class="lobby-comms-input">
-                <input
-                  bind:value={lobbyChatText}
-                  maxlength="200"
-                  placeholder="Enviar mensagem na sala..."
-                  onkeydown={(e) => e.key === "Enter" && submitLobbyChat()}
-                />
-                <button class="gold-button" onclick={submitLobbyChat}>Enviar</button>
-              </div>
+              <CommunicationsCenter controller={communications} />
             </div>
 
             <div class="campaign-protocol-box">
@@ -1299,84 +1254,11 @@
     flex: 1;
     display: flex;
     flex-direction: column;
+    min-height: 350px;
     background: rgba(5, 9, 18, 0.85);
     border: 1px solid rgba(148, 163, 184, 0.22);
     border-radius: 6px;
     padding: 12px;
-    gap: 10px;
-  }
-  .comms-box-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding-bottom: 8px;
-    border-bottom: 1px solid rgba(148, 163, 184, 0.16);
-  }
-  .comms-box-header strong {
-    font-family: var(--font-tactical);
-    font-size: 0.82rem;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-    color: #fef08a;
-    display: flex;
-    align-items: center;
-    gap: 6px;
-  }
-  .comms-box-header small {
-    font-family: var(--font-mono);
-    font-size: 0.64rem;
-    color: #10b981;
-  }
-  .lobby-comms-messages {
-    height: 175px;
-    overflow-y: auto;
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-    padding-right: 4px;
-  }
-  .l-msg {
-    background: rgba(15, 23, 42, 0.65);
-    padding: 6px 9px;
-    border-radius: 4px;
-    font-size: 0.76rem;
-  }
-  .l-msg-head {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    margin-bottom: 3px;
-  }
-  .l-msg-head strong {
-    color: #f8fafc;
-    font-size: 0.74rem;
-  }
-  .l-msg-head small {
-    margin-left: auto;
-    font-family: var(--font-mono);
-    font-size: 0.62rem;
-    color: #64748b;
-  }
-  .l-msg p {
-    color: #cbd5e1;
-    line-height: 1.35;
-  }
-  .l-msg-empty {
-    color: #64748b;
-    font-size: 0.75rem;
-    text-align: center;
-    margin: auto;
-    padding: 16px;
-    line-height: 1.5;
-  }
-  .lobby-comms-input {
-    display: flex;
-    gap: 6px;
-  }
-  .lobby-comms-input input {
-    flex: 1;
-    padding: 7px 10px;
-    font-size: 0.78rem;
   }
 
   .campaign-protocol-box {

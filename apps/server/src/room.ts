@@ -20,6 +20,7 @@ import {
   type SeededRng,
 } from "@hegemonia/engine";
 import { appendMatchEvent, createMatch, startMatch } from "./db.js";
+import { RoomCommunications } from "./communications.js";
 
 interface LobbyPlayer {
   token: string;
@@ -51,9 +52,14 @@ export class HegemoniaRoom extends Room {
   private timerInterval: NodeJS.Timeout | null = null;
   private disconnectTimeouts = new Map<string, NodeJS.Timeout>();
   private disposeTimeout: NodeJS.Timeout | null = null;
+  private communications!: RoomCommunications;
 
   onCreate(options: { roomCode?: string; name?: string; token?: string }) {
     this.autoDispose = false;
+    this.communications = new RoomCommunications({
+      getPlayers: () => this.lobbyPlayers,
+      getClients: () => [...this.clients],
+    });
     this.roomCode = (
       options.roomCode?.toUpperCase() ||
       randomBytes(3).toString("hex").toUpperCase()
@@ -170,6 +176,31 @@ export class HegemoniaRoom extends Room {
       });
     });
 
+    this.onMessage("return_to_lobby", (client) => {
+      this.enqueueAction(async () => {
+        const caller = this.lobbyPlayers.find((p) => p.sessionId === client.sessionId);
+        if (!caller?.isHost) {
+          client.send("error_msg", { message: "Apenas o anfitrião pode retornar a sala ao lobby." });
+          return;
+        }
+        if (this.gameState && !this.gameState.winnerId && this.gameState.phase !== "game_over") {
+          client.send("error_msg", { message: "A partida ainda está em andamento." });
+          return;
+        }
+        this.gameState = null;
+        this.matchId = "";
+        this.secretSeed = randomBytes(16).toString("hex");
+        this.rng = createSeededRng(this.secretSeed);
+        this.turnDeadline = 0;
+        this.setMetadata({
+          roomCode: this.roomCode,
+          status: "lobby",
+          playersCount: this.lobbyPlayers.length,
+        });
+        this.broadcastRoomState();
+      });
+    });
+
     this.onMessage("game_action", (client, rawAction: unknown) => {
       const parsed = GameActionSchema.safeParse(rawAction);
       if (!parsed.success) {
@@ -190,19 +221,21 @@ export class HegemoniaRoom extends Room {
       });
     });
 
-    this.onMessage("chat", (client, payload: { text: string }) => {
-      const sender = this.lobbyPlayers.find((p) => p.sessionId === client.sessionId);
-      const text = String(payload?.text ?? "").trim().slice(0, 240);
-      if (!sender || !text) return;
-      if (this.gameState) {
-        this.enqueueAction(async () => {
-          if (!this.gameState) return;
-          this.gameState.log.push(`[COMMS] ${sender.name}: ${text}`);
-          this.broadcastRoomState();
-        });
-      } else {
-        this.broadcast("chat_msg", { from: sender.name, color: sender.color, text });
-      }
+    this.onMessage("comms_sync", (client) => this.communications.sync(client));
+    this.onMessage("open_direct", (client, payload: unknown) => {
+      this.communications.openDirect(client, payload);
+    });
+    this.onMessage("chat", (client, payload: unknown) => {
+      this.communications.sendChat(client, payload);
+    });
+    this.onMessage("voice_join", (client, payload: unknown) => {
+      this.communications.joinVoice(client, payload);
+    });
+    this.onMessage("voice_leave", (client, payload: unknown) => {
+      this.communications.leaveVoice(client, payload);
+    });
+    this.onMessage("voice_signal", (client, payload: unknown) => {
+      this.communications.relayVoiceSignal(client, payload);
     });
 
     this.timerInterval = setInterval(() => {
@@ -244,6 +277,7 @@ export class HegemoniaRoom extends Room {
         clearTimeout(this.disposeTimeout);
         this.disposeTimeout = null;
       }
+      this.communications.removePlayer(existing.token);
       existing.sessionId = client.sessionId;
       existing.connected = true;
       existing.name = name;
@@ -294,6 +328,7 @@ export class HegemoniaRoom extends Room {
   onLeave(client: Client, consented?: boolean) {
     const player = this.lobbyPlayers.find((p) => p.sessionId === client.sessionId);
     if (!player) return;
+    this.communications.removePlayer(player.token);
 
     if (consented) {
       this.purgePlayer(player);
@@ -362,6 +397,7 @@ export class HegemoniaRoom extends Room {
     if (this.disposeTimeout) clearTimeout(this.disposeTimeout);
     for (const t of this.disconnectTimeouts.values()) clearTimeout(t);
     this.disconnectTimeouts.clear();
+    this.communications.dispose();
     await this.actionQueue;
   }
 

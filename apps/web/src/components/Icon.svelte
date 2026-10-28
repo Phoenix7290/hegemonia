@@ -95,6 +95,12 @@
     <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
     <line x1="23" y1="9" x2="17" y2="15" />
     <line x1="17" y1="9" x2="23" y2="15" />
+  {:else if name === "microphone"}
+    <rect x="9" y="2" width="6" height="12" rx="3" />
+    <path d="M5 10a7 7 0 0 0 14 0M12 17v5M8 22h8" />
+  {:else if name === "send"}
+    <path d="m22 2-7 20-4-9-9-4Z" />
+    <path d="M22 2 11 13" />
   {:else if name === "compass"}
     <circle cx="12" cy="12" r="10" />
     <polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76" />
