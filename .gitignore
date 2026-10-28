@@ -19,6 +19,7 @@ apps/web/public/music/*.ogg
 apps/web/public/music/*.wav
 apps/web/public/music/*.flac
 apps/web/public/audio/
+apps/web/public/sfx/
 
 # Session exports
 *export-session*.md

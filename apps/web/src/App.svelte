@@ -147,7 +147,108 @@
   // Audio State
   let isMusicPlaying = $state(sound.getIsPlaying());
   let musicVolume = $state(sound.getVolume());
+  let sfxVolume = $state(sound.getSfxVolume());
+  let isMuted = $state(sound.getIsMuted());
   let selectedTrack = $state(sound.getCurrentTrack());
+
+  const SOUNDTRACKS = [
+    { id: "ambient_procedural", label: "Marcha Tática (Sintetizador Web Audio)" },
+    { id: "hoi4_axis_theme.mp3", label: "Hearts of Iron IV — Axis Theme (Slowed & Pitch)" },
+    { id: "hoi4_katyusha.mp3", label: "Hearts of Iron IV — Katyusha" },
+    { id: "hoi4_great_patriotic_war.mp3", label: "Hearts of Iron IV — The Great Patriotic War" },
+    { id: "hoi4_bella_ciao.mp3", label: "Hearts of Iron IV — Bella Ciao" },
+    { id: "the_second_european_war.mp3", label: "The Fire Rises — The Second European War" },
+    { id: "tno_taboritsky_theme.mp3", label: "TNO — The Mad Regent's Lullaby (Taboritsky)" },
+    { id: "tno_burgundian_lullaby.mp3", label: "TNO — Burgundian Lullaby" },
+    { id: "teufelslied.mp3", label: "Histórico — Teufelslied" },
+  ];
+
+  // Tactical Objective Map Highlight State
+  let highlightObjectiveTerritories = $state(false);
+
+  let objectiveTargetTerritoryIds = $derived.by(() => {
+    if (!myPlayerState) return new Set<string>();
+    const rule = myPlayerState.objective.rule;
+    if (rule.type === "specific_territories") {
+      const set = new Set(rule.territoryIds);
+      if (rule.extraAnyOf) {
+        for (const grp of rule.extraAnyOf) {
+          for (const tid of grp) set.add(tid);
+        }
+      }
+      return set;
+    }
+    if (rule.type === "continents") {
+      const set = new Set<string>();
+      for (const t of CLASSIC_MAP.territories) {
+        if (rule.continents.includes(t.continent)) set.add(t.id);
+      }
+      return set;
+    }
+    if (rule.type === "destroy_color") {
+      const targetPlayer = game?.players.find((p) => p.color === rule.targetColor);
+      if (targetPlayer && !targetPlayer.eliminated && targetPlayer.id !== myPlayerId) {
+        const set = new Set<string>();
+        for (const t of CLASSIC_MAP.territories) {
+          if (game?.territories[t.id]?.ownerId === targetPlayer.id) set.add(t.id);
+        }
+        return set;
+      }
+    }
+    return new Set<string>();
+  });
+
+  let objectiveProgress = $derived.by(() => {
+    if (!myPlayerState || objectiveTargetTerritoryIds.size === 0) return null;
+    let owned = 0;
+    for (const tid of objectiveTargetTerritoryIds) {
+      if (game?.territories[tid]?.ownerId === myPlayerId) owned++;
+    }
+    const total = objectiveTargetTerritoryIds.size;
+    const pct = Math.round((owned / total) * 100);
+    return { owned, total, pct };
+  });
+
+  function toggleObjectiveHighlight() {
+    sound.playClick();
+    highlightObjectiveTerritories = !highlightObjectiveTerritories;
+  }
+
+  // Victory & Lobby Controls
+  let showVictoryModal = $state(true);
+  let lastAnnouncedWinner = $state<string | null>(null);
+  let amIHost = $derived(
+    lobbyPlayers.find((p) => p.token === myPlayerId)?.isHost ?? false
+  );
+
+  $effect(() => {
+    if (game?.winnerId && game.winnerId !== lastAnnouncedWinner) {
+      lastAnnouncedWinner = game.winnerId;
+      showVictoryModal = true;
+      sound.playConquest();
+    }
+    if (!game?.winnerId) {
+      lastAnnouncedWinner = null;
+    }
+  });
+
+  function returnRoomToLobby() {
+    sound.playClick();
+    connectedRoom?.send("return_to_lobby");
+  }
+
+  function leaveToMainMenu() {
+    sound.playClick();
+    if (connectedRoom) {
+      connectedRoom.leave();
+      connectedRoom = null;
+    }
+    game = null;
+    roomStatus = "disconnected";
+    selectedFromId = null;
+    selectedToId = null;
+    showVictoryModal = false;
+  }
 
   // Derived calculations
   let currentTurnPlayer = $derived(game ? game.players[game.turnIndex] : null);
@@ -342,9 +443,10 @@
         }
 
         if (game?.lastCombat && game.lastCombat !== prevLastCombat) {
+          sound.playCombatAttack();
           sound.playDiceRoll();
           if (game.lastCombat.conquered) {
-            setTimeout(() => sound.playConquest(), 250);
+            setTimeout(() => sound.playConquest(), 300);
           }
         }
       });
@@ -496,6 +598,14 @@
     const val = parseFloat((e.target as HTMLInputElement).value);
     musicVolume = val;
     sound.setVolume(val);
+  }
+  function onSfxVolumeChange(e: Event) {
+    const val = parseFloat((e.target as HTMLInputElement).value);
+    sfxVolume = val;
+    sound.setSfxVolume(val);
+  }
+  function toggleMuteAll() {
+    isMuted = sound.toggleMute();
   }
   function onTrackSelect(trackId: string) {
     selectedTrack = trackId;
@@ -735,6 +845,14 @@
           <filter id="glow-gold" x="-20%" y="-20%" width="140%" height="140%">
             <feDropShadow dx="0" dy="0" stdDeviation="3.5" flood-color="#facc15" flood-opacity="0.95" />
           </filter>
+
+          <!-- Objective Highlight Glows -->
+          <filter id="glow-red" x="-20%" y="-20%" width="140%" height="140%">
+            <feDropShadow dx="0" dy="0" stdDeviation="4.5" flood-color="#ef4444" flood-opacity="1" />
+          </filter>
+          <filter id="glow-green" x="-20%" y="-20%" width="140%" height="140%">
+            <feDropShadow dx="0" dy="0" stdDeviation="4.5" flood-color="#10b981" flood-opacity="1" />
+          </filter>
         </defs>
 
         <!-- CAMERA RIG: Pans & Zooms in Pure SVG Space with Seamless Horizontal Wraparound -->
@@ -838,37 +956,63 @@
                   territoryById.get(selectedFromId)?.neighbors.includes(t.id) &&
                   ((game.phase === "attack" && tState.ownerId !== myPlayerId) ||
                     (game.phase === "maneuver" && tState.ownerId === myPlayerId))}
+                {@const isObjectiveTarget = highlightObjectiveTerritories && objectiveTargetTerritoryIds.has(t.id)}
+                {@const isObjectiveOwned = isObjectiveTarget && tState.ownerId === myPlayerId}
+                {@const isObjectiveMissing = isObjectiveTarget && tState.ownerId !== myPlayerId}
+                {@const isDimmedByObjective = highlightObjectiveTerritories && objectiveTargetTerritoryIds.size > 0 && !isObjectiveTarget}
 
                 <!-- svelte-ignore a11y_click_events_have_key_events -->
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
-                <g class="territory-group" onclick={() => onTerritoryClick(t.id)}>
+                <g
+                  class="territory-group"
+                  style={isDimmedByObjective ? "opacity: 0.32; transition: opacity 0.25s;" : "transition: opacity 0.25s;"}
+                  onclick={() => onTerritoryClick(t.id)}
+                >
                   <!-- Political or Regional Fill + Frontier Border -->
                   <path
                     d={t.svgPath}
-                    fill={activeFill}
+                    fill={isObjectiveMissing
+                      ? "#7f1d1d"
+                      : isObjectiveOwned
+                        ? "#064e3b"
+                        : activeFill}
                     fill-opacity={isSelected
-                      ? "0.88"
-                      : mapMode === "cartographic"
-                        ? "0.42"
-                        : mapMode === "regional"
-                          ? "0.72"
-                          : "0.84"}
+                      ? "0.92"
+                      : isObjectiveMissing || isObjectiveOwned
+                        ? "0.85"
+                        : mapMode === "cartographic"
+                          ? "0.42"
+                          : mapMode === "regional"
+                            ? "0.72"
+                            : "0.84"}
                     stroke={isSelected
                       ? "#ffffff"
-                      : isValidTarget
-                        ? "#facc15"
-                        : mapMode === "cartographic"
-                          ? ownerColor
-                          : "rgba(9, 13, 22, 0.9)"}
+                      : isObjectiveMissing
+                        ? "#ef4444"
+                        : isObjectiveOwned
+                          ? "#10b981"
+                          : isValidTarget
+                            ? "#facc15"
+                            : mapMode === "cartographic"
+                              ? ownerColor
+                              : "rgba(9, 13, 22, 0.9)"}
                     stroke-width={isSelected
-                      ? "2.6"
-                      : isValidTarget
-                        ? "2.2"
-                        : mapMode === "cartographic"
-                          ? "1.6"
-                          : "1.0"}
+                      ? "2.8"
+                      : isObjectiveMissing || isObjectiveOwned
+                        ? "2.6"
+                        : isValidTarget
+                          ? "2.2"
+                          : mapMode === "cartographic"
+                            ? "1.6"
+                            : "1.0"}
                     stroke-linejoin="round"
-                    filter={isSelected || isValidTarget ? "url(#glow-gold)" : undefined}
+                    filter={isSelected || isValidTarget
+                      ? "url(#glow-gold)"
+                      : isObjectiveMissing
+                        ? "url(#glow-red)"
+                        : isObjectiveOwned
+                          ? "url(#glow-green)"
+                          : undefined}
                   />
 
                   {#if mapMode === "cartographic"}
@@ -1172,37 +1316,70 @@
           </div>
         </div>
 
-        <!-- Music Radio Drawer -->
+        <!-- Music Radio Drawer (Dual Equalization: SFX vs Music) -->
         {#if showMusicPanel}
           <div class="floating-drawer music-drawer">
             <div class="drawer-header">
-              <h4>{@render icon("radio", 15)} Rádio Militar & Trilha Sonora</h4>
+              <h4>{@render icon("radio", 15)} Rádio Tático & Equalização</h4>
               <button class="btn-close" onclick={() => (showMusicPanel = false)}>✕</button>
             </div>
             <div class="radio-controls">
-              <button class="btn primary-gold" onclick={toggleMusic}>
-                {isMusicPlaying ? "Pausar Transmissão" : "Iniciar Transmissão"}
-              </button>
-              <div class="volume-slider">
-                <span>VOL</span>
-                <input type="range" min="0" max="1" step="0.05" value={musicVolume} oninput={onVolumeChange} />
+              <div class="radio-playback-row">
+                <button class="btn primary-gold" onclick={toggleMusic}>
+                  {isMusicPlaying ? "⏸ Pausar Música" : "▶ Iniciar Música"}
+                </button>
+                <button class="btn {isMuted ? 'danger' : 'secondary'}" onclick={toggleMuteAll}>
+                  {isMuted ? "🔇 Desmutar" : "🔊 Mutar Tudo"}
+                </button>
               </div>
+
+              <div class="volume-slider-group">
+                <div class="volume-slider-row">
+                  <div class="vol-label-row">
+                    <span>MÚSICA:</span>
+                    <strong>{isMuted ? "0 (Mudo)" : Math.round(musicVolume * 100) + "%"}</strong>
+                  </div>
+                  <input
+                    type="range"
+                    min="0"
+                    max="1"
+                    step="0.05"
+                    value={musicVolume}
+                    oninput={onVolumeChange}
+                    disabled={isMuted}
+                  />
+                </div>
+
+                <div class="volume-slider-row">
+                  <div class="vol-label-row">
+                    <span>SFX / DADOS / COMBATE:</span>
+                    <strong>{isMuted ? "0 (Mudo)" : Math.round(sfxVolume * 100) + "%"}</strong>
+                  </div>
+                  <input
+                    type="range"
+                    min="0"
+                    max="1"
+                    step="0.05"
+                    value={sfxVolume}
+                    oninput={onSfxVolumeChange}
+                    disabled={isMuted}
+                  />
+                </div>
+              </div>
+
               <div class="track-select">
-                <span>Canal de Áudio:</span>
-                <button
-                  class="track-option"
-                  class:selected={selectedTrack === "ambient_procedural"}
-                  onclick={() => onTrackSelect("ambient_procedural")}
-                >
-                  Marcha Tática (Procedural Web Audio)
-                </button>
-                <button
-                  class="track-option"
-                  class:selected={selectedTrack === "track1.mp3"}
-                  onclick={() => onTrackSelect("track1.mp3")}
-                >
-                  Faixa Customizada 1 (track1.mp3)
-                </button>
+                <span class="track-title-label">Canal de Áudio / Frequência:</span>
+                <div class="track-list-scroll">
+                  {#each SOUNDTRACKS as track}
+                    <button
+                      class="track-option"
+                      class:selected={selectedTrack === track.id}
+                      onclick={() => onTrackSelect(track.id)}
+                    >
+                      {track.label}
+                    </button>
+                  {/each}
+                </div>
               </div>
             </div>
           </div>
@@ -1216,7 +1393,33 @@
               <button class="btn-close" onclick={() => (showObjective = false)}>✕</button>
             </div>
             <p class="objective-body">{myPlayerState.objective.descriptionPt}</p>
-            <small class="objective-note">Documento confidencial. O cumprimento garante vitória imediata.</small>
+
+            {#if objectiveProgress}
+              <div class="objective-progress-box">
+                <div class="progress-bar-header">
+                  <span>Progresso da Operação:</span>
+                  <strong class="pct-val">{objectiveProgress.pct}% ({objectiveProgress.owned}/{objectiveProgress.total} Territórios)</strong>
+                </div>
+                <div class="progress-track">
+                  <div class="progress-fill" style="width: {objectiveProgress.pct}%;"></div>
+                </div>
+              </div>
+            {/if}
+
+            <div class="objective-highlight-toggle-row">
+              <button
+                class="btn {highlightObjectiveTerritories ? 'primary-gold' : 'secondary'} highlight-toggle-btn"
+                onclick={toggleObjectiveHighlight}
+              >
+                {highlightObjectiveTerritories ? "🎯 Ocultar Destaque Visual no Mapa" : "🎯 Iluminar Territórios do Objetivo no Mapa"}
+              </button>
+            </div>
+
+            <small class="objective-note">
+              {highlightObjectiveTerritories
+                ? "🟢 VERDE: Províncias já sob seu controle | 🔴 VERMELHO: Alvos pendentes para vitória."
+                : "Clique no botão acima para acender o mapa com os territórios necessários para vencer."}
+            </small>
           </div>
         {/if}
 
@@ -1277,6 +1480,19 @@
           <div class="action-popup victory-popup">
             <h3>HEGEMONIA ALCANÇADA POR {winner?.name?.toUpperCase()}</h3>
             <p>{winner?.objective.descriptionPt}</p>
+            <div class="victory-dock-buttons">
+              <button class="btn primary-gold" onclick={() => (showVictoryModal = true)}>
+                📊 Ver Relatório da Partida
+              </button>
+              {#if amIHost}
+                <button class="btn gold-outline" onclick={returnRoomToLobby}>
+                  🔄 Voltar ao Lobby
+                </button>
+              {/if}
+              <button class="btn secondary" onclick={leaveToMainMenu}>
+                🚪 Sair da Sala
+              </button>
+            </div>
             <small>Verificação Criptográfica (Seed): {game.revealedSeed}</small>
           </div>
 
@@ -1441,6 +1657,87 @@
           {/if}
         {/if}
       </aside>
+
+      <!-- 🏆 VICTORY & SUMMARY MODAL -->
+      {#if game.winnerId && showVictoryModal}
+        {@const winner = game.players.find((p) => p.id === game!.winnerId)}
+        <div
+          class="modal-backdrop victory-modal-backdrop"
+          role="presentation"
+          onclick={(e) => { if (e.target === e.currentTarget) showVictoryModal = false; }}
+          onkeydown={(e) => { if (e.key === "Escape") showVictoryModal = false; }}
+        >
+          <div class="victory-modal-card" role="dialog" aria-modal="true">
+            <div class="victory-modal-header">
+              <span class="victory-laurel">★ ★ ★</span>
+              <h2>HEGEMONIA CONQUISTADA</h2>
+              <span class="victory-sub">O DESTINO DO MUNDO FOI DECIDIDO</span>
+            </div>
+
+            <div class="winner-hero" style="border-color: {COLOR_HEX[winner?.color ?? 'blue']};">
+              <div class="winner-avatar" style="background-color: {COLOR_HEX[winner?.color ?? 'blue']};">
+                {winner?.name.slice(0, 2).toUpperCase()}
+              </div>
+              <div class="winner-details">
+                <h3>{winner?.name}</h3>
+                <span class="winner-faction" style="color: {COLOR_HEX[winner?.color ?? 'blue']};">
+                  {FACTION_NAME_PT[winner?.color ?? 'blue']}
+                </span>
+              </div>
+            </div>
+
+            <div class="victory-objective-box">
+              <h4>Objetivo Secreto Cumprido</h4>
+              <p class="obj-text">{winner?.objective.descriptionPt}</p>
+              <div class="crypto-seed-row">
+                <span>Semente Criptográfica:</span>
+                <code>{game.revealedSeed}</code>
+              </div>
+            </div>
+
+            <div class="victory-stats-summary">
+              <h4>Relatório do Estado-Maior (Rodada {game.round})</h4>
+              <div class="stats-table">
+                {#each game.players as p}
+                  {@const count = Object.values(game.territories).filter((t) => t.ownerId === p.id).length}
+                  {@const armiesCount = Object.values(game.territories).filter((t) => t.ownerId === p.id).reduce((acc, t) => acc + t.armies, 0)}
+                  <div class="stat-player-row {p.id === game.winnerId ? 'is-winner' : ''}">
+                    <div class="stat-player-name">
+                      <span class="color-dot" style="background-color: {COLOR_HEX[p.color]};"></span>
+                      <span>{p.name} {p.id === game.winnerId ? '(VENCEDOR)' : ''}</span>
+                    </div>
+                    <div class="stat-metrics">
+                      <span>{count} Territórios</span>
+                      <span class="sep">•</span>
+                      <span>{armiesCount} Divisões</span>
+                    </div>
+                  </div>
+                {/each}
+              </div>
+            </div>
+
+            <div class="victory-actions">
+              {#if amIHost}
+                <button class="btn primary-gold btn-lg" onclick={returnRoomToLobby}>
+                  🔄 Retornar a Sala para o Lobby
+                </button>
+              {:else}
+                <div class="waiting-host-notice">
+                  Aguardando o comandante da sala retornar ao lobby...
+                </div>
+              {/if}
+              <div class="secondary-actions-row">
+                <button class="btn secondary" onclick={() => (showVictoryModal = false)}>
+                  🗺️ Inspecionar Mapa Final
+                </button>
+                <button class="btn danger" onclick={leaveToMainMenu}>
+                  🚪 Sair para o Menu Principal
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      {/if}
     </div>
   {/if}
 </main>
@@ -1851,22 +2148,111 @@
     flex-direction: column;
     gap: 0.45rem;
   }
-  .volume-slider {
+  .radio-playback-row {
     display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    font-size: 0.72rem;
-    font-weight: 700;
+    gap: 0.4rem;
+  }
+  .radio-playback-row .btn {
+    flex: 1;
+    font-size: 0.75rem;
+    padding: 0.35rem 0.5rem;
+  }
+  .volume-slider-group {
+    display: flex;
+    flex-direction: column;
+    gap: 0.45rem;
+    background: rgba(15, 23, 42, 0.7);
+    padding: 0.45rem 0.55rem;
+    border-radius: 6px;
+    border: 1px solid rgba(51, 65, 85, 0.4);
+  }
+  .volume-slider-row {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+  }
+  .vol-label-row {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.68rem;
     color: #94a3b8;
   }
-  .volume-slider input {
-    flex: 1;
+  .vol-label-row strong {
+    color: #facc15;
   }
-  .track-select {
+  .volume-slider-row input {
+    width: 100%;
+    accent-color: #eab308;
+    height: 4px;
+    cursor: pointer;
+  }
+  .objective-progress-box {
     display: flex;
     flex-direction: column;
     gap: 0.25rem;
+    background: rgba(15, 23, 42, 0.7);
+    padding: 0.5rem;
+    border-radius: 6px;
+    border: 1px solid rgba(51, 65, 85, 0.4);
+  }
+  .progress-bar-header {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.72rem;
+    color: #94a3b8;
+  }
+  .progress-bar-header .pct-val {
+    color: #10b981;
+  }
+  .progress-track {
+    width: 100%;
+    height: 6px;
+    background: #1e293b;
+    border-radius: 3px;
+    overflow: hidden;
+  }
+  .progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #10b981, #34d399);
+    transition: width 0.3s ease;
+  }
+  .objective-highlight-toggle-row {
+    margin-top: 0.25rem;
+  }
+  .highlight-toggle-btn {
+    width: 100%;
+    font-size: 0.78rem;
+    font-weight: 700;
+    padding: 0.5rem;
+  }
+
+  .track-select {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
     font-size: 0.74rem;
+  }
+  .track-title-label {
+    font-weight: 700;
+    color: #94a3b8;
+    text-transform: uppercase;
+    font-size: 0.68rem;
+    letter-spacing: 0.05em;
+  }
+  .track-list-scroll {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    max-height: 160px;
+    overflow-y: auto;
+    padding-right: 0.25rem;
+  }
+  .track-list-scroll::-webkit-scrollbar {
+    width: 4px;
+  }
+  .track-list-scroll::-webkit-scrollbar-thumb {
+    background: #475569;
+    border-radius: 2px;
   }
   .track-option {
     background: #0f172a;
@@ -1876,7 +2262,16 @@
     border-radius: 4px;
     text-align: left;
     cursor: pointer;
-    font-size: 0.74rem;
+    font-size: 0.72rem;
+    line-height: 1.25;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    transition: all 0.15s ease;
+  }
+  .track-option:hover {
+    border-color: #64748b;
+    background: #1e293b;
   }
   .track-option.selected {
     border-color: #eab308;
@@ -2378,5 +2773,207 @@
     z-index: 100;
     font-weight: 700;
     box-shadow: 0 8px 25px rgba(0, 0, 0, 0.6);
+  }
+
+  /* Victory Modal & Post-Game UX */
+  .victory-dock-buttons {
+    display: flex;
+    gap: 0.5rem;
+    justify-content: center;
+    margin: 0.4rem 0;
+    flex-wrap: wrap;
+  }
+  .victory-modal-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(3, 7, 18, 0.88);
+    backdrop-filter: blur(8px);
+    z-index: 999;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1.5rem;
+  }
+  .victory-modal-card {
+    background: linear-gradient(180deg, #0f172a 0%, #070d1a 100%);
+    border: 2px solid #eab308;
+    box-shadow: 0 0 50px rgba(234, 179, 8, 0.35), 0 25px 60px rgba(0, 0, 0, 0.9);
+    border-radius: 12px;
+    width: 100%;
+    max-width: 580px;
+    padding: 2rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1.25rem;
+    color: #f8fafc;
+    animation: modalPop 0.25s ease-out;
+  }
+  @keyframes modalPop {
+    from {
+      opacity: 0;
+      transform: scale(0.95);
+    }
+    to {
+      opacity: 1;
+      transform: scale(1);
+    }
+  }
+  .victory-modal-header {
+    text-align: center;
+  }
+  .victory-laurel {
+    color: #facc15;
+    font-size: 1.4rem;
+    letter-spacing: 0.3em;
+  }
+  .victory-modal-header h2 {
+    color: #facc15;
+    font-size: 1.6rem;
+    letter-spacing: 0.1em;
+    font-weight: 800;
+    margin: 0.25rem 0;
+  }
+  .victory-sub {
+    font-size: 0.75rem;
+    letter-spacing: 0.15em;
+    color: #94a3b8;
+    text-transform: uppercase;
+  }
+  .winner-hero {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    background: rgba(15, 23, 42, 0.7);
+    border: 2px solid;
+    padding: 1rem;
+    border-radius: 8px;
+  }
+  .winner-avatar {
+    width: 52px;
+    height: 52px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.3rem;
+    font-weight: 800;
+    color: white;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.5);
+  }
+  .winner-details h3 {
+    font-size: 1.25rem;
+    font-weight: 700;
+  }
+  .winner-faction {
+    font-size: 0.85rem;
+    font-weight: 600;
+  }
+  .victory-objective-box {
+    background: rgba(30, 41, 59, 0.55);
+    border: 1px solid rgba(148, 163, 184, 0.25);
+    border-radius: 8px;
+    padding: 0.85rem;
+  }
+  .victory-objective-box h4 {
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    color: #fbbf24;
+    letter-spacing: 0.05em;
+    margin-bottom: 0.35rem;
+  }
+  .obj-text {
+    font-size: 0.9rem;
+    line-height: 1.4;
+    color: #e2e8f0;
+  }
+  .crypto-seed-row {
+    margin-top: 0.5rem;
+    font-size: 0.72rem;
+    color: #64748b;
+    display: flex;
+    gap: 0.4rem;
+    align-items: center;
+  }
+  .crypto-seed-row code {
+    background: #020617;
+    color: #38bdf8;
+    padding: 0.15rem 0.35rem;
+    border-radius: 4px;
+    font-family: monospace;
+  }
+  .victory-stats-summary h4 {
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    color: #94a3b8;
+    letter-spacing: 0.05em;
+    margin-bottom: 0.5rem;
+  }
+  .stats-table {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+  }
+  .stat-player-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: rgba(15, 23, 42, 0.6);
+    border: 1px solid rgba(51, 65, 85, 0.4);
+    padding: 0.45rem 0.75rem;
+    border-radius: 6px;
+    font-size: 0.82rem;
+  }
+  .stat-player-row.is-winner {
+    border-color: rgba(234, 179, 8, 0.6);
+    background: rgba(234, 179, 8, 0.1);
+    font-weight: 700;
+  }
+  .stat-player-name {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+  .stat-metrics {
+    color: #94a3b8;
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+  }
+  .stat-metrics .sep {
+    opacity: 0.5;
+  }
+  .victory-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    margin-top: 0.5rem;
+  }
+  .btn-lg {
+    padding: 0.75rem 1.25rem;
+    font-size: 0.95rem;
+    font-weight: 700;
+    width: 100%;
+  }
+  .secondary-actions-row {
+    display: flex;
+    gap: 0.5rem;
+  }
+  .secondary-actions-row .btn {
+    flex: 1;
+  }
+  .waiting-host-notice {
+    font-size: 0.82rem;
+    text-align: center;
+    color: #94a3b8;
+    font-style: italic;
+    padding: 0.5rem;
+  }
+  .gold-outline {
+    background: transparent;
+    border: 1px solid #facc15;
+    color: #facc15;
+  }
+  .gold-outline:hover {
+    background: rgba(250, 204, 21, 0.15);
   }
 </style>

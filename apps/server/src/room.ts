@@ -167,6 +167,31 @@ export class HegemoniaRoom extends Room {
       });
     });
 
+    this.onMessage("return_to_lobby", (client) => {
+      this.enqueueAction(async () => {
+        const caller = this.lobbyPlayers.find((p) => p.sessionId === client.sessionId);
+        if (!caller?.isHost) {
+          client.send("error_msg", { message: "Apenas o anfitrião pode retornar a sala ao lobby." });
+          return;
+        }
+        if (this.gameState && !this.gameState.winnerId && this.gameState.phase !== "game_over") {
+          client.send("error_msg", { message: "A partida ainda está em andamento." });
+          return;
+        }
+        this.gameState = null;
+        this.matchId = "";
+        this.secretSeed = randomBytes(16).toString("hex");
+        this.rng = createSeededRng(this.secretSeed);
+        this.turnDeadline = 0;
+        this.setMetadata({
+          roomCode: this.roomCode,
+          status: "lobby",
+          playersCount: this.lobbyPlayers.length,
+        });
+        this.broadcastRoomState();
+      });
+    });
+
     this.onMessage("game_action", (client, rawAction: unknown) => {
       const parsed = GameActionSchema.safeParse(rawAction);
       if (!parsed.success) {
