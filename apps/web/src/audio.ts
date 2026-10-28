@@ -7,14 +7,21 @@ class SoundEngine {
   private isMusicPlaying = false;
   private volume = 0.5;
   private sfxVolume = 0.7;
+  private isMuted = false;
   private currentTrack = "ambient_procedural";
   private audioEl: HTMLAudioElement | null = null;
   private musicInterval: number | null = null;
+  private sfxBuffers: Record<string, AudioBuffer> = {};
+  private sfxLoading = false;
 
   constructor() {
     if (typeof window !== "undefined") {
       const savedVol = localStorage.getItem("hegemonia_music_volume");
       if (savedVol !== null) this.volume = parseFloat(savedVol);
+      const savedSfxVol = localStorage.getItem("hegemonia_sfx_volume");
+      if (savedSfxVol !== null) this.sfxVolume = parseFloat(savedSfxVol);
+      const savedMuted = localStorage.getItem("hegemonia_muted");
+      if (savedMuted !== null) this.isMuted = savedMuted === "true";
       const savedTrack = localStorage.getItem("hegemonia_music_track");
       if (savedTrack) this.currentTrack = savedTrack;
     }
@@ -25,15 +32,52 @@ class SoundEngine {
       const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
       this.ctx = new AudioCtx();
       this.musicGain = this.ctx.createGain();
-      this.musicGain.gain.value = this.volume;
+      this.musicGain.gain.value = this.isMuted ? 0 : this.volume;
       this.musicGain.connect(this.ctx.destination);
 
       this.sfxGain = this.ctx.createGain();
-      this.sfxGain.gain.value = this.sfxVolume;
+      this.sfxGain.gain.value = this.isMuted ? 0 : this.sfxVolume;
       this.sfxGain.connect(this.ctx.destination);
+
+      this.loadSfxFiles();
     }
     if (this.ctx && this.ctx.state === "suspended") {
       this.ctx.resume();
+    }
+  }
+
+  private async loadSfxFiles() {
+    if (!this.ctx || this.sfxLoading) return;
+    this.sfxLoading = true;
+    const sfxList: Record<string, string> = {
+      dice: "/sfx/sfx_dice.mp3",
+      combat: "/sfx/sfx_combat.mp3",
+      conquest: "/sfx/sfx_conquest.mp3",
+      turn: "/sfx/sfx_turn.mp3",
+    };
+    for (const [key, url] of Object.entries(sfxList)) {
+      try {
+        const resp = await fetch(url);
+        if (resp.ok) {
+          const arr = await resp.arrayBuffer();
+          this.sfxBuffers[key] = await this.ctx.decodeAudioData(arr);
+        }
+      } catch {
+        // Fallback to Web Audio synthesis if local audio unavailable
+      }
+    }
+  }
+
+  private playBuffer(key: string): boolean {
+    if (!this.ctx || !this.sfxGain || !this.sfxBuffers[key] || this.isMuted) return false;
+    try {
+      const src = this.ctx.createBufferSource();
+      src.buffer = this.sfxBuffers[key];
+      src.connect(this.sfxGain);
+      src.start();
+      return true;
+    } catch {
+      return false;
     }
   }
 
@@ -56,8 +100,9 @@ class SoundEngine {
 
   public playDiceRoll() {
     this.initContext();
+    if (this.playBuffer("dice")) return;
     if (!this.ctx || !this.sfxGain) return;
-    // Rattle of 3 clicks
+    // Fallback: Rattle of 4 clicks
     for (let i = 0; i < 4; i++) {
       const time = this.ctx.currentTime + i * 0.06;
       const osc = this.ctx.createOscillator();
@@ -73,10 +118,29 @@ class SoundEngine {
     }
   }
 
+  public playCombatAttack() {
+    this.initContext();
+    if (this.playBuffer("combat")) return;
+    if (!this.ctx || !this.sfxGain) return;
+    // Fallback: Heavy artillery thud
+    const osc = this.ctx.createOscillator();
+    const g = this.ctx.createGain();
+    osc.type = "sawtooth";
+    osc.frequency.setValueAtTime(120, this.ctx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(30, this.ctx.currentTime + 0.3);
+    g.gain.setValueAtTime(0.3, this.ctx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.3);
+    osc.connect(g);
+    g.connect(this.sfxGain);
+    osc.start();
+    osc.stop(this.ctx.currentTime + 0.3);
+  }
+
   public playConquest() {
     this.initContext();
+    if (this.playBuffer("conquest")) return;
     if (!this.ctx || !this.sfxGain) return;
-    // Triumphant rising two-tone horn
+    // Fallback: Triumphant rising two-tone horn
     const chord = [330, 440, 554];
     chord.forEach((freq, idx) => {
       const osc = this.ctx!.createOscillator();
@@ -94,7 +158,9 @@ class SoundEngine {
 
   public playTurnChime() {
     this.initContext();
+    if (this.playBuffer("turn")) return;
     if (!this.ctx || !this.sfxGain) return;
+    // Fallback: 3-tone arpeggio
     const osc = this.ctx.createOscillator();
     const g = this.ctx.createGain();
     osc.type = "sine";
@@ -172,17 +238,51 @@ class SoundEngine {
 
   public setVolume(val: number) {
     this.volume = Math.max(0, Math.min(1, val));
-    if (this.musicGain && this.ctx) {
+    if (this.musicGain && this.ctx && !this.isMuted) {
       this.musicGain.gain.setValueAtTime(this.volume, this.ctx.currentTime);
     }
     if (this.audioEl) {
-      this.audioEl.volume = this.volume;
+      this.audioEl.volume = this.isMuted ? 0 : this.volume;
     }
     localStorage.setItem("hegemonia_music_volume", this.volume.toString());
   }
 
   public getVolume(): number {
     return this.volume;
+  }
+
+  public setSfxVolume(val: number) {
+    this.sfxVolume = Math.max(0, Math.min(1, val));
+    if (this.sfxGain && this.ctx && !this.isMuted) {
+      this.sfxGain.gain.setValueAtTime(this.sfxVolume, this.ctx.currentTime);
+    }
+    localStorage.setItem("hegemonia_sfx_volume", this.sfxVolume.toString());
+  }
+
+  public getSfxVolume(): number {
+    return this.sfxVolume;
+  }
+
+  public toggleMute(): boolean {
+    this.initContext();
+    this.isMuted = !this.isMuted;
+    const effectiveMusic = this.isMuted ? 0 : this.volume;
+    const effectiveSfx = this.isMuted ? 0 : this.sfxVolume;
+    if (this.musicGain && this.ctx) {
+      this.musicGain.gain.setValueAtTime(effectiveMusic, this.ctx.currentTime);
+    }
+    if (this.sfxGain && this.ctx) {
+      this.sfxGain.gain.setValueAtTime(effectiveSfx, this.ctx.currentTime);
+    }
+    if (this.audioEl) {
+      this.audioEl.volume = effectiveMusic;
+    }
+    localStorage.setItem("hegemonia_muted", this.isMuted.toString());
+    return this.isMuted;
+  }
+
+  public getIsMuted(): boolean {
+    return this.isMuted;
   }
 
   public getIsPlaying(): boolean {

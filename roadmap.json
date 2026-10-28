@@ -16,6 +16,11 @@
         "wasd_camera_pan_and_zoom",
         "cartographic_and_geopolitical_views",
         "10_alt_history_roleplay_ambitions",
+        "core_territory_eligibility_filter",
+        "aral_russian_third_rome_expansion",
+        "interactive_tactical_objective_map_mode",
+        "dual_music_sfx_audio_equalizer_engine",
+        "victory_lobby_return_flow",
         "120s_turn_timers_with_fallback",
         "colyseus_websocket_server"
       ]
@@ -67,6 +72,34 @@
           "title": "Airfields & Tactical Aviation",
           "priority": "P3",
           "tasks": ["airfield_construction", "recon_flights", "bombardment_missions"]
+        }
+      ]
+    },
+    {
+      "id": "v0.4.0+",
+      "name": "Advanced Geopolitics, Clandestine Comms & Coalitions",
+      "status": "planned",
+      "features": [
+        {
+          "id": "epic_clandestine_radio",
+          "title": "Clandestine Diplomatic Radio & Intercepted Signals",
+          "priority": "P2",
+          "tasks": [
+            "bilateral_encrypted_text_channel",
+            "webrtc_private_voice_stream",
+            "public_radio_interception_broadcast_alert"
+          ]
+        },
+        {
+          "id": "epic_world_tension_and_coalitions",
+          "title": "Global World Tension & Player Infamy Dynamic Coalitions",
+          "priority": "P1",
+          "tasks": [
+            "global_world_tension_meter_engine",
+            "player_infamy_percentage_tracker",
+            "two_player_defensive_coalition_threshold_34pct",
+            "three_player_grand_coalition_threshold_67pct"
+          ]
         }
       ]
     }

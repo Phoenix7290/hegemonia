@@ -139,10 +139,10 @@ export function createGame(opts: CreateGameOptions): GameState {
 
   const players: PlayerState[] = shuffledPlayers.map((p) => {
     let chosenObjective: ObjectiveCard | undefined;
+    const startingTerrs = playerOwnedTerritoryIds[p.id] ?? [];
 
     if (!opts.objectives) {
-      // Look for a thematic roleplay objective matching any of player's starting territories
-      const startingTerrs = playerOwnedTerritoryIds[p.id] ?? [];
+      // Look for a thematic roleplay objective matching any of player's starting core territories
       const matchingRoleplay = ROLEPLAY_OBJECTIVES.filter(
         (obj) =>
           !assignedObjectiveIds.has(obj.id) &&
@@ -155,10 +155,22 @@ export function createGame(opts: CreateGameOptions): GameState {
     }
 
     if (!chosenObjective) {
-      chosenObjective = shuffledObjectives.find((obj) => !assignedObjectiveIds.has(obj.id));
+      // Only pick an objective if the player is eligible:
+      // - Classic objectives (no coreTerritoryIds) are open to any player
+      // - Roleplay objectives REQUIRE holding at least one of their core starting territories
+      chosenObjective = shuffledObjectives.find((obj) => {
+        if (assignedObjectiveIds.has(obj.id)) return false;
+        if (!obj.coreTerritoryIds || obj.coreTerritoryIds.length === 0) {
+          return true;
+        }
+        return obj.coreTerritoryIds.some((coreId) => startingTerrs.includes(coreId));
+      });
     }
+
     if (!chosenObjective) {
-      chosenObjective = shuffledObjectives[0];
+      // Fallback exclusively to classic unassigned objectives
+      chosenObjective = rng.shuffle([...CLASSIC_OBJECTIVES]).find((obj) => !assignedObjectiveIds.has(obj.id))
+        ?? shuffledObjectives[0];
     }
     assignedObjectiveIds.add(chosenObjective.id);
 

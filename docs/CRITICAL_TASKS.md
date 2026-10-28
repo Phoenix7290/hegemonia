@@ -9,15 +9,16 @@ Este documento centraliza as correções de estabilidade, verificações manuais
 | # | Item / Tarefa | Escopo | Status |
 |---|---|---|---|
 | **1** | **Inspeção Visual da Ponta de Vladivostok** | Cartografia / TopoJSON | 🔍 Pronto para Validação Visual |
-| **2** | **Botão de Retorno ao Lobby pós-Vitória** | Frontend (`apps/web`) & Server | ⏳ Pendente |
-| **3** | **Equalização e Controle de Áudio (SFX vs Música)** | Frontend (`apps/web`) | ⏳ Pendente |
-| **4** | **Trilhas Sonoras Locais Protegidas do Git** | Configuração (`.gitignore`) |  Concluído |
-| **5** | **Clareza e Formatação do Feed de Logs de Combate** | Frontend & Engine | ⏳ Pendente |
-| **6** | **Polimento de UI e Responsividade Widescreen/Laptop** | Frontend (`apps/web`) | ⏳ Pendente |
-| **7** | **Revisão Textual & Eliminação de Typos (PT-BR/EN)** | Shared / Maps / Engine |  Concluído (v0.1.0-alpha) |
-| **8** | **Stress Test de Estabilidade & Concorrência** | Engine & Server | ⏳ Pendente |
-| **9** | **Compatibilidade Cross-Browser (Chromium / Firefox)** | Frontend (`apps/web`) | ⏳ Pendente |
-| **10** | **Multiplayer Local (LAN) e Suporte IPv6** | Server (`apps/server`) | ⏳ Pendente |
+| **2** | **Botão de Retorno ao Lobby pós-Vitória** | Frontend (`apps/web`) & Server | ✅ Concluído |
+| **3** | **Elegibilidade Estrita de Core nos 10 Objetivos** | Engine (`packages/engine`) | ✅ Concluído |
+| **4** | **Equalização e Controle de Áudio (SFX vs Música)** | Frontend (`apps/web`) | ⏳ Pendente |
+| **5** | **Trilhas Sonoras Locais Protegidas do Git** | Configuração (`.gitignore`) | ✅ Concluído |
+| **6** | **Clareza e Formatação do Feed de Logs de Combate** | Frontend & Engine | ⏳ Pendente |
+| **7** | **Polimento de UI e Responsividade Widescreen/Laptop** | Frontend (`apps/web`) | ⏳ Pendente |
+| **8** | **Revisão Textual & Eliminação de Typos (PT-BR/EN)** | Shared / Maps / Engine | ✅ Concluído (v0.1.0-alpha) |
+| **9** | **Stress Test de Estabilidade & Concorrência** | Engine & Server | ⏳ Pendente |
+| **10** | **Compatibilidade Cross-Browser (Chromium / Firefox)** | Frontend (`apps/web`) | ⏳ Pendente |
+| **11** | **Multiplayer Local (LAN) e Suporte IPv6** | Server (`apps/server`) | ⏳ Pendente |
 
 ---
 
@@ -28,10 +29,19 @@ Este documento centraliza as correções de estabilidade, verificações manuais
 - **Critério de Aceite**: Abrir o jogo na visão Cartográfica e Geopolítica; verificar se a ponta oriental de Vladivostok forma uma fronteira litorânea contínua com as ilhas ao norte e sem nenhuma fresta branca contra o estreito de Bering / Alasca.
 
 ### 2. Retorno ao Lobby pós-Término de Jogo
-- **Objetivo**: Quando a partida atinge a fase `game_over` (um jogador cumpre seu objetivo secreto ou conquista o mundo), os jogadores precisam de uma saída limpa.
-- **Critério de Aceite**:
-  - Exibir modal ou painel de consagração de vitória com estatísticas da partida.
-  - Disponibilizar um botão proeminente **"Voltar ao Lobby"** que desconecte a sala do Colyseus e retorne à tela inicial de criação/entrada de salas sem forçar recarregamento manual da página (`F5`).
+- **Status**: ✅ Concluído.
+- **Implementação**:
+  - Modal imersivo de consagração de vitória com estatísticas completas (rodadas jogadas, ranking de territórios e divisões por jogador, facção e verificação de semente criptográfica).
+  - Ação do Anfitrião `return_to_lobby`: reinicia o estado da sala no Colyseus e redireciona todos os clientes conectados de volta para a tela de Lobby simultaneamente.
+  - Ação individual de saída: botão "Sair para o Menu Principal" desconecta da sala e volta à tela inicial sem necessidade de recarregar a página (`F5`).
+  - Botão "Inspecionar Mapa Final": permite recolher o modal para inspecionar o tabuleiro com dock de controle flutuante para reabrir o relatório.
+
+### 3. Elegibilidade Estrita de Territórios Core nos 10 Objetivos
+- **Status**: ✅ Concluído.
+- **Implementação**:
+  - Motor de regras (`packages/engine/src/index.ts`) atualizado para que objetivos de Ambição Nacional sejam atribuídos estritamente aos generais que possuem ao menos um de seus territórios-chave no sorteio inicial da rodada 1.
+  - Jogadores inelegíveis recebem objetivos clássicos, garantindo coerência temática e ausência de frustração competitiva.
+  - Testado via Vitest com simulação de 20 partidas estocásticas.
 
 ### 3. Sistema de Controle de Áudio (Trilhas & SFX)
 - **Objetivo**: Proporcionar controle sonoro granular para não incomodar jogadores em chamadas ou fones.
