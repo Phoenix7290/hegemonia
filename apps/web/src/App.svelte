@@ -783,6 +783,9 @@
                   territoryById.get(selectedFromId)?.neighbors.includes(t.id) &&
                   ((game.phase === "attack" && tState.ownerId !== myPlayerId) ||
                     (game.phase === "maneuver" && tState.ownerId === myPlayerId))}
+                {@const isCapital = owner?.capitalTerritoryId === t.id}
+                {@const originalCapitalOwner = game.players.find((p) => p.capitalTerritoryId === t.id)}
+                {@const isFallenCapital = originalCapitalOwner && originalCapitalOwner.id !== tState.ownerId}
 
                 <!-- svelte-ignore a11y_click_events_have_key_events -->
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -839,6 +842,20 @@
                     transform="translate({t.center[0]}, {t.center[1]}) scale({COMPACT_BADGE_IDS.has(t.id) ? 0.82 : 0.94})"
                     class="division-counter"
                   >
+                    <!-- Capital Crown / Golden Star Crest -->
+                    {#if isCapital}
+                      <g transform="translate(0, -10.2)">
+                        <circle cx="0" cy="0" r="4.2" fill="#090e1a" stroke="#f59e0b" stroke-width="1.3" />
+                        <polygon points="0,-3.2 0.95,-0.9 3.2,-0.9 1.4,0.4 2.1,2.6 0,1.3 -2.1,2.6 -1.4,0.4 -3.2,-0.9 -0.95,-0.9" fill="#facc15" />
+                      </g>
+                    {:else if isFallenCapital}
+                      <g transform="translate(0, -10.2)">
+                        <circle cx="0" cy="0" r="4.2" fill="#090e1a" stroke="#ef4444" stroke-width="1.3" />
+                        <polygon points="0,-3.2 0.95,-0.9 3.2,-0.9 1.4,0.4 2.1,2.6 0,1.3 -2.1,2.6 -1.4,0.4 -3.2,-0.9 -0.95,-0.9" fill="#94a3b8" />
+                        <line x1="-2.8" y1="-2.8" x2="2.8" y2="2.8" stroke="#ef4444" stroke-width="1.2" />
+                      </g>
+                    {/if}
+
                     <rect
                       x="-13"
                       y="-6.5"
@@ -846,8 +863,16 @@
                       height="13"
                       rx="2.2"
                       fill="#090e1a"
-                      stroke={isSelected ? "#ffffff" : isValidTarget ? "#facc15" : ownerColor}
-                      stroke-width={isSelected || isValidTarget ? "1.6" : "1.1"}
+                      stroke={isCapital
+                        ? "#f59e0b"
+                        : isFallenCapital
+                          ? "#ef4444"
+                          : isSelected
+                            ? "#ffffff"
+                            : isValidTarget
+                              ? "#facc15"
+                              : ownerColor}
+                      stroke-width={isCapital || isFallenCapital ? "1.6" : isSelected || isValidTarget ? "1.6" : "1.1"}
                       filter="drop-shadow(0 1.5px 3px rgba(0,0,0,0.85))"
                     />
                     <!-- Mini Faction Flag inside Left Half of Counter -->
@@ -896,14 +921,14 @@
                       x="0"
                       y="11.2"
                       text-anchor="middle"
-                      fill="#e2e8f0"
+                      fill={isCapital ? "#fde047" : "#e2e8f0"}
                       font-size="6.2"
                       font-weight="700"
                       letter-spacing="0.01em"
                       pointer-events="none"
                       style="paint-order: stroke; stroke: #050912; stroke-width: 2.4px; stroke-linejoin: round;"
                     >
-                      {t.namePt}
+                      {isCapital ? `⭐ ${t.namePt}` : t.namePt}
                     </text>
                   </g>
                 </g>
@@ -1359,6 +1384,16 @@
               <strong>{inspectedTerritory.def.namePt}</strong>
               <span class="recon-garrison">{inspectedTerritory.state.armies} DIV</span>
             </div>
+            {#if inspectedTerritory.owner?.capitalTerritoryId === inspectedTerritory.def.id}
+              <div class="recon-capital-tag gold">
+                ⭐ CAPITAL NACIONAL (+1 Divisão/Turno • Fortificação Defensiva)
+              </div>
+            {:else if game.players.some((p) => p.capitalTerritoryId === inspectedTerritory.def.id)}
+              {@const origOwner = game.players.find((p) => p.capitalTerritoryId === inspectedTerritory.def.id)}
+              <div class="recon-capital-tag red">
+                ⚠️ CAPITAL CAPTURADA ({origOwner?.name})
+              </div>
+            {/if}
             <div class="recon-meta">
               <span>{inspectedTerritory.regionName}</span>
               <span>•</span>
@@ -1439,6 +1474,15 @@
                 </div>
                 <div class="slider-row">
                   <input type="range" min="1" max={maxD} bind:value={sliderArmies} />
+                  {#if !myPlayerState?.capitalTerritoryId}
+                    <button
+                      class="btn secondary-btn select-cap-btn"
+                      title="Definir este território como sua Capital Nacional de Comando"
+                      onclick={() => sendAction({ type: "select_capital", territoryId: selectedFromId })}
+                    >
+                      ⭐ Definir Capital
+                    </button>
+                  {/if}
                   <button class="btn primary-gold" onclick={confirmDeploy}>
                     Confirmar +{sliderArmies} Divisões
                   </button>
@@ -2269,6 +2313,37 @@
     border: 1px solid rgba(234, 179, 8, 0.4);
     padding: 1px 6px;
     border-radius: 3px;
+  }
+  .recon-capital-tag {
+    font-size: 0.65rem;
+    font-weight: 700;
+    padding: 2px 6px;
+    border-radius: 3px;
+    letter-spacing: 0.02em;
+    display: inline-flex;
+    align-items: center;
+    width: fit-content;
+  }
+  .recon-capital-tag.gold {
+    background: rgba(234, 179, 8, 0.15);
+    color: #fde047;
+    border: 1px solid rgba(234, 179, 8, 0.45);
+  }
+  .recon-capital-tag.red {
+    background: rgba(239, 68, 68, 0.15);
+    color: #fca5a5;
+    border: 1px solid rgba(239, 68, 68, 0.45);
+  }
+  .select-cap-btn {
+    white-space: nowrap;
+    background: rgba(234, 179, 8, 0.2);
+    border: 1px solid rgba(234, 179, 8, 0.6);
+    color: #fef08a;
+    font-size: 0.75rem;
+    padding: 0.35rem 0.6rem;
+  }
+  .select-cap-btn:hover {
+    background: rgba(234, 179, 8, 0.35);
   }
   .recon-meta {
     display: flex;
