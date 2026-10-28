@@ -210,6 +210,20 @@ export const ptBRGame: TranslationCatalog = {
   lobby_systems_ready: "Todos os sistemas prontos para o início das hostilidades.",
   lobby_btn_add_ai: "+ Adicionar General IA",
   lobby_btn_launch_campaign: "INICIAR CAMPANHA GLOBAL",
+
+  // War Economy & Strategic Resources (HEGEM-18 & HEGEM-56)
+  res_money: "Dinheiro",
+  res_steel: "Aço",
+  res_oil: "Petróleo",
+  res_gold: "Ouro",
+  res_trade_hub: "Polo Comercial (+${bonus}/turno)",
+  res_coastal: "Costeiro",
+  res_landlocked: "Continental Interno",
+  cards_buy_gold_title: "Reserva Estratégica de Ouro",
+  cards_buy_gold_sub: "Adquirir +1 Carta de Suprimento (máx. 1/turno na Fase 1)",
+  cards_buy_gold_only_btn: "Comprar (2 Ouro)",
+  cards_buy_gold_money_btn: "Comprar (1 Ouro + $4)",
+  cards_buy_gold_done: "Carta estratégica já adquirida neste turno",
 };
 
 export const game = ptBRGame;

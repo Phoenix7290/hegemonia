@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { ALL_OBJECTIVES, CLASSIC_MAP, CLASSIC_OBJECTIVES, ROLEPLAY_OBJECTIVES } from "@hegemonia/maps";
+import { ALL_OBJECTIVES, ASIA_SUBREGIONS, CLASSIC_MAP, CLASSIC_OBJECTIVES, ROLEPLAY_OBJECTIVES } from "@hegemonia/maps";
 import {
   applyAction,
+  calculateTurnEconomy,
   calculateTurnReinforcements,
   checkPlayerVictory,
   createGame,
@@ -633,5 +634,176 @@ describe("Diplomacy, Treaties, World Tension and Coalitions", () => {
     expect(state.round).toBe(2);
     expect(state.worldTension).toBe(0.5);
     expect(state.players[0].infamy).toBe(5);
+  });
+});
+
+describe("HEGEM-56: Cartographic Resource & Coastal Matrix (44 Territories)", () => {
+  it("distributes 15 Steel, 11 Oil, 6 Gold, 12 Trade Hubs (+17$), 37 Coastal and 7 Landlocked territories", () => {
+    const steelTerrs = CLASSIC_MAP.territories.filter((t) => t.resource === "steel");
+    const oilTerrs = CLASSIC_MAP.territories.filter((t) => t.resource === "oil");
+    const goldTerrs = CLASSIC_MAP.territories.filter((t) => t.resource === "gold");
+    const tradeTerrs = CLASSIC_MAP.territories.filter((t) => (t.tradeBonus ?? 0) > 0);
+    const coastalTerrs = CLASSIC_MAP.territories.filter((t) => t.isCoastal === true);
+    const landlockedTerrs = CLASSIC_MAP.territories.filter((t) => t.isCoastal === false);
+
+    expect(steelTerrs.length).toBe(15);
+    expect(oilTerrs.length).toBe(11);
+    expect(goldTerrs.length).toBe(6);
+    expect(tradeTerrs.length).toBe(12);
+    expect(tradeTerrs.reduce((sum, t) => sum + (t.tradeBonus ?? 0), 0)).toBe(17);
+    expect(coastalTerrs.length).toBe(37);
+    expect(landlockedTerrs.map((t) => t.id).sort()).toEqual(
+      ["aral", "mongolia", "moscou", "omsk", "ottawa", "siberia", "tchita"].sort()
+    );
+  });
+
+  it("enforces asymmetric continental resource scarcity (Europe & East Asia have 0 native Oil)", () => {
+    const europeOil = CLASSIC_MAP.territories.filter(
+      (t) => t.continent === "europe" && t.resource === "oil"
+    );
+    const europeSteel = CLASSIC_MAP.territories.filter(
+      (t) => t.continent === "europe" && t.resource === "steel"
+    );
+    expect(europeOil.length).toBe(0);
+    expect(europeSteel.length).toBe(4);
+
+    const eastAsiaIds = ASIA_SUBREGIONS.find((s) => s.id === "asia_east")!.territoryIds;
+    const eastAsiaOil = CLASSIC_MAP.territories.filter(
+      (t) => eastAsiaIds.includes(t.id) && t.resource === "oil"
+    );
+    expect(eastAsiaOil.length).toBe(0);
+  });
+});
+
+describe("HEGEM-18: Core War Economy (Money, Steel, Oil, Scarce Gold)", () => {
+  it("calculates Capital (+3$), Trade Hubs, Gold passive (+2$ & +1 Gold), and 0.5x decapitation penalty", () => {
+    let state = createGame({
+      id: "econ-test",
+      players: [
+        { id: "p1", name: "Commander 1", color: "blue" },
+        { id: "p2", name: "Commander 2", color: "red" },
+      ],
+      seed: "econ-seed-1",
+    });
+
+    // Clear ownership and assign specific territories to p1:
+    // brasil (steel), venezuela (oil), peru (gold -> +1 gold, +2$), egito (oil + tradeBonus 2$)
+    for (const t of Object.values(state.territories)) {
+      t.ownerId = "p2";
+      t.armies = 2;
+    }
+    state.territories["brasil"].ownerId = "p1";
+    state.territories["venezuela"].ownerId = "p1";
+    state.territories["peru"].ownerId = "p1";
+    state.territories["egito"].ownerId = "p1";
+
+    const p1 = state.players.find((p) => p.id === "p1")!;
+    p1.capitalTerritoryId = "brasil";
+    p1.isCapitalLost = false;
+    p1.economicPenaltyMultiplier = 1.0;
+
+    const econ = calculateTurnEconomy(state, "p1");
+    expect(econ.capitalMoney).toBe(3);
+    expect(econ.tradeHubMoney).toBe(2); // egito (+2$)
+    expect(econ.goldPassiveMoney).toBe(2); // peru (+2$)
+    expect(econ.grossMoney).toBe(7);
+    expect(econ.netMoney).toBe(7);
+    expect(econ.steel).toBe(1); // brasil
+    expect(econ.oil).toBe(2); // venezuela + egito
+    expect(econ.gold).toBe(1); // peru
+
+    // Simulate Capital Decapitation (50% penalty on Money)
+    p1.isCapitalLost = true;
+    p1.economicPenaltyMultiplier = 0.5;
+    const penalizedEcon = calculateTurnEconomy(state, "p1");
+    expect(penalizedEcon.grossMoney).toBe(7);
+    expect(penalizedEcon.netMoney).toBe(3); // floor(7 * 0.5)
+    expect(penalizedEcon.steel).toBe(1);
+    expect(penalizedEcon.oil).toBe(2);
+    expect(penalizedEcon.gold).toBe(1);
+  });
+
+  it("grants +3$ immediately when establishing a Capital for the first time", () => {
+    const rng = createSeededRng("capital-treasury-seed");
+    let state = createGame({
+      id: "cap-treasury",
+      players: [
+        { id: "p1", name: "Alpha", color: "blue" },
+        { id: "p2", name: "Bravo", color: "red" },
+      ],
+      seed: "capital-treasury-seed",
+    });
+
+    const activePlayer = state.players[state.turnIndex];
+    const ownedTerrId = Object.values(state.territories).find(
+      (t) => t.ownerId === activePlayer.id
+    )!.id;
+    const moneyBefore = activePlayer.resources.money;
+
+    state = applyAction(
+      state,
+      activePlayer.id,
+      { type: "select_capital", territoryId: ownedTerrId },
+      rng
+    );
+
+    const updatedPlayer = state.players.find((p) => p.id === activePlayer.id)!;
+    expect(updatedPlayer.capitalTerritoryId).toBe(ownedTerrId);
+    expect(updatedPlayer.resources.money).toBe(moneyBefore + 3);
+  });
+
+  it("allows buying 1 supply card per turn with Gold (2 Gold OR 1 Gold + $4) during deploy phase", () => {
+    const rng = createSeededRng("gold-card-buy-seed");
+    let state = createGame({
+      id: "gold-card-test",
+      players: [
+        { id: "p1", name: "Auric", color: "yellow" },
+        { id: "p2", name: "Iron", color: "black" },
+      ],
+      seed: "gold-card-buy-seed",
+    });
+
+    const activeId = state.players[state.turnIndex].id;
+    const activePlayer = state.players[state.turnIndex];
+    activePlayer.resources = { money: 10, steel: 0, oil: 0, gold: 3 };
+    const initialDeckCount = state.deck.length;
+
+    // Buy card with 2 Gold
+    state = applyAction(
+      state,
+      activeId,
+      { type: "buy_card_with_gold", paymentMode: "gold_only" },
+      rng
+    );
+
+    const afterFirstBuy = state.players.find((p) => p.id === activeId)!;
+    expect(afterFirstBuy.cards.length).toBe(1);
+    expect(afterFirstBuy.resources.gold).toBe(1);
+    expect(afterFirstBuy.resources.money).toBe(10);
+    expect(afterFirstBuy.boughtCardWithGoldThisTurn).toBe(true);
+    expect(state.deck.length).toBe(initialDeckCount - 1);
+
+    // Attempting a second purchase in the same turn must fail
+    expect(() =>
+      applyAction(
+        state,
+        activeId,
+        { type: "buy_card_with_gold", paymentMode: "gold_and_money" },
+        rng
+      )
+    ).toThrow(/1 carta de suprimento com Ouro por turno/);
+
+    // Reset flag to test gold_and_money mode (1 Gold + $4)
+    state.players[state.turnIndex].boughtCardWithGoldThisTurn = false;
+    state = applyAction(
+      state,
+      activeId,
+      { type: "buy_card_with_gold", paymentMode: "gold_and_money" },
+      rng
+    );
+    const afterSecondBuy = state.players.find((p) => p.id === activeId)!;
+    expect(afterSecondBuy.cards.length).toBe(2);
+    expect(afterSecondBuy.resources.gold).toBe(0);
+    expect(afterSecondBuy.resources.money).toBe(6);
   });
 });

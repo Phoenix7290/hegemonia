@@ -36,6 +36,16 @@ export const TurnPhaseSchema = z.enum([
 ]);
 export type TurnPhase = z.infer<typeof TurnPhaseSchema>;
 
+export const ResourceTypeSchema = z.enum(["steel", "oil", "gold"]);
+export type ResourceType = z.infer<typeof ResourceTypeSchema>;
+
+export interface PlayerResources {
+  money: number;
+  steel: number;
+  oil: number;
+  gold: number;
+}
+
 export interface TerritoryDef {
   id: string;
   name: string;
@@ -47,6 +57,12 @@ export interface TerritoryDef {
   center: [number, number];
   /** Stylized polygon SVG path data */
   svgPath: string;
+  /** Native strategic resource deposit (steel, oil, or gold) */
+  resource?: ResourceType;
+  /** Passive trade hub / maritime strait money bonus per turn ($1 or $2) */
+  tradeBonus?: number;
+  /** Whether the territory is coastal or insular (allows building naval ports) */
+  isCoastal?: boolean;
 }
 
 export interface ContinentDef {
@@ -123,6 +139,10 @@ export interface PlayerState {
   moralePenalty?: number;
   /** Individual player infamy percentage (0 to 100%) */
   infamy: number;
+  /** National treasury ($) and strategic resource stockpiles (steel, oil, gold) */
+  resources: PlayerResources;
+  /** Whether this player has already purchased a supply card with gold on the current turn */
+  boughtCardWithGoldThisTurn?: boolean;
 }
 
 export type TreatyType = "nap" | "alliance";
@@ -213,6 +233,11 @@ export const TradeCardsActionSchema = z.object({
   cardIds: z.tuple([z.string(), z.string(), z.string()]),
 });
 
+export const BuyCardWithGoldActionSchema = z.object({
+  type: z.literal("buy_card_with_gold"),
+  paymentMode: z.enum(["gold_only", "gold_and_money"]).optional(),
+});
+
 export const AttackActionSchema = z.object({
   type: z.literal("attack"),
   fromTerritoryId: z.string(),
@@ -275,6 +300,7 @@ export const GameActionSchema = z.discriminatedUnion("type", [
   SelectCapitalActionSchema,
   DeployActionSchema,
   TradeCardsActionSchema,
+  BuyCardWithGoldActionSchema,
   AttackActionSchema,
   OccupyActionSchema,
   EndAttackPhaseActionSchema,

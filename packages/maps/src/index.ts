@@ -1,4 +1,4 @@
-import type { GameMapDef, ObjectiveCard } from "@hegemonia/shared";
+import type { GameMapDef, ObjectiveCard, ResourceType, TerritoryDef } from "@hegemonia/shared";
 
 export const MAP_WIDTH = 1200;
 export const MAP_HEIGHT = 620;
@@ -37,6 +37,81 @@ export const ASIA_SUBREGIONS: AsiaSubRegionDef[] = [
   },
 ];
 
+export interface TerritoryGeoEconomyDef {
+  resource?: ResourceType;
+  tradeBonus?: number;
+  isCoastal: boolean;
+}
+
+/**
+ * Cartographic Resource, Trade Hub & Coastal Matrix for all 44 territories (HEGEM-56).
+ * Totals across 8 theaters:
+ * - 15 Steel ("steel"), 11 Oil ("oil"), 6 Gold ("gold")
+ * - 12 Trade Hubs (+17$/turn total)
+ * - 37 Coastal (isCoastal: true), 7 Landlocked (isCoastal: false)
+ */
+export const TERRITORY_GEO_ECONOMY: Record<string, TerritoryGeoEconomyDef> = {
+  // 1. South America (4 territories: 1 Steel, 1 Oil, 1 Gold, +1$ Trade)
+  brasil: { resource: "steel", isCoastal: true },
+  venezuela: { resource: "oil", isCoastal: true },
+  peru: { resource: "gold", isCoastal: true },
+  argentina: { tradeBonus: 1, isCoastal: true },
+
+  // 2. Oceania (4 territories: 1 Steel, 2 Oil, 1 Gold, +2$ Trade)
+  sumatra: { resource: "oil", tradeBonus: 2, isCoastal: true },
+  borneu: { resource: "oil", isCoastal: true },
+  nova_guine: { resource: "gold", isCoastal: true },
+  australia: { resource: "steel", isCoastal: true },
+
+  // 3. Africa (6 territories: 1 Steel, 2 Oil, 2 Gold, +2$ Trade)
+  argelia: { resource: "oil", isCoastal: true },
+  egito: { resource: "oil", tradeBonus: 2, isCoastal: true },
+  sudao: { resource: "gold", isCoastal: true },
+  congo: { resource: "steel", isCoastal: true },
+  africa_do_sul: { resource: "gold", isCoastal: true },
+  madagascar: { isCoastal: true },
+
+  // 4. Europe (8 territories: 4 Steel, 0 Oil, 0 Gold, +3$ Trade)
+  inglaterra: { tradeBonus: 2, isCoastal: true },
+  franca: { tradeBonus: 1, isCoastal: true },
+  alemanha: { resource: "steel", isCoastal: true },
+  suecia: { resource: "steel", isCoastal: true },
+  polonia: { resource: "steel", isCoastal: true },
+  moscou: { resource: "steel", isCoastal: false },
+  balcas: { isCoastal: true },
+  islandia: { isCoastal: true },
+
+  // 5. North America (10 territories: 3 Steel, 3 Oil, 1 Gold, +4$ Trade)
+  nova_york: { resource: "steel", tradeBonus: 1, isCoastal: true },
+  ottawa: { resource: "steel", isCoastal: false },
+  labrador: { resource: "steel", isCoastal: true },
+  california: { resource: "oil", isCoastal: true },
+  mexico: { resource: "oil", tradeBonus: 2, isCoastal: true },
+  alasca: { resource: "oil", isCoastal: true },
+  mackenzie: { resource: "gold", isCoastal: true },
+  havai: { tradeBonus: 1, isCoastal: true },
+  vancouver: { isCoastal: true },
+  groenlandia: { isCoastal: true },
+
+  // 6. Asia — Indo-Arabia (4 territories: 1 Steel, 2 Oil, 0 Gold, +3$ Trade)
+  oriente_medio: { resource: "oil", tradeBonus: 2, isCoastal: true },
+  aral: { resource: "oil", isCoastal: false },
+  india: { resource: "steel", tradeBonus: 1, isCoastal: true },
+  vietna: { isCoastal: true },
+
+  // 7. Asia — Steppes & Siberia (4 territories: 2 Steel, 1 Oil, 1 Gold, +0$ Trade)
+  omsk: { resource: "steel", isCoastal: false },
+  siberia: { resource: "steel", isCoastal: false },
+  dudinka: { resource: "oil", isCoastal: true },
+  tchita: { resource: "gold", isCoastal: false },
+
+  // 8. Asia — East Asia (4 territories: 2 Steel, 0 Oil, 0 Gold, +2$ Trade)
+  china: { resource: "steel", tradeBonus: 1, isCoastal: true },
+  vladivostok: { resource: "steel", isCoastal: true },
+  japao: { tradeBonus: 1, isCoastal: true },
+  mongolia: { isCoastal: false },
+};
+
 export const CLASSIC_MAP: GameMapDef = {
   id: "classic_44",
   name: "Mundo Geopolítico Natural Earth (44 Territórios)",
@@ -48,7 +123,7 @@ export const CLASSIC_MAP: GameMapDef = {
     { id: "asia", name: "Asia", namePt: "Ásia", bonus: 7, color: "#ef4444" },
     { id: "oceania", name: "Oceania", namePt: "Oceania", bonus: 2, color: "#a855f7" },
   ],
-  territories: [
+  territories: ([
   {
     "id": "brasil",
     "name": "Brazil",
@@ -851,7 +926,10 @@ export const CLASSIC_MAP: GameMapDef = {
     ],
     "svgPath": "M1152.6,390.3L1155.3,392.3L1157.1,393.9L1155.8,394.7L1154,393.8L1151.6,392.3L1149.4,390.5L1147.2,388.2L1146.8,387L1148.2,387.1L1150.1,388.2L1151.5,389.3ZM1189.6,453.6L1188.4,455.4L1186.7,457.6L1184.1,459L1183.6,458.1L1182.2,457.6L1184.1,454.9L1183,453L1179.4,451.7L1179.5,450.5L1181.9,449.3L1182.5,446.8L1182.3,444.6L1181,442.4L1181.1,441.8L1179.5,440.4L1176.9,437.5L1175.4,435.1L1176.7,434.8L1178.5,436.7L1181.1,437.6L1182,440.5L1184.5,444L1184.5,441.8L1186,442.7L1186.5,445.2L1189.2,446.3L1191.5,446.5L1193.4,445.3L1195.1,445.7L1194.3,448.6L1193.2,450.6L1190.7,450.5L1189.8,451.5L1190.1,452.9ZM1165.6,465.2L1168.4,463.4L1170.4,461.7L1171.9,459.2L1173.2,458.4L1173.7,456.5L1176,455L1176.7,456.4L1177.5,457.8L1179.9,456.4L1180.8,457.8L1180.8,459.2L1179.6,460.8L1177.4,463.2L1175.7,464.6L1176.9,466.2L1174.4,466.2L1171.5,467.5L1170.6,469.7L1168.7,473L1166.1,474.5L1164.4,475.5L1161.4,475.4L1159.2,474.3L1155.6,474.1L1155,472.8L1156.8,470.4L1161,467.1L1163.2,466.5ZM1092.3,456L1094.3,456.2L1094.5,460.2L1093.4,461.4L1093,464L1091.9,463.1L1089.6,465.5L1088.9,465.3L1086.8,465.2L1084.8,462.3L1084.3,460.1L1082.4,457.2L1082.5,455.7L1084.7,456L1087.9,457.1L1089.7,456.7ZM1020.5,427.4L1017,429.1L1014.1,429.9L1013.4,431.6L1012.2,433L1009.4,433L1007.3,433.3L1004.3,432.7L1001.9,433.1L999.6,433.3L997.7,435L996.7,434.9L995,435.8L993.4,436.9L991,436.8L988.7,436.8L985.2,434.6L983.4,434L983.5,432.1L985.1,431.6L985.7,430.9L985.6,429.7L986,427.4L985.6,425.4L983.9,422L983.3,420.1L983.5,418.2L982.1,416L982.1,415.1L980.6,413.7L980.2,411.1L978.3,408.5L977.8,407.1L979.3,408.5L978.1,405.4L979.8,406.4L980.8,407.7L980.7,406L979.1,403.3L978.8,402.3L978,401.3L978.3,399.4L979,398.5L979.5,396.9L979.1,394.9L980.5,392.5L980.7,395.1L982.2,392.8L984.9,391.6L986.5,390.2L989,389L990.5,388.7L991.5,389.2L994.1,387.9L996.1,387.5L996.6,386.8L997.5,386.5L999.3,386.6L1002.9,385.6L1004.7,384.1L1005.5,382.4L1007.5,380.7L1007.6,379.3L1007.7,377.5L1010,374.7L1011.4,377.6L1012.9,376.9L1011.7,375.3L1012.7,373.7L1014.2,374.4L1014.6,371.9L1016.4,370.3L1017.2,368.9L1018.9,368.4L1019,367.4L1020.4,367.8L1020.5,367L1021.9,366.5L1023.6,366.1L1026,367.6L1027.9,369.6L1029.9,369.6L1032.1,369.9L1031.4,368.1L1033,365.4L1034.5,364.5L1033.9,363.7L1035.4,361.8L1037.4,360.6L1039.1,361L1041.9,360.4L1041.9,358.7L1039.4,357.6L1041.2,357.1L1043.4,357.9L1045.2,359.3L1048,360.1L1048.9,359.8L1051,360.8L1052.9,359.9L1054.2,360.2L1055,359.5L1056.5,361.2L1055.6,363L1054.4,364.3L1053.2,364.4L1053.6,365.7L1052.6,367.4L1051.4,369.1L1051.7,370L1054.3,371.8L1056.9,372.9L1058.6,374.1L1061,376L1062,376L1063.7,376.9L1064.2,377.9L1067.4,379L1069.6,377.9L1070.2,376.1L1070.9,374.6L1071.3,372.8L1072.3,370.1L1071.9,368.5L1072.1,367.6L1071.7,365.7L1072.2,363.1L1072.8,362.5L1072.3,361.4L1073.1,359.6L1073.7,357.8L1073.8,356.8L1075.1,355.6L1076,357.2L1076.2,359.3L1077.1,359.7L1077.2,361.1L1078.4,362.8L1078.7,364.7L1078.5,365.9L1079.7,368.5L1081.9,367.2L1083,368.6L1084.6,370L1084.2,371.4L1085,374.3L1085.5,375.9L1086.3,376.4L1087.2,379.2L1086.9,380.9L1088,383.2L1091.6,384.9L1093.9,386.5L1096.2,388L1095.7,388.8L1097.6,390.9L1098.9,394.5L1100.3,393.7L1101.6,395.2L1102.4,394.7L1103,398.2L1105.4,400.3L1106.9,401.5L1109.5,404.2L1110.5,406.9L1110.5,408.8L1110.3,410.9L1111.9,413.7L1111.7,416.6L1111.1,418.2L1110.2,421.2L1110.3,423.1L1109.6,425.5L1108.2,428.5L1105.7,430.1L1104.5,432.7L1103.4,434.4L1102.4,437.2L1101.1,438.9L1100.3,441.4L1099.8,443.7L1100,444.8L1098.1,445.9L1094.4,446L1091.3,447.4L1089.7,448.7L1087.7,450.1L1085,448.6L1082.9,448.1L1083.4,446.3L1081.6,447L1078.7,449.4L1075.8,448.5L1073.9,447.9L1072,447.7L1068.8,446.7L1066.6,444.7L1066,442.1L1065.3,440.5L1063.6,439.1L1060.4,438.7L1061.5,437.1L1060.7,434.6L1059.1,436.9L1056.1,437.5L1057.8,435.7L1058.4,433.8L1059.6,432.1L1059.4,429.7L1056.7,432.5L1054.6,433.6L1053.3,436.3L1050.7,434.9L1050.8,433.2L1048.7,430.7L1047,429.5L1047.6,428.7L1043.3,426.7L1041,426.6L1037.8,425L1031.8,425.3L1027.5,426.5L1023.7,427.6Z"
   }
-] as any,
+] as TerritoryDef[]).map((t) => ({
+    ...t,
+    ...(TERRITORY_GEO_ECONOMY[t.id] ?? { isCoastal: true }),
+  })),
 };
 
 export const CLASSIC_OBJECTIVES: ObjectiveCard[] = [
