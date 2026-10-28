@@ -538,13 +538,35 @@ export function applyAction(
         toTerr.ownerId = playerId;
         currentPlayer.conqueredThisTurn = true;
 
+        // Check if player recaptured their own previously lost capital
+        if (currentPlayer.capitalTerritoryId === toTerr.id && currentPlayer.isCapitalLost) {
+          currentPlayer.isCapitalLost = false;
+          currentPlayer.economicPenaltyMultiplier = 1.0;
+          state.log.push(
+            `🎖️ CAPITAL RESTAURADA! ${currentPlayer.name} reconquistou sua Capital Nacional em ${toName}!`
+          );
+        }
+
+        // HEGEM-24: Golpe de Decapitação when conquering an opponent's capital
         if (isDefendingCapital && defenderPlayer) {
           defenderPlayer.isCapitalLost = true;
           defenderPlayer.capitalLostTurn = state.round;
           defenderPlayer.economicPenaltyMultiplier = 0.5;
           defenderPlayer.moralePenalty = 2;
+
+          let stolenCardNotice = "";
+          if (defenderPlayer.cards.length > 0) {
+            const cardIdx = rng.nextInt(0, defenderPlayer.cards.length - 1);
+            const [stolenCard] = defenderPlayer.cards.splice(cardIdx, 1);
+            currentPlayer.cards.push(stolenCard);
+            const cardName = stolenCard.territoryId
+              ? (mapById.get(stolenCard.territoryId)?.namePt ?? stolenCard.territoryId)
+              : "Coringa";
+            stolenCardNotice = ` e confiscou 1 carta de território (${cardName})`;
+          }
+
           state.log.push(
-            `💥 GOLPE DE DECAPITAÇÃO! ${currentPlayer.name} capturou a Capital ${toName} de ${defenderPlayer.name}! (${defenderPlayer.name} sofre -2 divisões de moral no próximo turno)`
+            `💥 GOLPE DE DECAPITAÇÃO! ${currentPlayer.name} capturou a Capital ${toName} de ${defenderPlayer.name}! (${defenderPlayer.name} sofre -2 divisões de moral no próximo turno${stolenCardNotice})`
           );
         }
 
@@ -718,6 +740,21 @@ function advanceTurn(state: GameState, rng: SeededRng, map: GameMapDef): void {
     if (!candidate.eliminated) {
       state.turnIndex = nextIdx;
       state.phase = "deploy";
+
+      // 5-Round National Reorganization after losing capital
+      if (
+        candidate.isCapitalLost &&
+        candidate.capitalLostTurn !== undefined &&
+        state.round - candidate.capitalLostTurn >= 5
+      ) {
+        candidate.isCapitalLost = false;
+        candidate.capitalTerritoryId = undefined; // Clears the fallen capital status and allows choosing a new one
+        candidate.economicPenaltyMultiplier = 1.0;
+        state.log.push(
+          `🏛️ REORGANIZAÇÃO NACIONAL: ${candidate.name} reorganizou seu governo 5 rodadas após a queda de sua capital e pode agora estabelecer uma nova Capital de Comando!`
+        );
+      }
+
       const reinf = calculateTurnReinforcements(state, candidate.id, map);
       candidate.unplacedArmies = reinf.total;
       if (candidate.moralePenalty && candidate.moralePenalty > 0) {
