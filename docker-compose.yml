@@ -74,6 +74,7 @@ services:
       COOKIE_SECURE: "${COOKIE_SECURE:-false}"
       SESSION_TTL_DAYS: "${SESSION_TTL_DAYS:-30}"
       AVATAR_DIR: "/app/data/avatars"
+      WEBRTC_ICE_SERVERS: "${WEBRTC_ICE_SERVERS:-}"
     volumes:
       - avatar_data:/app/data/avatars
       - ./apps/web/public/music:/app/apps/web/dist/music:ro

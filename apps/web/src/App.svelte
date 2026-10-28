@@ -14,13 +14,13 @@
   import { auth } from "./lib/auth.svelte";
   import { ui } from "./lib/ui.svelte";
   import CommandCenter, {
-    type LobbyChatMsg,
     type LobbyPlayerView,
   } from "./components/CommandCenter.svelte";
   import FactionFlag from "./components/FactionFlag.svelte";
   import Icon from "./components/Icon.svelte";
   import VictoryModal from "./components/VictoryModal.svelte";
   import WarJournal from "./components/WarJournal.svelte";
+  import { CommunicationsController } from "./lib/communications.svelte";
 
   const COLOR_HEX: Record<PlayerColor, string> = {
     blue: "#3b82f6",
@@ -66,7 +66,7 @@
   let roomStatus = $state<"disconnected" | "lobby" | "playing">("disconnected");
   let myPlayerId = $state<string | null>(null);
   let lobbyPlayers = $state<LobbyPlayerView[]>([]);
-  let lobbyMessages = $state<LobbyChatMsg[]>([]);
+  const communications = new CommunicationsController();
   let game = $state<GameState | null>(null);
   let turnDeadline = $state(0);
   let remainingSeconds = $state(120);
@@ -489,7 +489,7 @@
       });
 
       connectedRoom = room;
-      lobbyMessages = [];
+      communications.attach(room, token, lobbyPlayers);
       isReconnecting = false;
       reconnectAttempts = 0;
       if (reconnectTimeout) {
@@ -532,6 +532,8 @@
         turnDeadline = payload.turnDeadline;
         myPlayerId = payload.myPlayerId;
         lobbyPlayers = payload.lobbyPlayers;
+        communications.setMyPlayerId(payload.myPlayerId);
+        communications.setPlayers(payload.lobbyPlayers);
         game = payload.game;
 
         if (game?.pendingConquest) {
@@ -545,18 +547,6 @@
             setTimeout(() => sound.playConquest(), 300);
           }
         }
-      });
-
-      room.onMessage("chat_msg", (payload: { from: string; color: PlayerColor; text: string }) => {
-        lobbyMessages = [
-          ...lobbyMessages.slice(-49),
-          {
-            from: payload.from,
-            color: payload.color,
-            text: payload.text,
-            time: new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }),
-          },
-        ];
       });
 
       room.onMessage("error_msg", (payload: { message: string }) => {
@@ -588,6 +578,7 @@
 
   function leaveCurrentRoom() {
     sound.playClick();
+    communications.detach();
     try {
       sessionStorage.removeItem("hegemonia_active_room");
       const url = new URL(window.location.href);
@@ -611,7 +602,6 @@
     roomCode = "";
     game = null;
     lobbyPlayers = [];
-    lobbyMessages = [];
     selectedFromId = null;
     selectedToId = null;
     activeRightDrawer = null;
@@ -708,11 +698,6 @@
     selectedToId = null;
   }
 
-  function sendChatText(text: string) {
-    if (!text.trim()) return;
-    connectedRoom?.send("chat", { text: text.trim() });
-  }
-
   // --- Mouse Drag & Wheel Camera Controls ---
   function onMouseDown(e: MouseEvent) {
     if (e.button !== 0 && e.button !== 1) return;
@@ -781,7 +766,7 @@
       {roomCode}
       {myPlayerId}
       {lobbyPlayers}
-      {lobbyMessages}
+      {communications}
       {connecting}
       onCreateRoom={() => joinOrCreateRoom(true)}
       onJoinRoom={() => joinOrCreateRoom(false)}
@@ -790,7 +775,6 @@
       onAddBot={() => connectedRoom?.send("add_bot")}
       onRemoveBot={(token) => connectedRoom?.send("remove_bot", { token })}
       onStartGame={() => connectedRoom?.send("start_game")}
-      onSendLobbyChat={sendChatText}
     />
   {:else if game}
     <!-- FULLSCREEN CONTINUOUS WRAPAROUND GEOPOLITICAL & CARTOGRAPHIC MAP (UNTOUCHED) -->
@@ -1945,7 +1929,7 @@
         logs={game.log}
         lastCombat={game.lastCombat}
         players={game.players}
-        onSendChat={sendChatText}
+        {communications}
       />
       {/if}
 

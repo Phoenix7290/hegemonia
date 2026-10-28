@@ -224,3 +224,4 @@ export const GameActionSchema = z.discriminatedUnion("type", [
 export type GameAction = z.infer<typeof GameActionSchema>;
 
 export * from "./identity.js";
+export * from "./comms.js";
