@@ -11,6 +11,8 @@ class SoundEngine {
   private currentTrack = "ambient_procedural";
   private audioEl: HTMLAudioElement | null = null;
   private musicInterval: number | null = null;
+  private sfxBuffers: Record<string, AudioBuffer> = {};
+  private sfxLoading = false;
 
   constructor() {
     if (typeof window !== "undefined") {
@@ -36,9 +38,46 @@ class SoundEngine {
       this.sfxGain = this.ctx.createGain();
       this.sfxGain.gain.value = this.isMuted ? 0 : this.sfxVolume;
       this.sfxGain.connect(this.ctx.destination);
+
+      this.loadSfxFiles();
     }
     if (this.ctx && this.ctx.state === "suspended") {
       this.ctx.resume();
+    }
+  }
+
+  private async loadSfxFiles() {
+    if (!this.ctx || this.sfxLoading) return;
+    this.sfxLoading = true;
+    const sfxList: Record<string, string> = {
+      dice: "/sfx/sfx_dice.mp3",
+      combat: "/sfx/sfx_combat.mp3",
+      conquest: "/sfx/sfx_conquest.mp3",
+      turn: "/sfx/sfx_turn.mp3",
+    };
+    for (const [key, url] of Object.entries(sfxList)) {
+      try {
+        const resp = await fetch(url);
+        if (resp.ok) {
+          const arr = await resp.arrayBuffer();
+          this.sfxBuffers[key] = await this.ctx.decodeAudioData(arr);
+        }
+      } catch {
+        // Fallback to Web Audio synthesis if local audio unavailable
+      }
+    }
+  }
+
+  private playBuffer(key: string): boolean {
+    if (!this.ctx || !this.sfxGain || !this.sfxBuffers[key] || this.isMuted) return false;
+    try {
+      const src = this.ctx.createBufferSource();
+      src.buffer = this.sfxBuffers[key];
+      src.connect(this.sfxGain);
+      src.start();
+      return true;
+    } catch {
+      return false;
     }
   }
 
@@ -61,8 +100,9 @@ class SoundEngine {
 
   public playDiceRoll() {
     this.initContext();
+    if (this.playBuffer("dice")) return;
     if (!this.ctx || !this.sfxGain) return;
-    // Rattle of 3 clicks
+    // Fallback: Rattle of 4 clicks
     for (let i = 0; i < 4; i++) {
       const time = this.ctx.currentTime + i * 0.06;
       const osc = this.ctx.createOscillator();
@@ -78,10 +118,29 @@ class SoundEngine {
     }
   }
 
+  public playCombatAttack() {
+    this.initContext();
+    if (this.playBuffer("combat")) return;
+    if (!this.ctx || !this.sfxGain) return;
+    // Fallback: Heavy artillery thud
+    const osc = this.ctx.createOscillator();
+    const g = this.ctx.createGain();
+    osc.type = "sawtooth";
+    osc.frequency.setValueAtTime(120, this.ctx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(30, this.ctx.currentTime + 0.3);
+    g.gain.setValueAtTime(0.3, this.ctx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.3);
+    osc.connect(g);
+    g.connect(this.sfxGain);
+    osc.start();
+    osc.stop(this.ctx.currentTime + 0.3);
+  }
+
   public playConquest() {
     this.initContext();
+    if (this.playBuffer("conquest")) return;
     if (!this.ctx || !this.sfxGain) return;
-    // Triumphant rising two-tone horn
+    // Fallback: Triumphant rising two-tone horn
     const chord = [330, 440, 554];
     chord.forEach((freq, idx) => {
       const osc = this.ctx!.createOscillator();
@@ -99,7 +158,9 @@ class SoundEngine {
 
   public playTurnChime() {
     this.initContext();
+    if (this.playBuffer("turn")) return;
     if (!this.ctx || !this.sfxGain) return;
+    // Fallback: 3-tone arpeggio
     const osc = this.ctx.createOscillator();
     const g = this.ctx.createGain();
     osc.type = "sine";

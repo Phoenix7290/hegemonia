@@ -151,6 +151,18 @@
   let isMuted = $state(sound.getIsMuted());
   let selectedTrack = $state(sound.getCurrentTrack());
 
+  const SOUNDTRACKS = [
+    { id: "ambient_procedural", label: "Marcha Tática (Sintetizador Web Audio)" },
+    { id: "hoi4_axis_theme.mp3", label: "Hearts of Iron IV — Axis Theme (Slowed & Pitch)" },
+    { id: "hoi4_katyusha.mp3", label: "Hearts of Iron IV — Katyusha" },
+    { id: "hoi4_great_patriotic_war.mp3", label: "Hearts of Iron IV — The Great Patriotic War" },
+    { id: "hoi4_bella_ciao.mp3", label: "Hearts of Iron IV — Bella Ciao" },
+    { id: "the_second_european_war.mp3", label: "The Fire Rises — The Second European War" },
+    { id: "tno_taboritsky_theme.mp3", label: "TNO — The Mad Regent's Lullaby (Taboritsky)" },
+    { id: "tno_burgundian_lullaby.mp3", label: "TNO — Burgundian Lullaby" },
+    { id: "teufelslied.mp3", label: "Histórico — Teufelslied" },
+  ];
+
   // Tactical Objective Map Highlight State
   let highlightObjectiveTerritories = $state(false);
 
@@ -431,9 +443,10 @@
         }
 
         if (game?.lastCombat && game.lastCombat !== prevLastCombat) {
+          sound.playCombatAttack();
           sound.playDiceRoll();
           if (game.lastCombat.conquered) {
-            setTimeout(() => sound.playConquest(), 250);
+            setTimeout(() => sound.playConquest(), 300);
           }
         }
       });
@@ -1355,21 +1368,18 @@
               </div>
 
               <div class="track-select">
-                <span>Canal de Áudio / Faixa:</span>
-                <button
-                  class="track-option"
-                  class:selected={selectedTrack === "ambient_procedural"}
-                  onclick={() => onTrackSelect("ambient_procedural")}
-                >
-                  Marcha Tática (Procedural Web Audio)
-                </button>
-                <button
-                  class="track-option"
-                  class:selected={selectedTrack === "track1.mp3"}
-                  onclick={() => onTrackSelect("track1.mp3")}
-                >
-                  Faixa Customizada 1 (track1.mp3)
-                </button>
+                <span class="track-title-label">Canal de Áudio / Frequência:</span>
+                <div class="track-list-scroll">
+                  {#each SOUNDTRACKS as track}
+                    <button
+                      class="track-option"
+                      class:selected={selectedTrack === track.id}
+                      onclick={() => onTrackSelect(track.id)}
+                    >
+                      {track.label}
+                    </button>
+                  {/each}
+                </div>
               </div>
             </div>
           </div>
@@ -2219,8 +2229,30 @@
   .track-select {
     display: flex;
     flex-direction: column;
-    gap: 0.25rem;
+    gap: 0.35rem;
     font-size: 0.74rem;
+  }
+  .track-title-label {
+    font-weight: 700;
+    color: #94a3b8;
+    text-transform: uppercase;
+    font-size: 0.68rem;
+    letter-spacing: 0.05em;
+  }
+  .track-list-scroll {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    max-height: 160px;
+    overflow-y: auto;
+    padding-right: 0.25rem;
+  }
+  .track-list-scroll::-webkit-scrollbar {
+    width: 4px;
+  }
+  .track-list-scroll::-webkit-scrollbar-thumb {
+    background: #475569;
+    border-radius: 2px;
   }
   .track-option {
     background: #0f172a;
@@ -2230,7 +2262,16 @@
     border-radius: 4px;
     text-align: left;
     cursor: pointer;
-    font-size: 0.74rem;
+    font-size: 0.72rem;
+    line-height: 1.25;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    transition: all 0.15s ease;
+  }
+  .track-option:hover {
+    border-color: #64748b;
+    background: #1e293b;
   }
   .track-option.selected {
     border-color: #eab308;
