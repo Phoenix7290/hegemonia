@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { CommunicationsController } from "../lib/communications.svelte";
+  import { t } from "../i18n/index.svelte";
   import Icon from "./Icon.svelte";
 
   let {
@@ -28,7 +29,7 @@
   function keyLabel(code: string): string {
     if (code.startsWith("Key")) return code.slice(3);
     if (code.startsWith("Digit")) return code.slice(5);
-    return code.replace("Arrow", "Seta ").replace("Space", "Espaço");
+    return code.replace("Arrow", t("key_arrow") + " ").replace("Space", t("key_space"));
   }
 
   function captureKey(event: KeyboardEvent): void {
@@ -62,22 +63,22 @@
   <div class="settings-dialog" role="dialog" aria-modal="true" aria-labelledby="comms-settings-title">
     <header class="settings-header">
       <div>
-        <span class="eyebrow">PAINEL DE CONTROLE DE TRANSMISSÕES</span>
-        <h3 id="comms-settings-title"><Icon name="settings" size={17} /> Preferências de Comunicação</h3>
+        <span class="eyebrow">{t("comms_settings_eyebrow")}</span>
+        <h3 id="comms-settings-title"><Icon name="settings" size={17} /> {t("comms_settings_title")}</h3>
       </div>
-      <button class="icon-button" onclick={onClose} aria-label="Fechar preferências">
+      <button class="icon-button" onclick={onClose} aria-label={t("comms_close_settings")}>
         <Icon name="close" size={17} />
       </button>
     </header>
 
     <div class="settings-content">
       <section class="settings-section">
-        <h4>Interface & Notificações</h4>
+        <h4>{t("comms_sec_interface")}</h4>
 
         <div class="field-block size-field-block">
           <div class="size-field-header">
-            <span class="field-label">Tamanho do painel de chat</span>
-            <small>Amplia a janela de comunicações e a leitura das mensagens.</small>
+            <span class="field-label">{t("comms_chat_size_label")}</span>
+            <small>{t("comms_chat_size_desc")}</small>
           </div>
           <div class="segmented-control">
             <button
@@ -85,27 +86,27 @@
               class:active={controller.settings.chatSize === "normal"}
               onclick={() => controller.updateSettings({ chatSize: "normal" })}
             >
-              Padrão
+              {t("comms_size_normal")}
             </button>
             <button
               type="button"
               class:active={controller.settings.chatSize === "large"}
               onclick={() => controller.updateSettings({ chatSize: "large" })}
             >
-              Grande
+              {t("comms_size_large")}
             </button>
             <button
               type="button"
               class:active={controller.settings.chatSize === "expanded"}
               onclick={() => controller.updateSettings({ chatSize: "expanded" })}
             >
-              Expandido
+              {t("comms_size_expanded")}
             </button>
           </div>
         </div>
 
         <label class="toggle-row">
-          <span><strong>Fotos dos comandantes</strong><small>Exibe avatar ou iniciais nas abas e mensagens.</small></span>
+          <span><strong>{t("comms_opt_avatars_label")}</strong><small>{t("comms_opt_avatars_desc")}</small></span>
           <input
             type="checkbox"
             checked={controller.settings.showAvatars}
@@ -113,7 +114,7 @@
           />
         </label>
         <label class="toggle-row">
-          <span><strong>Horário das transmissões</strong><small>Mostra o horário local em cada mensagem.</small></span>
+          <span><strong>{t("comms_opt_timestamps_label")}</strong><small>{t("comms_opt_timestamps_desc")}</small></span>
           <input
             type="checkbox"
             checked={controller.settings.showTimestamps}
@@ -121,7 +122,7 @@
           />
         </label>
         <label class="toggle-row">
-          <span><strong>Enter para transmitir</strong><small>Quando desativado, Enter insere uma nova linha.</small></span>
+          <span><strong>{t("comms_opt_enter_send_label")}</strong><small>{t("comms_opt_enter_send_desc")}</small></span>
           <input
             type="checkbox"
             checked={controller.settings.enterToSend}
@@ -129,7 +130,7 @@
           />
         </label>
         <label class="toggle-row">
-          <span><strong>Relatórios de inteligência</strong><small>Exibe avisos públicos de comunicação entre rivais.</small></span>
+          <span><strong>{t("comms_opt_intel_label")}</strong><small>{t("comms_opt_intel_desc")}</small></span>
           <input
             type="checkbox"
             checked={controller.settings.showIntel}
@@ -137,7 +138,7 @@
           />
         </label>
         <label class="toggle-row">
-          <span><strong>Som de nova mensagem</strong><small>Emite um sinal discreto para mensagens recebidas.</small></span>
+          <span><strong>{t("comms_opt_sound_label")}</strong><small>{t("comms_opt_sound_desc")}</small></span>
           <input
             type="checkbox"
             checked={controller.settings.notificationSound}
@@ -147,57 +148,59 @@
       </section>
 
       <section class="settings-section">
-        <h4>Rádio & Microfone</h4>
+        <h4>{t("comms_sec_radio")}</h4>
         <div class="field-block">
-          <span class="field-label">Modo de transmissão</span>
+          <span class="field-label">{t("comms_tx_mode_label")}</span>
           <div class="segmented-control">
             <button
               type="button"
               class:active={controller.settings.pushToTalk}
               onclick={() => controller.updateSettings({ pushToTalk: true })}
             >
-              Pressionar para falar
+              {t("comms_tx_mode_ptt")}
             </button>
             <button
               type="button"
               class:active={!controller.settings.pushToTalk}
               onclick={() => controller.updateSettings({ pushToTalk: false })}
             >
-              Microfone aberto
+              {t("comms_tx_mode_open")}
             </button>
           </div>
         </div>
 
         {#if controller.settings.pushToTalk}
           <div class="key-row">
-            <span><strong>Tecla de transmissão</strong><small>Também é possível segurar o botão do rádio.</small></span>
+            <span><strong>{t("comms_key_ptt_label")}</strong><small>{t("comms_key_ptt_desc")}</small></span>
             <button type="button" class:capturing={capturingKey} class="key-capture" onclick={() => (capturingKey = true)}>
-              {capturingKey ? "Pressione uma tecla..." : keyLabel(controller.settings.pushToTalkKey)}
+              {capturingKey ? t("comms_key_press_key") : keyLabel(controller.settings.pushToTalkKey)}
             </button>
           </div>
         {/if}
 
         <label class="field-block" for="microphone-select">
-          <span class="field-label">Dispositivo de entrada</span>
+          <span class="field-label">{t("comms_mic_select_label")}</span>
           <select
             id="microphone-select"
             value={controller.settings.microphoneId}
             onchange={(event) => controller.updateSettings({ microphoneId: event.currentTarget.value })}
           >
-            <option value="">Padrão do sistema</option>
+            <option value="">{t("comms_mic_default")}</option>
             {#each controller.microphones as microphone, index}
-              <option value={microphone.deviceId}>{microphone.label || `Microfone ${index + 1}`}</option>
+              <option value={microphone.deviceId}>
+                {microphone.label || t("comms_mic_fallback", { index: index + 1 })}
+              </option>
             {/each}
           </select>
         </label>
 
         <div class="field-block">
           <div class="volume-label">
-            <span class="field-label">Volume das vozes</span>
+            <span class="field-label">{t("comms_volume_voices")}</span>
             <strong>{Math.round(controller.settings.voiceVolume * 100)}%</strong>
           </div>
           <input
-            aria-label="Volume das vozes"
+            aria-label={t("comms_volume_voices")}
             type="range"
             min="0"
             max="1"
@@ -210,8 +213,8 @@
     </div>
 
     <footer class="settings-footer">
-      <span>Preferências salvas automaticamente neste navegador.</span>
-      <button type="button" class="primary-button" onclick={onClose}>Concluir</button>
+      <span>{t("comms_settings_saved_hint")}</span>
+      <button type="button" class="primary-button" onclick={onClose}>{t("comms_settings_btn_done")}</button>
     </footer>
   </div>
 </div>

@@ -11,6 +11,7 @@ import {
 } from "@hegemonia/shared";
 import { sound } from "../audio";
 import { RadioManager, type RadioConnectionState, type RadioSignalPayload } from "./radio";
+import { t } from "../i18n/index.svelte";
 
 export interface CommunicationRosterPlayer {
   token: string;
@@ -326,9 +327,9 @@ export class CommunicationsController {
 
   channelTitle(channelId: string): string {
     const channel = this.channelById(channelId);
-    if (!channel || channel.kind === "global") return "Global";
-    if (channel.kind === "group") return channel.title ?? "Grupo de Comando";
-    return this.otherPlayer(channel)?.name ?? "Frequência Direta";
+    if (!channel || channel.kind === "global") return t("comms_channel_global");
+    if (channel.kind === "group") return channel.title ?? t("comms_channel_command_group");
+    return this.otherPlayer(channel)?.name ?? t("comms_channel_direct_fallback");
   }
 
   private applyRadioSettings(): void {

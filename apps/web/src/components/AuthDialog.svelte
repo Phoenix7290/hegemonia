@@ -1,6 +1,7 @@
 <script lang="ts">
   import { auth } from "../lib/auth.svelte";
   import { api } from "../lib/api";
+  import { t } from "../i18n/index.svelte";
   import type { AuthUser } from "@hegemonia/shared";
   import Icon from "./Icon.svelte";
 
@@ -32,7 +33,7 @@
       auth.dialogOpen = false;
       password = "";
     } catch (cause) {
-      error = cause instanceof Error ? cause.message : "Falha ao autenticar.";
+      error = cause instanceof Error ? cause.message : t("error_auth_failed");
     } finally {
       loading = false;
     }
@@ -50,7 +51,7 @@
     }}
   >
     <dialog open class="auth-dialog" aria-labelledby="auth-title">
-      <button class="dialog-close" aria-label="Fechar" onclick={() => (auth.dialogOpen = false)}>
+      <button class="dialog-close" aria-label={t("close")} onclick={() => (auth.dialogOpen = false)}>
         <Icon name="close" size={16} />
       </button>
 
@@ -58,12 +59,12 @@
         <img src="/hegemonia-logo.webp" alt="Hegemonia Emblem" />
       </div>
 
-      <span class="eyebrow">ALTO COMANDO CENTRAL</span>
+      <span class="eyebrow">{t("auth_eyebrow")}</span>
       <h2 id="auth-title">
-        {mode === "login" ? "Credenciais de Comando" : "Alistamento de Comandante"}
+        {mode === "login" ? t("auth_login_title") : t("auth_register_title")}
       </h2>
       <p class="auth-intro">
-        Histórico de campanhas, condecorações oficiais, estatísticas ranqueadas e rede de aliados em registro criptografado.
+        {t("auth_intro")}
       </p>
 
       <div class="auth-tabs" role="tablist">
@@ -75,7 +76,7 @@
             error = "";
           }}
         >
-          Autenticar
+          {t("auth_tab_login")}
         </button>
         <button
           type="button"
@@ -85,26 +86,26 @@
             error = "";
           }}
         >
-          Novo Alistamento
+          {t("auth_tab_register")}
         </button>
       </div>
 
       <form onsubmit={submit}>
         {#if mode === "register"}
           <label>
-            E-mail Oficial
+            {t("auth_email_label")}
             <input
               type="email"
               bind:value={email}
               autocomplete="email"
               required
               maxlength="254"
-              placeholder="comandante@hegemonia.mil"
+              placeholder={t("auth_email_placeholder")}
             />
           </label>
           <div class="form-row">
             <label>
-              Identificador (Username)
+              {t("auth_username_label")}
               <input
                 bind:value={username}
                 autocomplete="username"
@@ -112,33 +113,33 @@
                 minlength="3"
                 maxlength="24"
                 pattern="[A-Za-z0-9_]+"
-                placeholder="general_01"
+                placeholder={t("auth_username_placeholder")}
               />
             </label>
             <label>
-              Patente / Nome de Exibição
+              {t("auth_display_name_label")}
               <input
                 bind:value={displayName}
                 required
                 maxlength="32"
-                placeholder="Mal. V. Kovalenko"
+                placeholder={t("auth_display_name_placeholder")}
               />
             </label>
           </div>
         {:else}
           <label>
-            E-mail ou Identificador de Usuário
+            {t("auth_identifier_label")}
             <input
               bind:value={identifier}
               autocomplete="username"
               required
-              placeholder="general_01"
+              placeholder={t("auth_identifier_placeholder")}
             />
           </label>
         {/if}
 
         <label>
-          Código de Segurança (Senha)
+          {t("auth_password_label")}
           <input
             type="password"
             bind:value={password}
@@ -146,7 +147,9 @@
             required
             minlength={mode === "register" ? 12 : 1}
             maxlength="128"
-            placeholder={mode === "register" ? "Mínimo de 12 caracteres" : "Sua senha de comando"}
+            placeholder={mode === "register"
+              ? t("auth_password_register_ph")
+              : t("auth_password_login_ph")}
           />
         </label>
 
@@ -156,15 +159,15 @@
 
         <button class="gold-button full" disabled={loading}>
           {loading
-            ? "Verificando Credenciais..."
+            ? t("auth_btn_verifying")
             : mode === "login"
-              ? "Ingressar no Comando"
-              : "Confirmar Alistamento"}
+              ? t("auth_btn_login")
+              : t("auth_btn_register")}
         </button>
       </form>
 
       <p class="security-note">
-        Sessão protegida via Argon2id e cookie HttpOnly. Comandantes convidados continuam podendo operar sem cadastro.
+        {t("auth_security_note")}
       </p>
     </dialog>
   </div>

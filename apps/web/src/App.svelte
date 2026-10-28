@@ -21,6 +21,15 @@
   import VictoryModal from "./components/VictoryModal.svelte";
   import WarJournal from "./components/WarJournal.svelte";
   import { CommunicationsController } from "./lib/communications.svelte";
+  import { t } from "./i18n/index.svelte";
+  import {
+    getTerritoryName,
+    getContinentName,
+    getSubregionName,
+    getObjectiveDescription,
+    getObjectiveTitle,
+    getFactionName,
+  } from "./i18n/content.svelte";
 
   const COLOR_HEX: Record<PlayerColor, string> = {
     blue: "#3b82f6",
@@ -351,7 +360,9 @@
       def,
       state,
       owner,
-      regionName: asiaSub ? `Ásia — ${asiaSub.namePt} (+${asiaSub.bonus})` : `${cont?.namePt ?? def.continent} (+${cont?.bonus ?? 0})`,
+      regionName: asiaSub
+        ? `${getContinentName("asia")} — ${getSubregionName(asiaSub.id)} (+${asiaSub.bonus})`
+        : `${getContinentName(def.continent)} (+${cont?.bonus ?? 0})`,
     };
   });
 
@@ -1155,7 +1166,7 @@
                         pointer-events="none"
                         style="paint-order: stroke; stroke: #050912; stroke-width: 2.4px; stroke-linejoin: round;"
                       >
-                        {isCapital ? `⭐ ${t.namePt}` : t.namePt}
+                        {isCapital ? `⭐ ${getTerritoryName(t.id)}` : getTerritoryName(t.id)}
                       </text>
                     </g>
                   {/if}
@@ -1249,8 +1260,8 @@
               <strong>HEGEMONIA</strong>
               <small>OPERAÇÃO {roomCode}</small>
             </div>
-            <span class="round-tag" title="Rodada Atual">
-              RODADA {game.round}
+            <span class="round-tag" title={t("round", { round: game.round })}>
+              {t("round", { round: game.round }).toUpperCase()}
             </span>
           </div>
         </div>
@@ -1258,7 +1269,7 @@
         {#if game.round === 1}
           <div class="round1-treaty-banner">
             <Icon name="shield" size={13} />
-            <span>Rodada 1: Tratado de Mobilização (Apenas Reforços)</span>
+            <span>{t("banner_round1_treaty")}</span>
           </div>
         {/if}
 
@@ -1464,15 +1475,15 @@
           <!-- Hegemony Power Bar (Segmented World Dominance %) -->
           <div class="hegemony-bar-wrap">
             <div class="hegemony-bar-label">
-              <span>BALANÇO DE PODER GLOBAL</span>
-              <span>44 TERRITÓRIOS</span>
+              <span>{t("hegemony_bar")}</span>
+              <span>{t("territories_count", { count: 44 }).toUpperCase()}</span>
             </div>
-            <div class="hegemony-bar" title="Balanço de Poder Global (% de Territórios)">
+            <div class="hegemony-bar" title={t("hegemony_bar")}>
               {#each playerMetrics as m}
                 <div
                   class="hegemony-segment"
                   style="width: {m.sharePct}%; background: {COLOR_HEX[m.player.color]};"
-                  title="{m.player.name}: {m.sharePct}% do Mundo ({m.terrCount} territórios, {m.totalArmies} divisões)"
+                  title="{m.player.name}: {m.sharePct}% ({m.terrCount} {t('territories_count', { count: m.terrCount })}, {m.totalArmies} {t('divisions', { count: m.totalArmies })})"
                 ></div>
               {/each}
             </div>
@@ -1493,17 +1504,17 @@
                   <span class="g-name">
                     {m.player.name}
                     {#if m.player.id === myPlayerId}
-                      <small class="you-badge">VOCÊ</small>
+                      <small class="you-badge">{t("you")}</small>
                     {/if}
                   </span>
                   {#if isTurn}
-                    <span class="turn-indicator" title="Turno Ativo"><Icon name="crown" size={13} /></span>
+                    <span class="turn-indicator" title={t("turn")}><Icon name="crown" size={13} /></span>
                   {/if}
                 </div>
                 <div class="g-stats">
-                  <span title="Territórios Controlados" class="stat-pill">T: {m.terrCount}</span>
-                  <span title="Total de Divisões" class="stat-pill">D: {m.totalArmies}</span>
-                  <span title="Cartas de Suprimento" class="stat-pill">C: {m.player.cards.length}</span>
+                  <span title={t("territories_count", { count: m.terrCount })} class="stat-pill">T: {m.terrCount}</span>
+                  <span title={t("divisions", { count: m.totalArmies })} class="stat-pill">D: {m.totalArmies}</span>
+                  <span title={t("cards_title")} class="stat-pill">C: {m.player.cards.length}</span>
                   {#if (m.player.infamy ?? 0) > 0}
                     <span title="Infâmia do General" class="stat-pill infamy-pill">🔥 {m.player.infamy}%</span>
                   {/if}
@@ -1526,20 +1537,20 @@
         <!-- Continents & Asian Sub-Regions Toggle -->
         <div class="continents-toggle-row">
           <button class="btn-ghost" onclick={() => (showContinents = !showContinents)}>
-            <span><Icon name="globe" size={14} /> Teatros & Bônus Regionais</span>
+            <span><Icon name="globe" size={14} /> {t("theatres_and_bonuses")}</span>
             <span>{showContinents ? "▲" : "▼"}</span>
           </button>
         </div>
 
         {#if showContinents}
           <div class="continents-dropdown">
-            <div class="dropdown-section-title">Continentes Clássicos</div>
+            <div class="dropdown-section-title">{t("classic_continents_section")}</div>
             {#each CLASSIC_MAP.continents.filter((c) => c.id !== "asia") as c}
               {@const terrs = CLASSIC_MAP.territories.filter((t) => t.continent === c.id)}
               {@const ownerId = game.territories[terrs[0].id]?.ownerId}
               {@const isMonopoly = terrs.every((t) => game!.territories[t.id].ownerId === ownerId)}
               <div class="cont-pill">
-                <span>{c.namePt}</span>
+                <span>{getContinentName(c.id)}</span>
                 <div class="cont-right">
                   {#if isMonopoly}
                     {@const p = game.players.find((plr) => plr.id === ownerId)}
@@ -1550,12 +1561,12 @@
               </div>
             {/each}
 
-            <div class="dropdown-section-title">Sub-Regiões da Ásia (+7 Total)</div>
+            <div class="dropdown-section-title">{t("asia_subregions_section")}</div>
             {#each ASIA_SUBREGIONS as sub}
               {@const ownerId = game.territories[sub.territoryIds[0]]?.ownerId}
               {@const isMonopoly = sub.territoryIds.every((tid) => game!.territories[tid]?.ownerId === ownerId)}
               <div class="cont-pill asia-sub-pill">
-                <span>{sub.namePt}</span>
+                <span>{getSubregionName(sub.id)}</span>
                 <div class="cont-right">
                   {#if isMonopoly}
                     {@const p = game.players.find((plr) => plr.id === ownerId)}
@@ -1578,25 +1589,25 @@
             <FactionFlag color={currentTurnPlayer.color} width={24} height={15} />
             <div class="tc-text">
               <span class="tc-kicker">
-                {isMyTurn ? "SEU TURNO DE COMANDO ATIVO" : `OPERANDO: ${currentTurnPlayer.name.toUpperCase()}`}
+                {isMyTurn ? t("banner_your_turn") : t("banner_waiting", { name: currentTurnPlayer.name.toUpperCase() })}
               </span>
               <strong class="tc-directive">
                 {#if game.pendingConquest}
-                  Ocupação Militar: Avance divisões para o território recém-conquistado
+                  {t("phase_pending_conquest")}
                 {:else if game.phase === "deploy"}
                   {isMyTurn
-                    ? `Fase 1 — Posicione +${myPlayerState?.unplacedArmies ?? 0} divisões de reserva nos seus territórios`
-                    : "Fase 1 — Posicionamento de reservas estratégicas"}
+                    ? t("phase_deploy_my_turn", { count: myPlayerState?.unplacedArmies ?? 0 })
+                    : t("phase_deploy_waiting")}
                 {:else if game.phase === "attack"}
                   {isMyTurn
-                    ? "Fase 2 — Selecione um território aliado (≥2 divisões) e um alvo inimigo adjacente"
-                    : "Fase 2 — Operações ofensivas em andamento"}
+                    ? t("phase_attack_my_turn")
+                    : t("phase_attack_waiting")}
                 {:else if game.phase === "maneuver"}
                   {isMyTurn
-                    ? "Fase 3 — Realize 1 manobra tática entre territórios aliados ou encerre o turno"
-                    : "Fase 3 — Remanejamento tático de forças"}
+                    ? t("phase_maneuver_my_turn")
+                    : t("phase_maneuver_waiting")}
                 {:else}
-                  Campanha Encerrada
+                  {t("phase_campaign_ended")}
                 {/if}
               </strong>
             </div>
@@ -1621,7 +1632,7 @@
 
             {#if isMyTurn && myPlayerState.unplacedArmies > 0}
               <div class="reserve-badge">
-                <Icon name="shield" size={13} /> +{myPlayerState.unplacedArmies} Reservas
+                <Icon name="shield" size={13} /> {t("reserve_badge", { count: myPlayerState.unplacedArmies })}
               </div>
             {/if}
           {/if}
@@ -1633,7 +1644,7 @@
               class:mandatory={Boolean(myPlayerState && myPlayerState.cards.length >= 5)}
               class:active={activeRightDrawer === "cards"}
               onclick={() => toggleRightDrawer("cards")}
-              title="Cartas de Suprimento"
+              title={t("cards_title")}
             >
               <Icon name="cards" size={14} /> {myPlayerState?.cards.length ?? 0}/5
             </button>
@@ -1642,19 +1653,19 @@
               class="hud-btn"
               class:active={activeRightDrawer === "objective"}
               onclick={() => toggleRightDrawer("objective")}
-              title="Diretriz Secreta de Alto Comando"
+              title={t("secret_objective_label")}
             >
-              <Icon name="target" size={14} /> Objetivo
+              <Icon name="target" size={14} /> {t("secret_objective_label")}
             </button>
 
             <button
               class="hud-btn"
               class:active={activeRightDrawer === "audio" || (ui.isMusicPlaying && !ui.isMuted)}
               onclick={() => toggleRightDrawer("audio")}
-              title="Rádio Militar & Equalizador (Música / SFX)"
+              title={t("audio_radio_eq")}
             >
               <Icon name={ui.isMuted ? "mute" : "radio"} size={14} />
-              {ui.isMuted ? "Mudo" : ui.isMusicPlaying ? "ON" : "Áudio"}
+              {ui.isMuted ? t("audio_muted") : ui.isMusicPlaying ? t("audio_radio_on") : t("audio_status")}
             </button>
 
             <button
@@ -1665,7 +1676,7 @@
                 showHudManager = !showHudManager;
                 if (showHudManager) activeRightDrawer = null;
               }}
-              title="Personalizar HUD & Visibilidade (Tecla H para Modo Imersivo)"
+              title={t("hud_vision_title")}
             >
               <Icon name="eye" size={14} /> HUD
             </button>
@@ -1673,7 +1684,7 @@
             <button
               class="hud-btn btn-exit-room"
               onclick={leaveCurrentRoom}
-              title="Retornar ao Quartel-General (Sair da Sala)"
+              title={t("victory_return_btn")}
             >
               <Icon name="back" size={14} />
             </button>
@@ -1688,33 +1699,33 @@
               class="mode-btn"
               class:active={mapMode === "cartographic"}
               onclick={() => (mapMode = "cartographic")}
-              title="Modo Cartográfico Físico Satelital (Tecla 2 / F2)"
+              title={t("map_mode_cartographic_title")}
             >
-              Cartográfico
+              {t("map_mode_cartographic")}
             </button>
             <button
               class="mode-btn"
               class:active={mapMode === "geopolitical"}
               onclick={() => (mapMode = "geopolitical")}
-              title="Modo Geopolítico Limpo (Tecla 1 / F1)"
+              title={t("map_mode_geopolitical_title")}
             >
-              Geopolítico
+              {t("map_mode_geopolitical")}
             </button>
             <button
               class="mode-btn"
               class:active={mapMode === "regional"}
               onclick={() => (mapMode = "regional")}
-              title="Modo de Regiões & Sub-Regiões (Tecla 3 / F3)"
+              title={t("map_mode_regional_title")}
             >
-              Regional
+              {t("map_mode_regional")}
             </button>
             <button
               class="mode-btn clean-mode-tab"
               class:active={cleanMapMode}
               onclick={() => (cleanMapMode = !cleanMapMode)}
-              title="Alternar Visão Limpa do Mapa (Ocultar Tropas e Rótulos - Tecla F4)"
+              title={t("map_mode_clean_title")}
             >
-              <Icon name="eye" size={12} /> {cleanMapMode ? "Visão Limpa" : "Modo Limpo"}
+              <Icon name="eye" size={12} /> {cleanMapMode ? t("mode_clean_active") : t("mode_clean_label")}
             </button>
           </div>
 
@@ -1803,7 +1814,7 @@
               <h4><Icon name="target" size={15} /> Diretriz Secreta de Alto Comando</h4>
               <button class="btn-close" onclick={() => (activeRightDrawer = null)}>✕</button>
             </div>
-            <p class="objective-body">{myPlayerState.objective.descriptionPt}</p>
+            <p class="objective-body">{getObjectiveDescription(myPlayerState.objective.id)}</p>
             {#if objectiveProgress}
               <div class="objective-progress-box">
                 <div class="progress-bar-header">
@@ -1921,13 +1932,13 @@
         {#if activeRightDrawer === "cards" && myPlayerState}
           <div class="floating-drawer cards-drawer">
             <div class="drawer-header">
-              <h4><Icon name="cards" size={15} /> Cartas de Suprimento ({myPlayerState.cards.length}/5)</h4>
+              <h4><Icon name="cards" size={15} /> {t("cards_count", { count: myPlayerState.cards.length })}</h4>
               <button class="btn-close" onclick={() => (activeRightDrawer = null)}>✕</button>
             </div>
 
             <div class="escalation-banner">
-              <span>Próxima Requisição (#{(game.tradeCount ?? 0) + 1}):</span>
-              <strong>+{nextTradeBonus} Divisões</strong>
+              <span>{t("cards_exchange_next", { count: (game.tradeCount ?? 0) + 1 })}</span>
+              <strong>+{nextTradeBonus} {t("divisions", { count: nextTradeBonus })}</strong>
             </div>
 
             <div class="cards-grid">
@@ -1935,21 +1946,21 @@
                 <div class="card-item">
                   <span class="card-symbol">
                     {c.symbol === "circle"
-                      ? "INFANTARIA (●)"
+                      ? t("card_symbol_circle")
                       : c.symbol === "square"
-                        ? "BLINDADOS (■)"
+                        ? t("card_symbol_square")
                         : c.symbol === "triangle"
-                          ? "ARTILHARIA (▲)"
-                          : "COMANDO TOTAL (★)"}
+                          ? t("card_symbol_triangle")
+                          : t("card_symbol_joker")}
                   </span>
                   <span class="card-territory">
-                    {c.territoryId ? territoryById.get(c.territoryId)?.namePt : "Coringa Estratégico"}
+                    {c.territoryId ? getTerritoryName(c.territoryId) : t("card_wildcard")}
                   </span>
                 </div>
               {/each}
               {#if myPlayerState.cards.length === 0}
                 <p class="empty-cards-note">
-                  Conquiste ao menos um território no seu turno para receber 1 carta de suprimento.
+                  {t("cards_empty_note")}
                 </p>
               {/if}
             </div>
@@ -1959,7 +1970,7 @@
                 class="btn primary-gold full-width"
                 onclick={() => sendAction({ type: "trade_cards", cardIds: validTradeTriplet })}
               >
-                <Icon name="shield" size={15} /> Requisitar +{nextTradeBonus} Divisões (Trocar 3 Cartas)
+                <Icon name="shield" size={15} /> {t("cards_exchange_btn", { armies: nextTradeBonus })}
               </button>
             {/if}
           </div>
@@ -1976,37 +1987,31 @@
               {#if inspectedTerritory.owner}
                 <FactionFlag color={inspectedTerritory.owner.color} width={20} height={13} />
               {/if}
-              <strong>{inspectedTerritory.def.namePt}</strong>
-              <span class="recon-garrison">{inspectedTerritory.state.armies} DIV</span>
+              <strong>{getTerritoryName(inspectedTerritory.def.id)}</strong>
+              <span class="recon-garrison">{inspectedTerritory.state.armies} {t("division_short", { count: inspectedTerritory.state.armies })}</span>
             </div>
             {#if inspectedTerritory.owner?.capitalTerritoryId === inspectedTerritory.def.id}
               <div class="recon-capital-tag gold">
-                ⭐ CAPITAL NACIONAL (+1 Divisão/Turno • Fortificação Defensiva)
+                {t("capital_national")}
               </div>
             {:else if game.players.some((p) => p.capitalTerritoryId === inspectedTerritory.def.id)}
               {@const origOwner = game.players.find((p) => p.capitalTerritoryId === inspectedTerritory.def.id)}
               <div class="recon-capital-tag red">
-                ⚠️ CAPITAL CAPTURADA ({origOwner?.name})
+                {t("capital_captured", { name: origOwner?.name ?? "" })}
               </div>
             {/if}
             <div class="recon-meta">
               <span>{inspectedTerritory.regionName}</span>
               <span>•</span>
-              <span>Ocupante: {inspectedTerritory.owner?.name ?? "Neutro"}</span>
+              <span>{t("recon_occupant", { name: inspectedTerritory.owner?.name ?? t("recon_neutral") })}</span>
               <span>•</span>
-              <span>{inspectedTerritory.def.neighbors.length} Fronteiras</span>
+              <span>{t("recon_borders", { count: inspectedTerritory.def.neighbors.length })}</span>
             </div>
           </div>
         {/if}
 
         <div class="bottom-left-hint">
-          <span>WASD / Setas: Mover</span>
-          <span>•</span>
-          <span>Q / E / Scroll: Zoom</span>
-          <span>•</span>
-          <span>F1-F3: Modos de Mapa</span>
-          <span>•</span>
-          <span>H: HUD Imersiva</span>
+          <span>{t("hints_nav")}</span>
         </div>
       </div>
       {/if}
@@ -2019,7 +2024,7 @@
             <div class="action-popup">
               <div class="popup-head">
                 <h4>
-                  <Icon name="flag" size={14} /> Território Conquistado — Quantas divisões avançar para ocupação?
+                  <Icon name="flag" size={14} /> {t("conquest_title")} — {t("conquest_prompt")}
                 </h4>
               </div>
               <div class="slider-row">
@@ -2027,7 +2032,7 @@
                   class="preset-btn"
                   onclick={() => (sliderArmies = game!.pendingConquest!.minMove)}
                 >
-                  Mín ({game.pendingConquest.minMove})
+                  Min ({game.pendingConquest.minMove})
                 </button>
                 <input
                   type="range"
@@ -2039,13 +2044,13 @@
                   class="preset-btn"
                   onclick={() => (sliderArmies = game!.pendingConquest!.maxMove)}
                 >
-                  Máx ({game.pendingConquest.maxMove})
+                  Max ({game.pendingConquest.maxMove})
                 </button>
                 <button
                   class="btn primary-gold"
                   onclick={() => sendAction({ type: "occupy", armies: sliderArmies })}
                 >
-                  Avançar {sliderArmies} Divisões
+                  {t("conquest_advance", { count: sliderArmies })}
                 </button>
               </div>
             </div>
@@ -2056,7 +2061,7 @@
               <div class="action-popup">
                 <div class="popup-head">
                   <h4>
-                    Posicionar reservas em <strong>{territoryById.get(selectedFromId)?.namePt}</strong>:
+                    {t("deploy_prompt", { territory: getTerritoryName(selectedFromId) })}
                   </h4>
                   <div class="quick-presets">
                     <button class="preset-btn" onclick={() => (sliderArmies = 1)}>+1</button>
@@ -2066,7 +2071,7 @@
                       </button>
                     {/if}
                     <button class="preset-btn" onclick={() => (sliderArmies = maxD)}>
-                      Tudo ({maxD})
+                      {t("total")} ({maxD})
                     </button>
                     <button class="preset-btn" onclick={() => (selectedFromId = null)}>✕</button>
                   </div>
@@ -2076,14 +2081,14 @@
                   {#if !myPlayerState?.capitalTerritoryId}
                     <button
                       class="btn secondary-btn select-cap-btn"
-                      title="Definir este território como sua Capital Nacional de Comando"
+                      title={t("capital_select_hint")}
                       onclick={() => sendAction({ type: "select_capital", territoryId: selectedFromId })}
                     >
-                      ⭐ Definir Capital
+                      {t("capital_select_btn")}
                     </button>
                   {/if}
                   <button class="btn primary-gold" onclick={confirmDeploy}>
-                    Confirmar +{sliderArmies} Divisões
+                    {t("deploy_confirm", { count: sliderArmies })}
                   </button>
                 </div>
               </div>
@@ -2094,23 +2099,23 @@
               <div class="action-popup attack-popup">
                 <div class="attack-matchup">
                   <span>
-                    Origem: <strong>{territoryById.get(selectedFromId)?.namePt}</strong> ({game.territories[selectedFromId].armies})
+                    {t("combat_origin", { territory: getTerritoryName(selectedFromId) })} ({game.territories[selectedFromId].armies})
                   </span>
-                  <span class="vs">VS</span>
+                  <span class="vs">{t("vs")}</span>
                   <span>
-                    Alvo: <strong>{territoryById.get(selectedToId)?.namePt}</strong> ({game.territories[selectedToId].armies})
+                    {t("combat_target", { territory: getTerritoryName(selectedToId) })} ({game.territories[selectedToId].armies})
                   </span>
                 </div>
 
                 <div class="attack-controls-row">
                   <div class="dice-selector">
-                    <span>Dados de Ataque:</span>
+                    <span>{t("attack_dice_label")}</span>
                     <button
                       class="preset-btn"
                       class:active={selectedAttackDice === null}
                       onclick={() => (selectedAttackDice = null)}
                     >
-                      Máx ({maxAttackerDice}D)
+                      Max ({maxAttackerDice}D)
                     </button>
                     {#each [1, 2, 3] as dCount}
                       {#if dCount <= maxAttackerDice}
@@ -2127,7 +2132,7 @@
 
                   {#if currentAttackOdds !== null}
                     <div class="odds-inline">
-                      <span>Vitória Estimada:</span>
+                      <span>{t("attack_odds_label")}</span>
                       <strong
                         style="color: {currentAttackOdds >= 60
                           ? '#6ee7b7'
@@ -2155,10 +2160,10 @@
                       selectedToId = null;
                     }}
                   >
-                    Cancelar
+                    {t("cancel")}
                   </button>
                   <button class="btn btn-attack" style="flex: 1;" onclick={confirmAttack}>
-                    <Icon name="swords" size={15} /> Executar Ofensiva
+                    <Icon name="swords" size={15} /> {t("combat_execute")}
                   </button>
                 </div>
               </div>
@@ -2171,12 +2176,11 @@
               <div class="action-popup">
                 <div class="popup-head">
                   <h4>
-                    Remanejar de <strong>{territoryById.get(selectedFromId)?.namePt}</strong> para
-                    <strong>{territoryById.get(selectedToId)?.namePt}</strong>:
+                    {t("maneuver_prompt", { from: getTerritoryName(selectedFromId), to: getTerritoryName(selectedToId) })}
                   </h4>
                   <div class="quick-presets">
-                    <button class="preset-btn" onclick={() => (sliderArmies = 1)}>Mín (1)</button>
-                    <button class="preset-btn" onclick={() => (sliderArmies = maxM)}>Máx ({maxM})</button>
+                    <button class="preset-btn" onclick={() => (sliderArmies = 1)}>Min (1)</button>
+                    <button class="preset-btn" onclick={() => (sliderArmies = maxM)}>Max ({maxM})</button>
                     <button
                       class="preset-btn"
                       onclick={() => {
@@ -2191,7 +2195,7 @@
                 <div class="slider-row">
                   <input type="range" min="1" max={maxM} bind:value={sliderArmies} />
                   <button class="btn primary-gold" onclick={confirmManeuver}>
-                    Transferir {sliderArmies} Divisões
+                    {t("maneuver_transfer", { count: sliderArmies })}
                   </button>
                 </div>
               </div>
@@ -2203,28 +2207,28 @@
         <div class="phase-stepper-row">
           <div class="phase-step" class:active-phase={game.phase === "deploy"}>
             <span class="num">1</span>
-            <span class="label">Posicionamento</span>
+            <span class="label">{t("phase_deploy")}</span>
           </div>
           <div class="phase-arrow">›</div>
           <div class="phase-step" class:active-phase={game.phase === "attack"}>
             <span class="num">2</span>
-            <span class="label">Ofensiva {game.round === 1 ? "(R1 Tratado)" : ""}</span>
+            <span class="label">{t("phase_attack")}</span>
           </div>
           <div class="phase-arrow">›</div>
           <div class="phase-step" class:active-phase={game.phase === "maneuver"}>
             <span class="num">3</span>
-            <span class="label">Manobra</span>
+            <span class="label">{t("phase_maneuver")}</span>
           </div>
 
           {#if isMyTurn && !game.winnerId}
             <div class="phase-action-slot">
               {#if game.phase === "attack" && !game.pendingConquest}
                 <button class="btn secondary" onclick={() => sendAction({ type: "end_attack" })}>
-                  Avançar para Manobra ›
+                  {t("advance_to_maneuver")}
                 </button>
               {:else if game.phase === "maneuver"}
                 <button class="btn primary-gold" onclick={() => sendAction({ type: "end_turn" })}>
-                  <Icon name="check" size={15} /> Encerrar Turno
+                  <Icon name="check" size={15} /> {t("end_turn")}
                 </button>
               {/if}
             </div>

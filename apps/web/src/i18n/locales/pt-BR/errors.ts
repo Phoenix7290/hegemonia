@@ -1,0 +1,28 @@
+import type { TranslationCatalog } from "../../types";
+
+export const ptBRErrors: TranslationCatalog = {
+  error_default: "Ocorreu um erro inesperado.",
+  error_network: "Falha na conexão de rede.",
+  error_server_internal: "Falha interna do servidor.",
+  error_validation: "Dados de comando inválidos.",
+  error_file_too_large: "O arquivo excede o limite permitido (máx 5 MiB).",
+  error_invalid_image: "Não foi possível processar esta imagem.",
+  error_unsupported_format: "Formato não suportado. Use JPEG, PNG, WebP, GIF ou AVIF.",
+  error_auth_failed: "Falha ao autenticar.",
+  error_invalid_credentials: "Credenciais inválidas.",
+  error_account_exists: "E-mail ou nome de usuário já cadastrado.",
+  error_room_full: "Sala cheia (máx 6 jogadores).",
+  error_match_started: "A partida já foi iniciada.",
+  error_match_no_actions: "A partida não aceita mais ações.",
+  error_match_not_found: "Partida não encontrada.",
+  error_player_not_found: "Participante não encontrado nesta partida.",
+  error_authenticated_identity: "Esta identidade de jogador pertence a uma conta autenticada.",
+  error_profile_not_found: "Registro militar não encontrado.",
+  error_self_action: "Esta ação não pode ser realizada com seu próprio perfil.",
+  error_stats_private: "Este comandante mantém suas estatísticas privadas.",
+  error_history_private: "Este comandante mantém seu histórico privado.",
+  error_request_blocked: "Não foi possível enviar a solicitação.",
+  error_request_not_found: "Solicitação pendente não encontrada.",
+  error_social_unavailable: "Rede militar indisponível.",
+  error_action_unavailable: "Ação militar indisponível.",
+};

@@ -6,9 +6,11 @@
   import LeaderboardPage from "./components/LeaderboardPage.svelte";
   import ProfilePage from "./components/ProfilePage.svelte";
   import Icon from "./components/Icon.svelte";
+  import LanguageSelector from "./components/LanguageSelector.svelte";
   import { auth } from "./lib/auth.svelte";
   import { ui } from "./lib/ui.svelte";
   import { navigate } from "./lib/api";
+  import { t } from "./i18n/index.svelte";
   import "./social.css";
 
   let path = $state(window.location.pathname);
@@ -31,23 +33,23 @@
 </script>
 
 {#if showCommandTopbar}
-  <header class="command-topbar" aria-label="Barra de Estado-Maior">
+  <header class="command-topbar" aria-label={t("brand_subtitle")}>
     <button class="topbar-brand" onclick={() => navigate("/")}>
-      <img src="/hegemonia-logo.webp" alt="Hegemonia" class="topbar-logo-img" />
+      <img src="/hegemonia-logo.webp" alt={t("brand_title")} class="topbar-logo-img" />
       <div class="topbar-brand-text">
-        <strong>HEGEMONIA</strong>
-        <small>COMANDO ESTRATÉGICO GLOBAL</small>
+        <strong>{t("brand_title")}</strong>
+        <small>{t("brand_subtitle")}</small>
       </div>
     </button>
 
-    <nav class="topbar-nav" aria-label="Navegação Principal">
+    <nav class="topbar-nav" aria-label={t("nav_operations")}>
       <button
         class="topbar-link"
         class:active={path === "/"}
         onclick={() => navigate("/")}
       >
         <Icon name="swords" size={16} />
-        <span>Operações</span>
+        <span>{t("nav_operations")}</span>
       </button>
 
       <button
@@ -56,7 +58,7 @@
         onclick={() => navigate("/leaderboard")}
       >
         <Icon name="rank" size={16} />
-        <span>Classificação</span>
+        <span>{t("nav_leaderboard")}</span>
       </button>
 
       <button
@@ -65,7 +67,7 @@
         onclick={() => navigate("/friends")}
       >
         <Icon name="users" size={16} />
-        <span>Aliados</span>
+        <span>{t("nav_allies")}</span>
       </button>
 
       {#if auth.user}
@@ -75,48 +77,50 @@
           onclick={() => navigate(`/profile/${auth.user!.username}`)}
         >
           <Icon name="shield" size={16} />
-          <span>Meu Dossiê</span>
+          <span>{t("nav_dossier")}</span>
         </button>
       {/if}
     </nav>
 
     <div class="topbar-right">
+      <LanguageSelector />
+
       <button
         class="topbar-audio-btn"
         class:playing={ui.isMusicPlaying && !ui.isMuted}
         onclick={() => (showTopAudio = !showTopAudio)}
-        title="Rádio Militar & Equalizador de Áudio"
+        title={t("audio_radio_eq")}
       >
         <Icon name={ui.isMuted ? "mute" : "radio"} size={15} />
-        <span>{ui.isMuted ? "Mudo" : ui.isMusicPlaying ? "Rádio ON" : "Áudio"}</span>
+        <span>{ui.isMuted ? t("audio_muted") : ui.isMusicPlaying ? t("audio_radio_on") : t("audio_status")}</span>
       </button>
 
       {#if showTopAudio}
         <div class="topbar-audio-popover">
           <div class="audio-pop-head">
-            <strong><Icon name="radio" size={15} /> Central de Áudio Militar</strong>
-            <button class="text-button" onclick={() => (showTopAudio = false)} aria-label="Fechar">
+            <strong><Icon name="radio" size={15} /> {t("audio_panel_title")}</strong>
+            <button class="text-button" onclick={() => (showTopAudio = false)} aria-label={t("close")}>
               <Icon name="close" size={14} />
             </button>
           </div>
 
           <div class="audio-eq-actions">
             <button class="gold-button" onclick={() => ui.toggleMusic()}>
-              {ui.isMusicPlaying ? "Pausar Trilha" : "Iniciar Trilha"}
+              {ui.isMusicPlaying ? t("audio_pause_track") : t("audio_start_track")}
             </button>
             <button
               class="outline-button"
               onclick={() => ui.toggleMute()}
-              title="Alternar Mute Geral"
+              title={t("audio_mute_all")}
             >
               <Icon name={ui.isMuted ? "mute" : "volume"} size={15} />
-              {ui.isMuted ? "Ativar Som" : "Mudo"}
+              {ui.isMuted ? t("audio_unmute") : t("audio_mute")}
             </button>
           </div>
 
           <div class="audio-eq-row">
             <div class="audio-eq-label">
-              <span>Volume da Música</span>
+              <span>{t("audio_music_vol")}</span>
               <span>{Math.round(ui.musicVolume * 100)}%</span>
             </div>
             <input
@@ -131,7 +135,7 @@
 
           <div class="audio-eq-row">
             <div class="audio-eq-label">
-              <span>Efeitos Sonoros (SFX)</span>
+              <span>{t("audio_sfx_vol")}</span>
               <span>{Math.round(ui.sfxVolume * 100)}%</span>
             </div>
             <input
@@ -146,7 +150,7 @@
 
           <div class="audio-eq-row">
             <div class="audio-eq-label">
-              <span>Frequência / Trilha</span>
+              <span>{t("audio_track_label")}</span>
             </div>
             <button
               class="outline-button"
@@ -154,7 +158,7 @@
               onclick={() => ui.setTrack("ambient_procedural")}
             >
               <Icon name={ui.selectedTrack === "ambient_procedural" ? "check" : "radio"} size={13} />
-              Marcha Tática (Procedural)
+              {t("audio_track_procedural")}
             </button>
             <button
               class="outline-button"
@@ -162,7 +166,7 @@
               onclick={() => ui.setTrack("track1.mp3")}
             >
               <Icon name={ui.selectedTrack === "track1.mp3" ? "check" : "radio"} size={13} />
-              Trilha Customizada (track1.mp3)
+              {t("audio_track_custom")}
             </button>
           </div>
         </div>
@@ -186,10 +190,10 @@
         {#if auth.ready && !auth.user}
           <section class="panel sign-in-required">
             <Icon name="users" size={40} />
-            <h1>Sua Rede de Aliados</h1>
-            <p>Entre ou aliste sua conta de comandante para buscar generais, formar alianças e acompanhar campanhas.</p>
+            <h1>{t("friends_login_required_title")}</h1>
+            <p>{t("friends_login_required_desc")}</p>
             <button class="gold-button" onclick={() => (auth.dialogOpen = true)}>
-              Acessar Credenciais de Comando
+              {t("friends_btn_access_credentials")}
             </button>
           </section>
         {:else}
@@ -199,10 +203,10 @@
         <LeaderboardPage />
       {:else}
         <section class="panel sign-in-required">
-          <h1>Setor Estratégico Não Encontrado</h1>
-          <p>As coordenadas solicitadas não constam nos registros cartográficos do Alto Comando.</p>
+          <h1>{t("not_found_title")}</h1>
+          <p>{t("not_found_desc")}</p>
           <button class="gold-button" onclick={() => navigate("/")}>
-            Retornar ao Centro de Operações
+            {t("not_found_btn")}
           </button>
         </section>
       {/if}

@@ -60,3 +60,32 @@ When implementing features from `docs/ROADMAP.md` (e.g., War Economy, Diplomatic
 - Write commits, pull request descriptions, and code comments in **English**.
 - In-game UI, region names, and player logs should support Brazilian Portuguese (`namePt`, `descriptionPt`) with English fallbacks.
 - Keep functions modular, pure, and well-typed. Avoid `any` types wherever possible.
+
+---
+
+## 5. Internationalization (i18n) Architecture
+
+- **Core & Runtime**:
+  - Implemented in `apps/web/src/i18n/` using pure Svelte 5 runes (`$state`, `$derived`) and native browser `Intl` caches. No heavy external runtime i18n dependencies.
+  - Active locale is stored reactively on `i18n.locale`, automatically synchronizing with `<html lang="...">` and persisted in `localStorage`.
+  - Default locale is `pt-BR` with full parity in `en`.
+
+- **Namespace Separation**:
+  - Translation catalogs are organized into 6 modular namespaces:
+    - `common`: shared buttons, controls, states, time/turn interpolations.
+    - `game`: combat phases, supply cards, division presets, capitals, victory stats, factions & doctrines.
+    - `map`: 44 territories, 6 continents, Asian subregions, 24 classic & roleplay objectives, map modes.
+    - `social`: topbar, account menu, authentication dialog, profiles, friends, leaderboard, badges.
+    - `comms`: transmission settings, channel titles, radio console, PTT, intel intrigue alerts.
+    - `errors`: client/server error codes, validation, room, auth, and social error messages.
+
+- **Dynamic Content Resolvers**:
+  - Entity names (territories, continents, objectives, factions, badges) MUST be resolved via helper functions in `apps/web/src/i18n/content.svelte.ts` (`getTerritoryName`, `getContinentName`, `getObjectiveDescription`, `getFactionName`, etc.).
+  - Do NOT hardcode UI text strings or bypass the resolvers.
+  - User-generated content (chat messages, custom usernames, user bios) MUST NEVER be passed through translation functions.
+
+- **Adding a New Locale**:
+  1. Create `apps/web/src/i18n/locales/<locale>/` containing the 6 namespace catalogs.
+  2. Maintain 100% key parity with `pt-BR` and `en` (enforced by `i18n.test.ts`).
+  3. Register the locale in `apps/web/src/i18n/registry.ts` under `SUPPORTED_LOCALES` and `catalogs`.
+
