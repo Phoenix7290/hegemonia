@@ -111,6 +111,16 @@ export interface PlayerState {
   unplacedArmies: number;
   conqueredThisTurn: boolean;
   connected: boolean;
+  /** Designated national capital territory ID */
+  capitalTerritoryId?: string;
+  /** Whether the capital was conquered/occupied by an adversary */
+  isCapitalLost?: boolean;
+  /** Round or turn when the capital was lost */
+  capitalLostTurn?: number;
+  /** Multiplier on economic income (defaults to 1.0; 0.5-0.7 when capital is lost) */
+  economicPenaltyMultiplier?: number;
+  /** Penalty applied to morale or recruitment (-2 armies when capital decapitated) */
+  moralePenalty?: number;
 }
 
 export interface TerritoryState {
@@ -157,6 +167,11 @@ export interface GameState {
 }
 
 // Client -> Server Action Schemas (Zod)
+export const SelectCapitalActionSchema = z.object({
+  type: z.literal("select_capital"),
+  territoryId: z.string(),
+});
+
 export const DeployActionSchema = z.object({
   type: z.literal("deploy"),
   territoryId: z.string(),
@@ -196,6 +211,7 @@ export const EndTurnActionSchema = z.object({
 });
 
 export const GameActionSchema = z.discriminatedUnion("type", [
+  SelectCapitalActionSchema,
   DeployActionSchema,
   TradeCardsActionSchema,
   AttackActionSchema,
