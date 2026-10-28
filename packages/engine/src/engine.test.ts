@@ -363,6 +363,8 @@ describe("War Classic Rules Engine", () => {
 
     defender.capitalTerritoryId = "argentina";
     defender.isCapitalLost = false;
+    defender.cards = [{ id: "card_argentina", territoryId: "argentina", symbol: "circle" }];
+    const attackerInitialCardCount = attacker.cards.length;
 
     // Attack argentina until conquered
     while (state.territories["argentina"].ownerId !== attacker.id) {
@@ -375,13 +377,32 @@ describe("War Classic Rules Engine", () => {
     }
 
     const updatedDefender = state.players.find((p) => p.id === defender.id)!;
+    const updatedAttacker = state.players.find((p) => p.id === attacker.id)!;
     expect(updatedDefender.isCapitalLost).toBe(true);
     expect(updatedDefender.moralePenalty).toBe(2);
     expect(updatedDefender.economicPenaltyMultiplier).toBe(0.5);
+
+    // Defender lost 1 card, attacker gained 1 card
+    expect(updatedDefender.cards.length).toBe(0);
+    expect(updatedAttacker.cards.length).toBe(attackerInitialCardCount + 1);
 
     // Check that defender's reinforcements reflect the -2 morale penalty
     const defenderReinf = calculateTurnReinforcements(state, defender.id);
     expect(defenderReinf.moralePenalty).toBe(2);
     expect(defenderReinf.capitalBonus).toBe(0);
+
+    // Complete pending conquest if any, end attack, end turn, advance rounds to test 5-round reorganization
+    if (state.pendingConquest) {
+      state = applyAction(state, attacker.id, { type: "occupy", armies: state.pendingConquest.minMove }, rng);
+    }
+    state.round = 7; // 2 + 5 = 7
+    state = applyAction(state, attacker.id, { type: "end_attack" }, rng);
+    state = applyAction(state, attacker.id, { type: "end_turn" }, rng);
+
+    // Defender turn starts: reorganization triggers
+    const reorganizedDefender = state.players.find((p) => p.id === defender.id)!;
+    expect(reorganizedDefender.isCapitalLost).toBe(false);
+    expect(reorganizedDefender.capitalTerritoryId).toBeUndefined();
+    expect(reorganizedDefender.economicPenaltyMultiplier).toBe(1.0);
   });
 });
