@@ -7,6 +7,7 @@ class SoundEngine {
   private isMusicPlaying = false;
   private volume = 0.5;
   private sfxVolume = 0.7;
+  private isMuted = false;
   private currentTrack = "ambient_procedural";
   private audioEl: HTMLAudioElement | null = null;
   private musicInterval: number | null = null;
@@ -15,6 +16,10 @@ class SoundEngine {
     if (typeof window !== "undefined") {
       const savedVol = localStorage.getItem("hegemonia_music_volume");
       if (savedVol !== null) this.volume = parseFloat(savedVol);
+      const savedSfxVol = localStorage.getItem("hegemonia_sfx_volume");
+      if (savedSfxVol !== null) this.sfxVolume = parseFloat(savedSfxVol);
+      const savedMuted = localStorage.getItem("hegemonia_muted");
+      if (savedMuted !== null) this.isMuted = savedMuted === "true";
       const savedTrack = localStorage.getItem("hegemonia_music_track");
       if (savedTrack) this.currentTrack = savedTrack;
     }
@@ -25,11 +30,11 @@ class SoundEngine {
       const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
       this.ctx = new AudioCtx();
       this.musicGain = this.ctx.createGain();
-      this.musicGain.gain.value = this.volume;
+      this.musicGain.gain.value = this.isMuted ? 0 : this.volume;
       this.musicGain.connect(this.ctx.destination);
 
       this.sfxGain = this.ctx.createGain();
-      this.sfxGain.gain.value = this.sfxVolume;
+      this.sfxGain.gain.value = this.isMuted ? 0 : this.sfxVolume;
       this.sfxGain.connect(this.ctx.destination);
     }
     if (this.ctx && this.ctx.state === "suspended") {
@@ -172,17 +177,51 @@ class SoundEngine {
 
   public setVolume(val: number) {
     this.volume = Math.max(0, Math.min(1, val));
-    if (this.musicGain && this.ctx) {
+    if (this.musicGain && this.ctx && !this.isMuted) {
       this.musicGain.gain.setValueAtTime(this.volume, this.ctx.currentTime);
     }
     if (this.audioEl) {
-      this.audioEl.volume = this.volume;
+      this.audioEl.volume = this.isMuted ? 0 : this.volume;
     }
     localStorage.setItem("hegemonia_music_volume", this.volume.toString());
   }
 
   public getVolume(): number {
     return this.volume;
+  }
+
+  public setSfxVolume(val: number) {
+    this.sfxVolume = Math.max(0, Math.min(1, val));
+    if (this.sfxGain && this.ctx && !this.isMuted) {
+      this.sfxGain.gain.setValueAtTime(this.sfxVolume, this.ctx.currentTime);
+    }
+    localStorage.setItem("hegemonia_sfx_volume", this.sfxVolume.toString());
+  }
+
+  public getSfxVolume(): number {
+    return this.sfxVolume;
+  }
+
+  public toggleMute(): boolean {
+    this.initContext();
+    this.isMuted = !this.isMuted;
+    const effectiveMusic = this.isMuted ? 0 : this.volume;
+    const effectiveSfx = this.isMuted ? 0 : this.sfxVolume;
+    if (this.musicGain && this.ctx) {
+      this.musicGain.gain.setValueAtTime(effectiveMusic, this.ctx.currentTime);
+    }
+    if (this.sfxGain && this.ctx) {
+      this.sfxGain.gain.setValueAtTime(effectiveSfx, this.ctx.currentTime);
+    }
+    if (this.audioEl) {
+      this.audioEl.volume = effectiveMusic;
+    }
+    localStorage.setItem("hegemonia_muted", this.isMuted.toString());
+    return this.isMuted;
+  }
+
+  public getIsMuted(): boolean {
+    return this.isMuted;
   }
 
   public getIsPlaying(): boolean {
