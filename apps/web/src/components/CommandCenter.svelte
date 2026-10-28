@@ -1,0 +1,1472 @@
+<script lang="ts">
+  import type { LeaderboardRow, PlayerColor } from "@hegemonia/shared";
+  import { api, navigate } from "../lib/api";
+  import { auth } from "../lib/auth.svelte";
+  import Avatar from "./Avatar.svelte";
+  import FactionFlag from "./FactionFlag.svelte";
+  import Icon from "./Icon.svelte";
+
+  export interface LobbyPlayerView {
+    token: string;
+    name: string;
+    color: PlayerColor;
+    isHost: boolean;
+    isBot: boolean;
+    connected: boolean;
+    userId?: string | null;
+    username?: string | null;
+    avatarUrl?: string | null;
+  }
+
+  export interface LobbyChatMsg {
+    from: string;
+    color: PlayerColor;
+    text: string;
+    time: string;
+  }
+
+  let {
+    roomStatus,
+    playerName = $bindable(),
+    roomCodeInput = $bindable(),
+    roomCode,
+    myPlayerId,
+    lobbyPlayers,
+    lobbyMessages,
+    connecting,
+    onCreateRoom,
+    onJoinRoom,
+    onLeaveRoom,
+    onChooseColor,
+    onAddBot,
+    onRemoveBot,
+    onStartGame,
+    onSendLobbyChat,
+  }: {
+    roomStatus: "disconnected" | "lobby";
+    playerName: string;
+    roomCodeInput: string;
+    roomCode: string;
+    myPlayerId: string | null;
+    lobbyPlayers: LobbyPlayerView[];
+    lobbyMessages: LobbyChatMsg[];
+    connecting: boolean;
+    onCreateRoom: () => void;
+    onJoinRoom: () => void;
+    onLeaveRoom: () => void;
+    onChooseColor: (color: PlayerColor) => void;
+    onAddBot: () => void;
+    onRemoveBot: (token: string) => void;
+    onStartGame: () => void;
+    onSendLobbyChat: (text: string) => void;
+  } = $props();
+
+  const ALL_COLORS: PlayerColor[] = ["blue", "red", "green", "yellow", "black", "white"];
+
+  const FACTION_NAME_PT: Record<PlayerColor, string> = {
+    blue: "União Atlântica",
+    red: "Diretório Vermelho",
+    green: "Pacto Esmeralda",
+    yellow: "Império Áureo",
+    black: "Legião de Ferro",
+    white: "Coalizão Boreal",
+  };
+
+  const FACTION_DOCTRINE_PT: Record<PlayerColor, string> = {
+    blue: "Supremacia Naval & OTAN",
+    red: "Massa Blindada Continental",
+    green: "Defesa em Profundidade",
+    yellow: "Hegemonia Imperial Dourada",
+    black: "Divisões Couraçadas de Elite",
+    white: "Vanguarda Ártica & Aérea",
+  };
+
+  let topCommanders = $state<LeaderboardRow[]>([]);
+  let copiedCode = $state(false);
+  let lobbyChatText = $state("");
+
+  $effect(() => {
+    api<{ leaderboard: LeaderboardRow[] }>("/api/leaderboard?limit=5")
+      .then((res) => {
+        topCommanders = res.leaderboard.slice(0, 5);
+      })
+      .catch(() => {
+        topCommanders = [];
+      });
+  });
+
+  let myLobbyEntry = $derived(lobbyPlayers.find((p) => p.token === myPlayerId) ?? null);
+  let amIHost = $derived(Boolean(myLobbyEntry?.isHost));
+  let emptySlotsCount = $derived(Math.max(0, 6 - lobbyPlayers.length));
+
+  function copyRoomCode() {
+    if (!roomCode) return;
+    navigator.clipboard?.writeText(roomCode);
+    copiedCode = true;
+    setTimeout(() => {
+      copiedCode = false;
+    }, 2000);
+  }
+
+  function submitLobbyChat() {
+    const clean = lobbyChatText.trim();
+    if (!clean) return;
+    onSendLobbyChat(clean);
+    lobbyChatText = "";
+  }
+</script>
+
+<div class="command-center-backdrop">
+  {#if roomStatus === "disconnected"}
+    <div class="command-deck-container">
+      <!-- HERO HEADER WITH OFFICIAL EMBLEM LOGO -->
+      <header class="deck-hero">
+        <img
+          src="/hegemonia-logo.webp"
+          alt="Hegemonia — Global War Emblem"
+          class="hero-emblem-img"
+        />
+        <p class="hero-tagline">
+          COMANDO ESTRATÉGICO MULTIJOGADOR • CARTOGRAFIA NATURAL EARTH • MOTOR CRIPTOGRÁFICO DETERMINÍSTICO
+        </p>
+      </header>
+
+      <div class="deck-grid">
+        <!-- LEFT COLUMN: CAMPAIGN OPERATIONS & DEPLOYMENT -->
+        <section class="deck-card primary-ops-card">
+          <div class="card-corner tl"></div>
+          <div class="card-corner tr"></div>
+          <div class="card-corner bl"></div>
+          <div class="card-corner br"></div>
+
+          <div class="ops-header">
+            <span class="eyebrow">CENTRO DE OPERAÇÕES TÁTICAS</span>
+            <h2>Desdobramento de Campanha</h2>
+          </div>
+
+          <!-- Commander Identity Box -->
+          {#if auth.user}
+            <div class="commander-id-card authenticated">
+              <Avatar name={auth.user.displayName} avatarUrl={auth.user.avatarUrl} size="medium" />
+              <div class="cid-meta">
+                <div class="cid-badges">
+                  <span class="status-pill verified"><Icon name="shield" size={12} /> CONTA OFICIAL</span>
+                  <span class="status-pill ranked">RANKING ATIVO</span>
+                </div>
+                <strong>{auth.user.displayName}</strong>
+                <small>@{auth.user.username}</small>
+              </div>
+              <button
+                class="outline-button cid-action"
+                onclick={() => navigate(`/profile/${auth.user!.username}`)}
+              >
+                Dossiê
+              </button>
+            </div>
+          {:else}
+            <div class="commander-id-card guest">
+              <div class="guest-field">
+                <label for="cmd-name">IDENTIFICAÇÃO DE COMANDO (MODO CONVIDADO)</label>
+                <input
+                  id="cmd-name"
+                  bind:value={playerName}
+                  maxlength="24"
+                  placeholder="Ex: Marechal V. Kovalenko"
+                />
+              </div>
+              <div class="guest-auth-bar">
+                <span>Deseja registrar vitórias no Ranking Global e desbloquear medalhas?</span>
+                <button class="text-gold-btn" onclick={() => (auth.dialogOpen = true)}>
+                  <Icon name="shield" size={14} /> Autenticar / Criar Conta
+                </button>
+              </div>
+            </div>
+          {/if}
+
+          <!-- Create New War Room CTA -->
+          <div class="ops-action-block">
+            <button class="launch-campaign-btn" disabled={connecting} onclick={onCreateRoom}>
+              <div class="launch-icon-box">
+                <Icon name="swords" size={22} />
+              </div>
+              <div class="launch-text">
+                <strong>{connecting ? "INICIALIZANDO SALA..." : "CRIAR NOVA SALA DE GUERRA"}</strong>
+                <small>Abrir teatro de operações para até 6 generais humanos ou comandantes de IA</small>
+              </div>
+            </button>
+          </div>
+
+          <div class="tactical-divider">
+            <span>OU INGRESSAR EM OPERAÇÃO EM CURSO</span>
+          </div>
+
+          <!-- Join Existing Room by Code -->
+          <div class="join-operation-box">
+            <div class="code-input-wrap">
+              <span class="code-prefix">OP //</span>
+              <input
+                bind:value={roomCodeInput}
+                maxlength="6"
+                placeholder="CÓDIGO (EX: A1B2C3)"
+                onkeydown={(e) => e.key === "Enter" && onJoinRoom()}
+              />
+            </div>
+            <button
+              class="join-btn"
+              disabled={connecting || !roomCodeInput.trim()}
+              onclick={onJoinRoom}
+            >
+              <Icon name="compass" size={16} /> Conectar à Sala
+            </button>
+          </div>
+        </section>
+
+        <!-- RIGHT COLUMN: STRATEGIC BRIEFING & LIVE LEADERBOARD -->
+        <div class="deck-side-column">
+          <!-- Theatre Specifications -->
+          <section class="deck-card intel-card">
+            <div class="ops-header compact">
+              <span class="eyebrow">PARÂMETROS DO SIMULADOR</span>
+              <h3>Diretrizes de Teatro Global</h3>
+            </div>
+
+            <div class="intel-specs-grid">
+              <div class="spec-item">
+                <span class="spec-icon"><Icon name="globe" size={18} /></span>
+                <div>
+                  <strong>44 Territórios Reais</strong>
+                  <small>Geometria vetorial Natural Earth com globo contínuo</small>
+                </div>
+              </div>
+
+              <div class="spec-item">
+                <span class="spec-icon"><Icon name="target" size={18} /></span>
+                <div>
+                  <strong>24 Diretrizes Secretas</strong>
+                  <small>14 Objetivos Clássicos + 10 Ambições Nacionais</small>
+                </div>
+              </div>
+
+              <div class="spec-item">
+                <span class="spec-icon"><Icon name="flag" size={18} /></span>
+                <div>
+                  <strong>Ásia Tripartida (+7)</strong>
+                  <small>Indo-Arábia (+2), Estepes (+2) e Leste Asiático (+3)</small>
+                </div>
+              </div>
+
+              <div class="spec-item">
+                <span class="spec-icon"><Icon name="lock" size={18} /></span>
+                <div>
+                  <strong>Auditoria Mulberry32</strong>
+                  <small>Rolagens determinísticas com hash criptográfico</small>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <!-- Top Commanders Mini Leaderboard -->
+          <section class="deck-card mini-rank-card">
+            <div class="ops-header compact row-spread">
+              <div>
+                <span class="eyebrow">QUADRO DE HONRA</span>
+                <h3>Alto Comando — Top 5</h3>
+              </div>
+              <button class="text-gold-btn" onclick={() => navigate("/leaderboard")}>
+                Ver Ranking Completo ›
+              </button>
+            </div>
+
+            {#if topCommanders.length > 0}
+              <div class="mini-rank-list">
+                {#each topCommanders as cmd}
+                  <button
+                    class="mini-rank-row"
+                    onclick={() => navigate(`/profile/${cmd.username}`)}
+                  >
+                    <span class="m-rank">#{cmd.rank}</span>
+                    <Avatar name={cmd.displayName} avatarUrl={cmd.avatarUrl} size="small" />
+                    <div class="m-info">
+                      <strong>{cmd.displayName}</strong>
+                      <small>{cmd.wins} vitórias • {cmd.matchesPlayed} campanhas</small>
+                    </div>
+                    <strong class="m-score">{cmd.score} PTS</strong>
+                  </button>
+                {/each}
+              </div>
+            {:else}
+              <div class="mini-rank-empty">
+                <p>O quadro de honra aguarda as primeiras vitórias ranqueadas da temporada.</p>
+                <div class="mini-rank-Quicklinks">
+                  <button class="outline-button" onclick={() => navigate("/leaderboard")}>
+                    <Icon name="rank" size={14} /> Classificação
+                  </button>
+                  <button class="outline-button" onclick={() => navigate("/friends")}>
+                    <Icon name="users" size={14} /> Rede de Aliados
+                  </button>
+                </div>
+              </div>
+            {/if}
+          </section>
+        </div>
+      </div>
+    </div>
+
+  {:else if roomStatus === "lobby"}
+    <!-- PRE-GAME BRIEFING WAR ROOM -->
+    <div class="briefing-room-container">
+      <section class="deck-card briefing-card">
+        <div class="card-corner tl"></div>
+        <div class="card-corner tr"></div>
+        <div class="card-corner bl"></div>
+        <div class="card-corner br"></div>
+
+        <!-- Briefing Top Header -->
+        <header class="briefing-header">
+          <div class="briefing-title-group">
+            <img src="/hegemonia-logo.webp" alt="Hegemonia" class="briefing-mini-logo" />
+            <div>
+              <span class="eyebrow">SALA DE BRIEFING ESTRATÉGICO // PRÉ-CAMPANHA</span>
+              <div class="op-code-row">
+                <h2>OPERAÇÃO: <span class="op-code-val">{roomCode}</span></h2>
+                <button class="copy-code-btn" onclick={copyRoomCode} title="Copiar Código da Sala">
+                  <Icon name={copiedCode ? "check" : "copy"} size={14} />
+                  {copiedCode ? "Código Copiado!" : "Copiar Código"}
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div class="briefing-header-right">
+            <div class="capacity-pill">
+              <Icon name="users" size={15} />
+              <span><strong>{lobbyPlayers.length}</strong> / 6 GENERAIS</span>
+            </div>
+            <button class="leave-room-btn" onclick={onLeaveRoom}>
+              <Icon name="back" size={15} /> Abandonar Sala
+            </button>
+          </div>
+        </header>
+
+        <div class="briefing-body-grid">
+          <!-- LEFT: 6-SLOT COMMAND ROSTER & FACTION SELECTION -->
+          <div class="briefing-main-col">
+            <div class="section-subhead">
+              <span>QUADRO DE GENERAIS ALOCADOS</span>
+              <small>Mínimo de 2 comandantes para iniciar o sorteio de territórios e diretrizes</small>
+            </div>
+
+            <div class="slots-grid">
+              {#each lobbyPlayers as p}
+                <div
+                  class="slot-card occupied"
+                  class:is-me={p.token === myPlayerId}
+                  style="border-left-color: var(--faction-{p.color}, #eab308);"
+                >
+                  <FactionFlag color={p.color} width={30} height={19} />
+                  <Avatar name={p.name} avatarUrl={p.avatarUrl ?? null} size="small" />
+
+                  <div class="slot-info">
+                    <div class="slot-name-row">
+                      <strong>{p.name}</strong>
+                      {#if p.token === myPlayerId}
+                        <span class="me-tag">VOCÊ</span>
+                      {/if}
+                    </div>
+                    <small>
+                      {FACTION_NAME_PT[p.color]}
+                      {#if p.username} • @{p.username}{/if}
+                    </small>
+                  </div>
+
+                  <div class="slot-badges">
+                    {#if p.isHost}
+                      <span class="role-badge host"><Icon name="crown" size={12} /> ANFITRIÃO</span>
+                    {:else if p.isBot}
+                      <span class="role-badge bot"><Icon name="bot" size={12} /> IA TÁTICA</span>
+                    {:else}
+                      <span class="role-badge human">COMANDANTE</span>
+                    {/if}
+
+                    {#if p.isBot && amIHost}
+                      <button
+                        class="remove-bot-btn"
+                        onclick={() => onRemoveBot(p.token)}
+                        title="Dispensar General IA"
+                      >
+                        <Icon name="close" size={14} />
+                      </button>
+                    {/if}
+                  </div>
+                </div>
+              {/each}
+
+              {#each Array(emptySlotsCount) as _, idx}
+                <div class="slot-card empty-slot">
+                  <div class="empty-slot-left">
+                    <span class="empty-slot-num">0{lobbyPlayers.length + idx + 1}</span>
+                    <div>
+                      <strong>Slot de Comando Disponível</strong>
+                      <small>Aguardando conexão de general ou alocação de IA</small>
+                    </div>
+                  </div>
+                  {#if amIHost && idx === 0}
+                    <button class="outline-button mini-bot-btn" onclick={onAddBot}>
+                      <Icon name="bot" size={13} /> + Alocar IA
+                    </button>
+                  {/if}
+                </div>
+              {/each}
+            </div>
+
+            <!-- Faction Flag & Color Selector -->
+            <div class="faction-picker-panel">
+              <div class="section-subhead">
+                <span>ESCOLHA SUA FACÇÃO E ESTANDARTE MILITAR</span>
+                <small>Cada exército possui insígnia heráldica única no mapa tático</small>
+              </div>
+
+              <div class="faction-cards-grid">
+                {#each ALL_COLORS as c}
+                  {@const holder = lobbyPlayers.find((p) => p.color === c)}
+                  {@const isMine = holder?.token === myPlayerId}
+                  {@const isTaken = Boolean(holder && !isMine)}
+                  <button
+                    class="faction-choice-card"
+                    class:selected={isMine}
+                    class:taken={isTaken}
+                    disabled={isTaken}
+                    onclick={() => onChooseColor(c)}
+                  >
+                    <FactionFlag color={c} width={34} height={22} />
+                    <div class="f-choice-meta">
+                      <strong>{FACTION_NAME_PT[c]}</strong>
+                      <small>
+                        {#if isMine}
+                          Sua Facção Atual
+                        {:else if holder}
+                          Ocupado por {holder.name}
+                        {:else}
+                          {FACTION_DOCTRINE_PT[c]}
+                        {/if}
+                      </small>
+                    </div>
+                  </button>
+                {/each}
+              </div>
+            </div>
+          </div>
+
+          <!-- RIGHT: BRIEFING RADIO COMMS & CAMPAIGN RULES SUMMARY -->
+          <aside class="briefing-side-col">
+            <div class="lobby-comms-box">
+              <div class="comms-box-header">
+                <strong><Icon name="radio" size={14} /> Rádio da Sala de Guerra</strong>
+                <small>Canal Seguro</small>
+              </div>
+
+              <div class="lobby-comms-messages">
+                {#each lobbyMessages as msg}
+                  <div class="l-msg">
+                    <div class="l-msg-head">
+                      <FactionFlag color={msg.color} width={16} height={10} />
+                      <strong>{msg.from}</strong>
+                      <small>{msg.time}</small>
+                    </div>
+                    <p>{msg.text}</p>
+                  </div>
+                {:else}
+                  <div class="l-msg-empty">
+                    Canal de comunicações pronto. Use o código <strong>{roomCode}</strong> para convidar aliados.
+                  </div>
+                {/each}
+              </div>
+
+              <div class="lobby-comms-input">
+                <input
+                  bind:value={lobbyChatText}
+                  maxlength="200"
+                  placeholder="Enviar mensagem na sala..."
+                  onkeydown={(e) => e.key === "Enter" && submitLobbyChat()}
+                />
+                <button class="gold-button" onclick={submitLobbyChat}>Enviar</button>
+              </div>
+            </div>
+
+            <div class="campaign-protocol-box">
+              <h4><Icon name="shield" size={14} /> Protocolo de Operação</h4>
+              <ul>
+                <li><strong>Rodada 1 (Tratado Inicial):</strong> Apenas posicionamento de reforços, sem ataques.</li>
+                <li><strong>Tempo de Turno:</strong> 120s por general com execução automática em caso de esgotamento.</li>
+                <li><strong>Troca de Suprimentos:</strong> Escalada progressiva (4, 6, 8, 10, 12, 15...). Obrigatória com 5 cartas.</li>
+              </ul>
+            </div>
+          </aside>
+        </div>
+
+        <!-- Briefing Footer Actions -->
+        <footer class="briefing-footer">
+          <div class="footer-status">
+            {#if !amIHost}
+              <span class="waiting-host-note">
+                <span class="pulse-dot"></span> Aguardando o anfitrião iniciar a campanha global...
+              </span>
+            {:else if lobbyPlayers.length < 2}
+              <span class="waiting-host-note">
+                Adicione ao menos 1 General IA ou aguarde outro jogador para iniciar.
+              </span>
+            {:else}
+              <span class="ready-note">
+                <Icon name="check" size={15} /> Todos os sistemas prontos para o início das hostilidades.
+              </span>
+            {/if}
+          </div>
+
+          <div class="footer-buttons">
+            {#if amIHost && lobbyPlayers.length < 6}
+              <button class="outline-button" onclick={onAddBot}>
+                <Icon name="bot" size={16} /> + Adicionar General IA
+              </button>
+            {/if}
+
+            {#if amIHost}
+              <button
+                class="launch-battle-btn"
+                disabled={lobbyPlayers.length < 2}
+                onclick={onStartGame}
+              >
+                <Icon name="swords" size={18} /> INICIAR CAMPANHA GLOBAL
+              </button>
+            {/if}
+          </div>
+        </footer>
+      </section>
+    </div>
+  {/if}
+</div>
+
+<style>
+  .command-center-backdrop {
+    position: fixed;
+    inset: 0;
+    padding-top: 68px;
+    overflow-y: auto;
+    z-index: 40;
+    background:
+      radial-gradient(circle at 50% 25%, rgba(16, 28, 52, 0.55) 0%, rgba(4, 8, 16, 0.92) 75%),
+      url("/assets/war-room-bg.webp") center/cover no-repeat;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .command-deck-container {
+    width: min(1180px, calc(100% - 36px));
+    margin: auto;
+    padding: 18px 0 36px;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+  }
+
+  /* Hero Emblem Lockup */
+  .deck-hero {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    gap: 6px;
+  }
+  .hero-emblem-img {
+    height: clamp(115px, 16vh, 165px);
+    width: auto;
+    object-fit: contain;
+    filter: drop-shadow(0 12px 28px rgba(0, 0, 0, 0.92));
+  }
+  .hero-tagline {
+    font-family: var(--font-tactical);
+    font-size: 0.76rem;
+    font-weight: 700;
+    letter-spacing: 0.22em;
+    color: #cbd5e1;
+    text-shadow: 0 2px 8px rgba(0, 0, 0, 0.9);
+    background: linear-gradient(90deg, transparent, rgba(9, 15, 28, 0.85) 20%, rgba(9, 15, 28, 0.85) 80%, transparent);
+    padding: 4px 24px;
+    border-top: 1px solid rgba(212, 175, 55, 0.3);
+    border-bottom: 1px solid rgba(212, 175, 55, 0.3);
+  }
+
+  .deck-grid {
+    display: grid;
+    grid-template-columns: 1.12fr 0.88fr;
+    gap: 20px;
+    align-items: stretch;
+  }
+
+  .deck-card {
+    position: relative;
+    background: linear-gradient(165deg, rgba(13, 22, 39, 0.94) 0%, rgba(7, 12, 23, 0.97) 100%);
+    border: 1px solid rgba(212, 175, 55, 0.42);
+    border-radius: 8px;
+    padding: 24px;
+    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.82), inset 0 1px 0 rgba(255, 255, 255, 0.07);
+    backdrop-filter: blur(16px);
+  }
+
+  /* Brass Corner Brackets */
+  .card-corner {
+    position: absolute;
+    width: 12px;
+    height: 12px;
+    border-color: #eab308;
+    border-style: solid;
+    pointer-events: none;
+  }
+  .card-corner.tl {
+    top: 6px;
+    left: 6px;
+    border-width: 2px 0 0 2px;
+  }
+  .card-corner.tr {
+    top: 6px;
+    right: 6px;
+    border-width: 2px 2px 0 0;
+  }
+  .card-corner.bl {
+    bottom: 6px;
+    left: 6px;
+    border-width: 0 0 2px 2px;
+  }
+  .card-corner.br {
+    bottom: 6px;
+    right: 6px;
+    border-width: 0 2px 2px 0;
+  }
+
+  .primary-ops-card {
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    gap: 18px;
+  }
+
+  .ops-header h2 {
+    font-family: var(--font-display);
+    font-size: 1.5rem;
+    font-weight: 800;
+    color: #f8fafc;
+    letter-spacing: 0.05em;
+  }
+  .ops-header h3 {
+    font-family: var(--font-display);
+    font-size: 1.12rem;
+    font-weight: 800;
+    color: #f8fafc;
+    letter-spacing: 0.04em;
+  }
+  .row-spread {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+  }
+
+  /* Commander ID Card */
+  .commander-id-card {
+    background: rgba(5, 9, 18, 0.82);
+    border: 1px solid rgba(148, 163, 184, 0.25);
+    border-radius: 6px;
+    padding: 14px 16px;
+  }
+  .commander-id-card.authenticated {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    border-color: rgba(234, 179, 8, 0.45);
+    background: linear-gradient(90deg, rgba(202, 138, 4, 0.12), rgba(5, 9, 18, 0.88));
+  }
+  .cid-meta {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .cid-badges {
+    display: flex;
+    gap: 6px;
+    margin-bottom: 2px;
+  }
+  .status-pill {
+    font-family: var(--font-tactical);
+    font-size: 0.62rem;
+    font-weight: 800;
+    letter-spacing: 0.1em;
+    padding: 2px 6px;
+    border-radius: 3px;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .status-pill.verified {
+    background: rgba(234, 179, 8, 0.2);
+    color: #fef08a;
+    border: 1px solid rgba(234, 179, 8, 0.45);
+  }
+  .status-pill.ranked {
+    background: rgba(16, 185, 129, 0.18);
+    color: #6ee7b7;
+    border: 1px solid rgba(16, 185, 129, 0.4);
+  }
+  .cid-meta strong {
+    font-family: var(--font-tactical);
+    font-size: 1.05rem;
+    color: #f8fafc;
+  }
+  .cid-meta small {
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    color: #94a3b8;
+  }
+  .cid-action {
+    margin-left: auto;
+  }
+
+  .commander-id-card.guest {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .guest-field {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .guest-field label {
+    font-family: var(--font-tactical);
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    color: #cbd5e1;
+  }
+  .guest-auth-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding-top: 8px;
+    border-top: 1px solid rgba(148, 163, 184, 0.15);
+    font-size: 0.75rem;
+    color: #94a3b8;
+  }
+  .text-gold-btn {
+    border: 0;
+    background: transparent;
+    color: #fde047;
+    font-family: var(--font-tactical);
+    font-size: 0.78rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    padding: 4px 6px;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+  }
+  .text-gold-btn:hover {
+    background: rgba(234, 179, 8, 0.12);
+    color: #ffffff;
+  }
+
+  /* Launch Campaign CTA */
+  .launch-campaign-btn {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 16px 20px;
+    background: linear-gradient(135deg, #ca8a04 0%, #854d0e 100%);
+    border: 1px solid #fde047;
+    border-radius: 6px;
+    color: #ffffff;
+    text-align: left;
+    box-shadow: 0 10px 30px rgba(202, 138, 4, 0.32), inset 0 1px 0 rgba(255, 255, 255, 0.25);
+  }
+  .launch-campaign-btn:hover:not(:disabled) {
+    background: linear-gradient(135deg, #eab308 0%, #a16207 100%);
+    transform: translateY(-1px);
+    box-shadow: 0 14px 36px rgba(234, 179, 8, 0.45);
+  }
+  .launch-icon-box {
+    width: 46px;
+    height: 46px;
+    border-radius: 6px;
+    background: rgba(6, 10, 19, 0.35);
+    border: 1px solid rgba(254, 240, 138, 0.45);
+    display: grid;
+    place-items: center;
+    color: #fef08a;
+    flex-shrink: 0;
+  }
+  .launch-text {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+  }
+  .launch-text strong {
+    font-family: var(--font-display);
+    font-size: 1.05rem;
+    letter-spacing: 0.08em;
+    color: #ffffff;
+  }
+  .launch-text small {
+    font-family: var(--font-sans);
+    font-size: 0.76rem;
+    font-weight: 400;
+    color: #fef08a;
+    opacity: 0.92;
+  }
+
+  .tactical-divider {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    color: #64748b;
+    font-family: var(--font-tactical);
+    font-size: 0.7rem;
+    font-weight: 700;
+    letter-spacing: 0.16em;
+  }
+  .tactical-divider::before,
+  .tactical-divider::after {
+    content: "";
+    flex: 1;
+    height: 1px;
+    background: rgba(148, 163, 184, 0.2);
+  }
+
+  .join-operation-box {
+    display: flex;
+    gap: 10px;
+  }
+  .code-input-wrap {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    background: rgba(5, 9, 18, 0.92);
+    border: 1px solid rgba(148, 163, 184, 0.32);
+    border-radius: 5px;
+    padding-left: 12px;
+  }
+  .code-prefix {
+    font-family: var(--font-mono);
+    font-size: 0.78rem;
+    font-weight: 700;
+    color: #eab308;
+    user-select: none;
+  }
+  .code-input-wrap input {
+    border: 0;
+    background: transparent;
+    font-family: var(--font-mono);
+    font-size: 0.95rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    width: 100%;
+  }
+  .code-input-wrap input:focus {
+    box-shadow: none;
+  }
+  .join-btn {
+    padding: 0 20px;
+    background: linear-gradient(145deg, #1e293b, #0f172a);
+    border: 1px solid rgba(212, 175, 55, 0.45);
+    color: #fef08a;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.85rem;
+    text-transform: uppercase;
+  }
+
+  /* Side Column Cards */
+  .deck-side-column {
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+  }
+  .intel-specs-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    margin-top: 14px;
+  }
+  .spec-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 11px;
+    background: rgba(5, 9, 18, 0.68);
+    border: 1px solid rgba(148, 163, 184, 0.16);
+    border-radius: 5px;
+  }
+  .spec-icon {
+    color: #eab308;
+    margin-top: 2px;
+  }
+  .spec-item strong {
+    display: block;
+    font-family: var(--font-tactical);
+    font-size: 0.84rem;
+    color: #f8fafc;
+  }
+  .spec-item small {
+    display: block;
+    font-size: 0.7rem;
+    color: #94a3b8;
+    line-height: 1.35;
+    margin-top: 2px;
+  }
+
+  /* Mini Leaderboard */
+  .mini-rank-card {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+  }
+  .mini-rank-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-top: 12px;
+  }
+  .mini-rank-row {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 10px;
+    background: rgba(5, 9, 18, 0.72);
+    border: 1px solid rgba(148, 163, 184, 0.16);
+    border-radius: 5px;
+    text-align: left;
+  }
+  .m-rank {
+    font-family: var(--font-display);
+    font-weight: 800;
+    font-size: 0.9rem;
+    color: #eab308;
+    width: 24px;
+  }
+  .m-info {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    flex: 1;
+  }
+  .m-info strong {
+    font-family: var(--font-tactical);
+    font-size: 0.86rem;
+    color: #f8fafc;
+  }
+  .m-info small {
+    font-size: 0.68rem;
+    color: #94a3b8;
+  }
+  .m-score {
+    font-family: var(--font-mono);
+    font-size: 0.78rem;
+    color: #fef08a;
+  }
+  .mini-rank-empty {
+    margin-top: 14px;
+    padding: 18px;
+    background: rgba(5, 9, 18, 0.65);
+    border: 1px dashed rgba(148, 163, 184, 0.25);
+    border-radius: 6px;
+    text-align: center;
+    color: #94a3b8;
+    font-size: 0.8rem;
+  }
+  .mini-rank-Quicklinks {
+    display: flex;
+    justify-content: center;
+    gap: 10px;
+    margin-top: 12px;
+  }
+
+  /* ==========================================================================
+     PRE-GAME BRIEFING ROOM (LOBBY)
+     ========================================================================== */
+  .briefing-room-container {
+    width: min(1160px, calc(100% - 36px));
+    margin: auto;
+    padding: 20px 0 36px;
+  }
+  .briefing-card {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+  }
+  .briefing-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 16px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid rgba(212, 175, 55, 0.3);
+  }
+  .briefing-title-group {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+  }
+  .briefing-mini-logo {
+    height: 62px;
+    width: auto;
+    object-fit: contain;
+  }
+  .op-code-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-top: 2px;
+  }
+  .op-code-row h2 {
+    font-family: var(--font-display);
+    font-size: 1.55rem;
+    color: #f8fafc;
+  }
+  .op-code-val {
+    font-family: var(--font-mono);
+    color: #fde047;
+    letter-spacing: 0.1em;
+  }
+  .copy-code-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 10px;
+    font-size: 0.74rem;
+    background: rgba(202, 138, 4, 0.16);
+    border-color: rgba(234, 179, 8, 0.5);
+    color: #fef08a;
+  }
+  .briefing-header-right {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .capacity-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 7px 12px;
+    background: rgba(5, 9, 18, 0.85);
+    border: 1px solid rgba(148, 163, 184, 0.28);
+    border-radius: 5px;
+    font-family: var(--font-tactical);
+    font-size: 0.82rem;
+    letter-spacing: 0.08em;
+    color: #cbd5e1;
+  }
+  .capacity-pill strong {
+    color: #fde047;
+  }
+  .leave-room-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: rgba(127, 29, 29, 0.35);
+    border-color: rgba(239, 68, 68, 0.45);
+    color: #fca5a5;
+    font-size: 0.78rem;
+    text-transform: uppercase;
+  }
+  .leave-room-btn:hover {
+    background: rgba(153, 27, 27, 0.6);
+    border-color: #f87171;
+    color: #ffffff;
+  }
+
+  .briefing-body-grid {
+    display: grid;
+    grid-template-columns: 1.35fr 0.65fr;
+    gap: 20px;
+  }
+  .briefing-main-col {
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+  }
+  .section-subhead {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 8px;
+  }
+  .section-subhead span {
+    font-family: var(--font-tactical);
+    font-size: 0.78rem;
+    font-weight: 800;
+    letter-spacing: 0.12em;
+    color: #eab308;
+  }
+  .section-subhead small {
+    font-size: 0.72rem;
+    color: #94a3b8;
+  }
+
+  .slots-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+  .slot-card {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    background: rgba(5, 9, 18, 0.85);
+    border: 1px solid rgba(148, 163, 184, 0.22);
+    border-left: 3px solid #eab308;
+    border-radius: 5px;
+  }
+  .slot-card.is-me {
+    background: linear-gradient(90deg, rgba(202, 138, 4, 0.16), rgba(5, 9, 18, 0.9));
+    border-color: rgba(234, 179, 8, 0.55);
+  }
+  .slot-info {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    flex: 1;
+  }
+  .slot-name-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .slot-name-row strong {
+    font-family: var(--font-tactical);
+    font-size: 0.92rem;
+    color: #f8fafc;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .me-tag {
+    font-family: var(--font-mono);
+    font-size: 0.58rem;
+    font-weight: 800;
+    background: #eab308;
+    color: #050911;
+    padding: 1px 5px;
+    border-radius: 3px;
+  }
+  .slot-info small {
+    font-size: 0.68rem;
+    color: #94a3b8;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .slot-badges {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .role-badge {
+    font-family: var(--font-tactical);
+    font-size: 0.62rem;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    padding: 2px 6px;
+    border-radius: 3px;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .role-badge.host {
+    background: rgba(234, 179, 8, 0.2);
+    color: #fde047;
+    border: 1px solid rgba(234, 179, 8, 0.45);
+  }
+  .role-badge.bot {
+    background: rgba(56, 189, 248, 0.16);
+    color: #7dd3fc;
+    border: 1px solid rgba(56, 189, 248, 0.35);
+  }
+  .role-badge.human {
+    background: rgba(30, 41, 59, 0.8);
+    color: #cbd5e1;
+  }
+  .remove-bot-btn {
+    width: 24px;
+    height: 24px;
+    padding: 0;
+    display: grid;
+    place-items: center;
+    background: rgba(127, 29, 29, 0.4);
+    border-color: rgba(239, 68, 68, 0.45);
+    color: #fca5a5;
+  }
+
+  .slot-card.empty-slot {
+    border-style: dashed;
+    border-left-style: solid;
+    border-left-color: #334155;
+    background: rgba(5, 9, 18, 0.45);
+    justify-content: space-between;
+  }
+  .empty-slot-left {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .empty-slot-num {
+    font-family: var(--font-mono);
+    font-size: 0.78rem;
+    font-weight: 800;
+    color: #475569;
+  }
+  .empty-slot-left strong {
+    display: block;
+    font-family: var(--font-tactical);
+    font-size: 0.82rem;
+    color: #64748b;
+  }
+  .empty-slot-left small {
+    font-size: 0.65rem;
+    color: #475569;
+  }
+  .mini-bot-btn {
+    padding: 4px 9px;
+    font-size: 0.7rem;
+  }
+
+  /* Faction Picker */
+  .faction-cards-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+  }
+  .faction-choice-card {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 9px 11px;
+    background: rgba(5, 9, 18, 0.82);
+    border: 1px solid rgba(148, 163, 184, 0.22);
+    border-radius: 5px;
+    text-align: left;
+  }
+  .faction-choice-card.selected {
+    background: linear-gradient(135deg, rgba(202, 138, 4, 0.25), rgba(161, 98, 7, 0.1));
+    border-color: #fde047;
+    box-shadow: 0 0 15px rgba(234, 179, 8, 0.22);
+  }
+  .faction-choice-card.taken {
+    opacity: 0.42;
+  }
+  .f-choice-meta {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+  .f-choice-meta strong {
+    font-family: var(--font-tactical);
+    font-size: 0.84rem;
+    color: #f8fafc;
+  }
+  .f-choice-meta small {
+    font-size: 0.66rem;
+    color: #94a3b8;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* Lobby Comms & Protocol */
+  .briefing-side-col {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+  .lobby-comms-box {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    background: rgba(5, 9, 18, 0.85);
+    border: 1px solid rgba(148, 163, 184, 0.22);
+    border-radius: 6px;
+    padding: 12px;
+    gap: 10px;
+  }
+  .comms-box-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding-bottom: 8px;
+    border-bottom: 1px solid rgba(148, 163, 184, 0.16);
+  }
+  .comms-box-header strong {
+    font-family: var(--font-tactical);
+    font-size: 0.82rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #fef08a;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .comms-box-header small {
+    font-family: var(--font-mono);
+    font-size: 0.64rem;
+    color: #10b981;
+  }
+  .lobby-comms-messages {
+    height: 175px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding-right: 4px;
+  }
+  .l-msg {
+    background: rgba(15, 23, 42, 0.65);
+    padding: 6px 9px;
+    border-radius: 4px;
+    font-size: 0.76rem;
+  }
+  .l-msg-head {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 3px;
+  }
+  .l-msg-head strong {
+    color: #f8fafc;
+    font-size: 0.74rem;
+  }
+  .l-msg-head small {
+    margin-left: auto;
+    font-family: var(--font-mono);
+    font-size: 0.62rem;
+    color: #64748b;
+  }
+  .l-msg p {
+    color: #cbd5e1;
+    line-height: 1.35;
+  }
+  .l-msg-empty {
+    color: #64748b;
+    font-size: 0.75rem;
+    text-align: center;
+    margin: auto;
+    padding: 16px;
+    line-height: 1.5;
+  }
+  .lobby-comms-input {
+    display: flex;
+    gap: 6px;
+  }
+  .lobby-comms-input input {
+    flex: 1;
+    padding: 7px 10px;
+    font-size: 0.78rem;
+  }
+
+  .campaign-protocol-box {
+    background: rgba(12, 20, 36, 0.85);
+    border: 1px solid rgba(212, 175, 55, 0.28);
+    border-radius: 6px;
+    padding: 12px 14px;
+  }
+  .campaign-protocol-box h4 {
+    font-family: var(--font-tactical);
+    font-size: 0.78rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: #eab308;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 8px;
+  }
+  .campaign-protocol-box ul {
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    font-size: 0.72rem;
+    color: #cbd5e1;
+    line-height: 1.4;
+  }
+
+  /* Footer */
+  .briefing-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 14px;
+    padding-top: 14px;
+    border-top: 1px solid rgba(148, 163, 184, 0.2);
+  }
+  .waiting-host-note {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.8rem;
+    color: #94a3b8;
+  }
+  .ready-note {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.82rem;
+    color: #6ee7b7;
+    font-weight: 600;
+  }
+  .pulse-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #eab308;
+    box-shadow: 0 0 8px #eab308;
+  }
+  .footer-buttons {
+    display: flex;
+    gap: 10px;
+  }
+  .launch-battle-btn {
+    padding: 11px 24px;
+    background: linear-gradient(135deg, #eab308 0%, #a16207 100%);
+    border: 1px solid #fef08a;
+    color: #050911;
+    font-family: var(--font-display);
+    font-weight: 900;
+    font-size: 0.92rem;
+    letter-spacing: 0.1em;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    box-shadow: 0 8px 25px rgba(234, 179, 8, 0.35);
+  }
+
+  @media (max-width: 980px) {
+    .deck-grid,
+    .briefing-body-grid {
+      grid-template-columns: 1fr;
+    }
+    .slots-grid {
+      grid-template-columns: 1fr;
+    }
+    .faction-cards-grid {
+      grid-template-columns: 1fr 1fr;
+    }
+  }
+</style>
