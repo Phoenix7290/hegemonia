@@ -101,9 +101,11 @@ export const ptBRMap: TranslationCatalog = {
   map_mode_cartographic: "Cartográfico",
   map_mode_geopolitical: "Geopolítico",
   map_mode_regional: "Regional",
+  map_mode_economic: "Econômico",
   map_mode_cartographic_title: "Modo Cartográfico Físico Satelital (Tecla 2 / F2)",
   map_mode_geopolitical_title: "Modo Geopolítico Limpo (Tecla 1 / F1)",
   map_mode_regional_title: "Modo de Regiões & Sub-Regiões (Tecla 3 / F3)",
+  map_mode_economic_title: "Modo Econômico: Recursos & Construções (Tecla E / F5)",
   map_mode_clean_title: "Alternar Visão Limpa do Mapa (Ocultar Tropas e Rótulos - Tecla F4)",
 };
 

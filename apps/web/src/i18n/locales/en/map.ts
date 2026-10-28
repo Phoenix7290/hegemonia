@@ -101,9 +101,11 @@ export const enMap: TranslationCatalog = {
   map_mode_cartographic: "Cartographic",
   map_mode_geopolitical: "Geopolitical",
   map_mode_regional: "Regional",
+  map_mode_economic: "Economic",
   map_mode_cartographic_title: "Satellite Physical Cartographic Mode (Key 2 / F2)",
   map_mode_geopolitical_title: "Clean Geopolitical Mode (Key 1 / F1)",
   map_mode_regional_title: "Regions & Sub-Regions Mode (Key 3 / F3)",
+  map_mode_economic_title: "Economic Mode: Resources & Infrastructure (Key E / F5)",
   map_mode_clean_title: "Toggle Clean Map View (Hide Troops and Labels - Key F4)",
 };
 
