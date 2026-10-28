@@ -58,7 +58,15 @@ export function calculateTurnReinforcements(
   state: GameState,
   playerId: string,
   map: GameMapDef = CLASSIC_MAP
-): { baseArmies: number; continentBonus: number; total: number; controlledContinents: string[] } {
+): {
+  baseArmies: number;
+  continentBonus: number;
+  capitalBonus: number;
+  moralePenalty: number;
+  total: number;
+  controlledContinents: string[];
+} {
+  const player = state.players.find((p) => p.id === playerId);
   const ownedIds = Object.values(state.territories)
     .filter((t) => t.ownerId === playerId)
     .map((t) => t.id);
@@ -92,10 +100,24 @@ export function calculateTurnReinforcements(
     }
   }
 
+  // Capital bonus: +1 division if the player controls their assigned capital
+  let capitalBonus = 0;
+  if (
+    player?.capitalTerritoryId &&
+    state.territories[player.capitalTerritoryId]?.ownerId === playerId
+  ) {
+    capitalBonus = 1;
+  }
+
+  const moralePenalty = player?.moralePenalty ?? 0;
+  const total = Math.max(1, baseArmies + continentBonus + capitalBonus - moralePenalty);
+
   return {
     baseArmies,
     continentBonus,
-    total: baseArmies + continentBonus,
+    capitalBonus,
+    moralePenalty,
+    total,
     controlledContinents,
   };
 }
@@ -184,6 +206,10 @@ export function createGame(opts: CreateGameOptions): GameState {
       unplacedArmies: 0,
       conqueredThisTurn: false,
       connected: true,
+      capitalTerritoryId: undefined,
+      isCapitalLost: false,
+      economicPenaltyMultiplier: 1.0,
+      moralePenalty: 0,
     };
   });
 
@@ -367,6 +393,21 @@ export function applyAction(
       break;
     }
 
+    case "select_capital": {
+      if (state.phase !== "deploy") {
+        throw new Error("A capital só pode ser selecionada durante a fase de posicionamento.");
+      }
+      const terr = state.territories[action.territoryId];
+      if (!terr || terr.ownerId !== playerId) {
+        throw new Error("Você só pode estabelecer a capital em um território sob seu controle.");
+      }
+      currentPlayer.capitalTerritoryId = action.territoryId;
+      currentPlayer.isCapitalLost = false;
+      const tName = mapById.get(terr.id)?.namePt ?? terr.id;
+      state.log.push(`⭐ ${currentPlayer.name} estabeleceu ${tName} como sua Capital Nacional!`);
+      break;
+    }
+
     case "deploy": {
       if (state.phase !== "deploy") {
         throw new Error("Ação de posicionar só é permitida na fase de posicionamento.");
@@ -380,6 +421,14 @@ export function applyAction(
       }
       if (action.armies > currentPlayer.unplacedArmies) {
         throw new Error("Quantidade de exércitos superior ao disponível para posicionar.");
+      }
+
+      // If capital has not been explicitly chosen yet, establish this territory as capital
+      if (!currentPlayer.capitalTerritoryId) {
+        currentPlayer.capitalTerritoryId = terr.id;
+        currentPlayer.isCapitalLost = false;
+        const capName = mapById.get(terr.id)?.namePt ?? terr.id;
+        state.log.push(`⭐ ${currentPlayer.name} estabeleceu ${capName} como sua Capital Nacional!`);
       }
 
       terr.armies += action.armies;
@@ -438,16 +487,25 @@ export function applyAction(
         (a, b) => b - a
       );
 
+      const defenderPlayer = state.players.find((p) => p.id === toTerr.ownerId);
+      const isDefendingCapital =
+        defenderPlayer?.capitalTerritoryId === toTerr.id &&
+        toTerr.ownerId === defenderPlayer.id;
+
       let attackerLosses = 0;
       let defenderLosses = 0;
       const comparisons = Math.min(attackerDice.length, defenderDice.length);
+      let capitalTiesDefended = 0;
 
       for (let i = 0; i < comparisons; i++) {
-        // Defender wins ties!
+        // Defender wins ties! In capital defense, ties are especially held by fortress walls
         if (attackerDice[i] > defenderDice[i]) {
           defenderLosses++;
         } else {
           attackerLosses++;
+          if (attackerDice[i] === defenderDice[i] && isDefendingCapital) {
+            capitalTiesDefended++;
+          }
         }
       }
 
@@ -469,13 +527,48 @@ export function applyAction(
 
       const fromName = fromDef.namePt;
       const toName = mapById.get(toTerr.id)!.namePt;
+      const capitalCombatTag = isDefendingCapital
+        ? ` [⭐ Capital Fortificada${capitalTiesDefended > 0 ? ` (+${capitalTiesDefended} empates resistidos)` : ""}]`
+        : "";
       state.log.push(
-        `Combate ${fromName} [${attackerDice.join(",")}] vs ${toName} [${defenderDice.join(",")}] → baixas ATQ:${attackerLosses} DEF:${defenderLosses}`
+        `Combate ${fromName} [${attackerDice.join(",")}] vs ${toName}${capitalCombatTag} [${defenderDice.join(",")}] → baixas ATQ:${attackerLosses} DEF:${defenderLosses}`
       );
 
       if (conquered) {
         toTerr.ownerId = playerId;
         currentPlayer.conqueredThisTurn = true;
+
+        // Check if player recaptured their own previously lost capital
+        if (currentPlayer.capitalTerritoryId === toTerr.id && currentPlayer.isCapitalLost) {
+          currentPlayer.isCapitalLost = false;
+          currentPlayer.economicPenaltyMultiplier = 1.0;
+          state.log.push(
+            `🎖️ CAPITAL RESTAURADA! ${currentPlayer.name} reconquistou sua Capital Nacional em ${toName}!`
+          );
+        }
+
+        // HEGEM-24: Golpe de Decapitação when conquering an opponent's capital
+        if (isDefendingCapital && defenderPlayer) {
+          defenderPlayer.isCapitalLost = true;
+          defenderPlayer.capitalLostTurn = state.round;
+          defenderPlayer.economicPenaltyMultiplier = 0.5;
+          defenderPlayer.moralePenalty = 2;
+
+          let stolenCardNotice = "";
+          if (defenderPlayer.cards.length > 0) {
+            const cardIdx = rng.nextInt(0, defenderPlayer.cards.length - 1);
+            const [stolenCard] = defenderPlayer.cards.splice(cardIdx, 1);
+            currentPlayer.cards.push(stolenCard);
+            const cardName = stolenCard.territoryId
+              ? (mapById.get(stolenCard.territoryId)?.namePt ?? stolenCard.territoryId)
+              : "Coringa";
+            stolenCardNotice = ` e confiscou 1 carta de território (${cardName})`;
+          }
+
+          state.log.push(
+            `💥 GOLPE DE DECAPITAÇÃO! ${currentPlayer.name} capturou a Capital ${toName} de ${defenderPlayer.name}! (${defenderPlayer.name} sofre -2 divisões de moral no próximo turno${stolenCardNotice})`
+          );
+        }
 
         const maxMove = Math.min(attackerDiceCount, fromTerr.armies - 1);
         const minMove = 1;
@@ -647,10 +740,31 @@ function advanceTurn(state: GameState, rng: SeededRng, map: GameMapDef): void {
     if (!candidate.eliminated) {
       state.turnIndex = nextIdx;
       state.phase = "deploy";
+
+      // 5-Round National Reorganization after losing capital
+      if (
+        candidate.isCapitalLost &&
+        candidate.capitalLostTurn !== undefined &&
+        state.round - candidate.capitalLostTurn >= 5
+      ) {
+        candidate.isCapitalLost = false;
+        candidate.capitalTerritoryId = undefined; // Clears the fallen capital status and allows choosing a new one
+        candidate.economicPenaltyMultiplier = 1.0;
+        state.log.push(
+          `🏛️ REORGANIZAÇÃO NACIONAL: ${candidate.name} reorganizou seu governo 5 rodadas após a queda de sua capital e pode agora estabelecer uma nova Capital de Comando!`
+        );
+      }
+
       const reinf = calculateTurnReinforcements(state, candidate.id, map);
       candidate.unplacedArmies = reinf.total;
+      if (candidate.moralePenalty && candidate.moralePenalty > 0) {
+        // One-turn penalty applied; clear penalty for subsequent turns
+        candidate.moralePenalty = 0;
+      }
+      const capTag = reinf.capitalBonus > 0 ? " (+1 bônus Capital)" : "";
+      const penTag = reinf.moralePenalty > 0 ? ` (-${reinf.moralePenalty} penalidade moral)` : "";
       state.log.push(
-        `Turno de ${candidate.name} (Rodada ${state.round}): +${reinf.total} exércitos.`
+        `Turno de ${candidate.name} (Rodada ${state.round}): +${reinf.total} exércitos${capTag}${penTag}.`
       );
       break;
     }
