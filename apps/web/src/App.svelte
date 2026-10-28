@@ -89,6 +89,7 @@
 
   // Map Rendering Mode: "cartographic" (HOI4 physical satellite relief + borders), "geopolitical" (Crisp War colors), or "regional" (Continents & Sub-Regions)
   let mapMode = $state<"cartographic" | "geopolitical" | "regional">("cartographic");
+  let cleanMapMode = $state(false);
 
   const REGION_COLOR_HEX: Record<string, string> = {
     south_america: "#10b981",
@@ -375,6 +376,9 @@
     } else if (e.key === "F3" || k === "3") {
       e.preventDefault();
       mapMode = "regional";
+    } else if (k === "h" || e.key === "F4") {
+      e.preventDefault();
+      cleanMapMode = !cleanMapMode;
     } else if (e.key === "Escape") {
       selectedFromId = null;
       selectedToId = null;
@@ -660,6 +664,11 @@
     <!-- FULLSCREEN CONTINUOUS WRAPAROUND GEOPOLITICAL & CARTOGRAPHIC MAP (UNTOUCHED) -->
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div class="map-viewport" onwheel={onWheel} onmousedown={onMouseDown}>
+      {#if cleanMapMode}
+        <div class="clean-map-indicator">
+          <span>🗺️ Visão Limpa Ativa — Pressione <strong>H</strong> ou <strong>F4</strong> para restaurar marcadores</span>
+        </div>
+      {/if}
       <svg
         viewBox="0 0 {MAP_WIDTH} {MAP_HEIGHT}"
         preserveAspectRatio="xMidYMid slice"
@@ -783,6 +792,9 @@
                   territoryById.get(selectedFromId)?.neighbors.includes(t.id) &&
                   ((game.phase === "attack" && tState.ownerId !== myPlayerId) ||
                     (game.phase === "maneuver" && tState.ownerId === myPlayerId))}
+                {@const isCapital = owner?.capitalTerritoryId === t.id}
+                {@const originalCapitalOwner = game.players.find((p) => p.capitalTerritoryId === t.id)}
+                {@const isFallenCapital = originalCapitalOwner && originalCapitalOwner.id !== tState.ownerId}
 
                 <!-- svelte-ignore a11y_click_events_have_key_events -->
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -834,83 +846,107 @@
                     />
                   {/if}
 
-                  <!-- HOI4-STYLE MILITARY DIVISION COUNTER (COMPACT FLAG + TROOP COUNT) -->
-                  <g
-                    transform="translate({t.center[0]}, {t.center[1]}) scale({COMPACT_BADGE_IDS.has(t.id) ? 0.82 : 0.94})"
-                    class="division-counter"
-                  >
-                    <rect
-                      x="-13"
-                      y="-6.5"
-                      width="26"
-                      height="13"
-                      rx="2.2"
-                      fill="#090e1a"
-                      stroke={isSelected ? "#ffffff" : isValidTarget ? "#facc15" : ownerColor}
-                      stroke-width={isSelected || isValidTarget ? "1.6" : "1.1"}
-                      filter="drop-shadow(0 1.5px 3px rgba(0,0,0,0.85))"
-                    />
-                    <!-- Mini Faction Flag inside Left Half of Counter -->
-                    {#if owner}
-                      <g transform="translate(-11.2, -4.5) scale(0.75)">
-                        {#if owner.color === "blue"}
-                          <rect width="13" height="12" fill="#1d4ed8" />
-                          <polygon points="6.5,2 8,5 11,6 8,7 6.5,10 5,7 2,6 5,5" fill="#f8fafc" />
-                        {:else if owner.color === "red"}
-                          <rect width="13" height="12" fill="#b91c1c" />
-                          <polygon points="6.5,2.5 9.5,6 6.5,9.5 3.5,6" fill="#facc15" />
-                        {:else if owner.color === "green"}
-                          <rect width="13" height="12" fill="#047857" />
-                          <polygon points="0,0 6,6 0,12" fill="#fcd34d" />
-                        {:else if owner.color === "yellow"}
-                          <rect width="13" height="12" fill="#d97706" />
-                          <circle cx="6.5" cy="6" r="2.8" fill="#fef08a" />
-                        {:else if owner.color === "black"}
-                          <rect width="13" height="12" fill="#1e293b" />
-                          <path d="M0,6 H13 M6.5,0 V12" stroke="#e2e8f0" stroke-width="2" />
-                        {:else}
-                          <rect width="13" height="12" fill="#e2e8f0" />
-                          <path d="M0,6 H13 M5,0 V12" stroke="#1e293b" stroke-width="2.2" />
-                        {/if}
-                      </g>
-                    {/if}
-                    <!-- Divider Line -->
-                    <line x1="-0.8" y1="-5.8" x2="-0.8" y2="5.8" stroke="rgba(148, 163, 184, 0.35)" stroke-width="0.7" />
-                    <!-- Crisp Troop Count -->
-                    <text
-                      x="6"
-                      y="0.4"
-                      text-anchor="middle"
-                      dominant-baseline="central"
-                      fill="#ffffff"
-                      font-size="8.2"
-                      font-weight="800"
-                      font-family="system-ui, -apple-system, sans-serif"
-                      pointer-events="none"
+                  {#if !cleanMapMode}
+                    <!-- HOI4-STYLE MILITARY DIVISION COUNTER (COMPACT FLAG + TROOP COUNT) -->
+                    <g
+                      transform="translate({t.center[0]}, {t.center[1]}) scale({COMPACT_BADGE_IDS.has(t.id) ? 0.82 : 0.94})"
+                      class="division-counter"
                     >
-                      {tState.armies}
-                    </text>
+                      <!-- Capital Crown / Golden Star Crest -->
+                      {#if isCapital}
+                        <g transform="translate(0, -10.2)">
+                          <circle cx="0" cy="0" r="4.2" fill="#090e1a" stroke="#f59e0b" stroke-width="1.3" />
+                          <polygon points="0,-3.2 0.95,-0.9 3.2,-0.9 1.4,0.4 2.1,2.6 0,1.3 -2.1,2.6 -1.4,0.4 -3.2,-0.9 -0.95,-0.9" fill="#facc15" />
+                        </g>
+                      {:else if isFallenCapital}
+                        <g transform="translate(0, -10.2)">
+                          <circle cx="0" cy="0" r="4.2" fill="#090e1a" stroke="#ef4444" stroke-width="1.3" />
+                          <polygon points="0,-3.2 0.95,-0.9 3.2,-0.9 1.4,0.4 2.1,2.6 0,1.3 -2.1,2.6 -1.4,0.4 -3.2,-0.9 -0.95,-0.9" fill="#94a3b8" />
+                          <line x1="-2.8" y1="-2.8" x2="2.8" y2="2.8" stroke="#ef4444" stroke-width="1.2" />
+                        </g>
+                      {/if}
 
-                    <!-- Territory Label Underneath Counter -->
-                    <text
-                      x="0"
-                      y="11.2"
-                      text-anchor="middle"
-                      fill="#e2e8f0"
-                      font-size="6.2"
-                      font-weight="700"
-                      letter-spacing="0.01em"
-                      pointer-events="none"
-                      style="paint-order: stroke; stroke: #050912; stroke-width: 2.4px; stroke-linejoin: round;"
-                    >
-                      {t.namePt}
-                    </text>
-                  </g>
+                      <rect
+                        x="-13"
+                        y="-6.5"
+                        width="26"
+                        height="13"
+                        rx="2.2"
+                        fill="#090e1a"
+                        stroke={isCapital
+                          ? "#f59e0b"
+                          : isFallenCapital
+                            ? "#ef4444"
+                            : isSelected
+                              ? "#ffffff"
+                              : isValidTarget
+                                ? "#facc15"
+                                : ownerColor}
+                        stroke-width={isCapital || isFallenCapital ? "1.6" : isSelected || isValidTarget ? "1.6" : "1.1"}
+                        filter="drop-shadow(0 1.5px 3px rgba(0,0,0,0.85))"
+                      />
+                      <!-- Mini Faction Flag inside Left Half of Counter -->
+                      {#if owner}
+                        <g transform="translate(-11.2, -4.5) scale(0.75)">
+                          {#if owner.color === "blue"}
+                            <rect width="13" height="12" fill="#1d4ed8" />
+                            <polygon points="6.5,2 8,5 11,6 8,7 6.5,10 5,7 2,6 5,5" fill="#f8fafc" />
+                          {:else if owner.color === "red"}
+                            <rect width="13" height="12" fill="#b91c1c" />
+                            <polygon points="6.5,2.5 9.5,6 6.5,9.5 3.5,6" fill="#facc15" />
+                          {:else if owner.color === "green"}
+                            <rect width="13" height="12" fill="#047857" />
+                            <polygon points="0,0 6,6 0,12" fill="#fcd34d" />
+                          {:else if owner.color === "yellow"}
+                            <rect width="13" height="12" fill="#d97706" />
+                            <circle cx="6.5" cy="6" r="2.8" fill="#fef08a" />
+                          {:else if owner.color === "black"}
+                            <rect width="13" height="12" fill="#1e293b" />
+                            <path d="M0,6 H13 M6.5,0 V12" stroke="#e2e8f0" stroke-width="2" />
+                          {:else}
+                            <rect width="13" height="12" fill="#e2e8f0" />
+                            <path d="M0,6 H13 M5,0 V12" stroke="#1e293b" stroke-width="2.2" />
+                          {/if}
+                        </g>
+                      {/if}
+                      <!-- Divider Line -->
+                      <line x1="-0.8" y1="-5.8" x2="-0.8" y2="5.8" stroke="rgba(148, 163, 184, 0.35)" stroke-width="0.7" />
+                      <!-- Crisp Troop Count -->
+                      <text
+                        x="6"
+                        y="0.4"
+                        text-anchor="middle"
+                        dominant-baseline="central"
+                        fill="#ffffff"
+                        font-size="8.2"
+                        font-weight="800"
+                        font-family="system-ui, -apple-system, sans-serif"
+                        pointer-events="none"
+                      >
+                        {tState.armies}
+                      </text>
+
+                      <!-- Territory Label Underneath Counter -->
+                      <text
+                        x="0"
+                        y="11.2"
+                        text-anchor="middle"
+                        fill={isCapital ? "#fde047" : "#e2e8f0"}
+                        font-size="6.2"
+                        font-weight="700"
+                        letter-spacing="0.01em"
+                        pointer-events="none"
+                        style="paint-order: stroke; stroke: #050912; stroke-width: 2.4px; stroke-linejoin: round;"
+                      >
+                        {isCapital ? `⭐ ${t.namePt}` : t.namePt}
+                      </text>
+                    </g>
+                  {/if}
                 </g>
               {/each}
 
               <!-- Floating Regional & Sub-Regional Theatre Banners in "regional" Map Mode -->
-              {#if mapMode === "regional"}
+              {#if mapMode === "regional" && !cleanMapMode}
                 {#each REGION_BANNERS as rb}
                   <g transform="translate({rb.x}, {rb.y})" pointer-events="none">
                     <rect
@@ -1195,6 +1231,14 @@
             >
               Regional
             </button>
+            <button
+              class="mode-btn clean-mode-tab"
+              class:active={cleanMapMode}
+              onclick={() => (cleanMapMode = !cleanMapMode)}
+              title="Alternar Visão Limpa do Mapa (Ocultar Tropas e Rótulos - Tecla H / F4)"
+            >
+              {cleanMapMode ? "👁️ Visão Limpa [H]" : "👁️ Modo Limpo [H]"}
+            </button>
           </div>
 
           <div class="zoom-cluster">
@@ -1359,6 +1403,16 @@
               <strong>{inspectedTerritory.def.namePt}</strong>
               <span class="recon-garrison">{inspectedTerritory.state.armies} DIV</span>
             </div>
+            {#if inspectedTerritory.owner?.capitalTerritoryId === inspectedTerritory.def.id}
+              <div class="recon-capital-tag gold">
+                ⭐ CAPITAL NACIONAL (+1 Divisão/Turno • Fortificação Defensiva)
+              </div>
+            {:else if game.players.some((p) => p.capitalTerritoryId === inspectedTerritory.def.id)}
+              {@const origOwner = game.players.find((p) => p.capitalTerritoryId === inspectedTerritory.def.id)}
+              <div class="recon-capital-tag red">
+                ⚠️ CAPITAL CAPTURADA ({origOwner?.name})
+              </div>
+            {/if}
             <div class="recon-meta">
               <span>{inspectedTerritory.regionName}</span>
               <span>•</span>
@@ -1374,7 +1428,7 @@
           <span>•</span>
           <span>Q / E / Scroll: Zoom</span>
           <span>•</span>
-          <span>F1-F3: Modos de Mapa</span>
+          <span>F1-F3: Modos • H: Mapa Limpo</span>
         </div>
       </div>
 
@@ -1439,6 +1493,15 @@
                 </div>
                 <div class="slider-row">
                   <input type="range" min="1" max={maxD} bind:value={sliderArmies} />
+                  {#if !myPlayerState?.capitalTerritoryId}
+                    <button
+                      class="btn secondary-btn select-cap-btn"
+                      title="Definir este território como sua Capital Nacional de Comando"
+                      onclick={() => sendAction({ type: "select_capital", territoryId: selectedFromId })}
+                    >
+                      ⭐ Definir Capital
+                    </button>
+                  {/if}
                   <button class="btn primary-gold" onclick={confirmDeploy}>
                     Confirmar +{sliderArmies} Divisões
                   </button>
@@ -2038,6 +2101,34 @@
     background: linear-gradient(135deg, #ca8a04, #a16207);
     color: #ffffff;
   }
+  .mode-btn.clean-mode-tab {
+    border-left: 1px solid rgba(148, 163, 184, 0.25);
+    margin-left: 0.15rem;
+    padding-left: 0.45rem;
+    color: #38bdf8;
+  }
+  .mode-btn.clean-mode-tab.active {
+    background: linear-gradient(135deg, #0284c7, #0369a1);
+    color: #ffffff;
+  }
+  .clean-map-indicator {
+    position: absolute;
+    top: 4.8rem;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(6, 11, 21, 0.9);
+    border: 1px solid rgba(56, 189, 248, 0.5);
+    color: #e0f2fe;
+    padding: 0.35rem 0.9rem;
+    border-radius: 20px;
+    font-size: 0.72rem;
+    font-weight: 600;
+    pointer-events: none;
+    z-index: 10;
+    box-shadow: 0 4px 18px rgba(0, 0, 0, 0.65);
+    letter-spacing: 0.02em;
+    backdrop-filter: blur(4px);
+  }
   .zoom-cluster {
     display: flex;
     gap: 0.2rem;
@@ -2269,6 +2360,37 @@
     border: 1px solid rgba(234, 179, 8, 0.4);
     padding: 1px 6px;
     border-radius: 3px;
+  }
+  .recon-capital-tag {
+    font-size: 0.65rem;
+    font-weight: 700;
+    padding: 2px 6px;
+    border-radius: 3px;
+    letter-spacing: 0.02em;
+    display: inline-flex;
+    align-items: center;
+    width: fit-content;
+  }
+  .recon-capital-tag.gold {
+    background: rgba(234, 179, 8, 0.15);
+    color: #fde047;
+    border: 1px solid rgba(234, 179, 8, 0.45);
+  }
+  .recon-capital-tag.red {
+    background: rgba(239, 68, 68, 0.15);
+    color: #fca5a5;
+    border: 1px solid rgba(239, 68, 68, 0.45);
+  }
+  .select-cap-btn {
+    white-space: nowrap;
+    background: rgba(234, 179, 8, 0.2);
+    border: 1px solid rgba(234, 179, 8, 0.6);
+    color: #fef08a;
+    font-size: 0.75rem;
+    padding: 0.35rem 0.6rem;
+  }
+  .select-cap-btn:hover {
+    background: rgba(234, 179, 8, 0.35);
   }
   .recon-meta {
     display: flex;

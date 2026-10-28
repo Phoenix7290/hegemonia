@@ -1,5 +1,15 @@
 import { Pool, type PoolClient, type QueryResult, type QueryResultRow } from "pg";
 
+try {
+  process.loadEnvFile?.();
+} catch {
+  try {
+    process.loadEnvFile?.("../../.env");
+  } catch {
+    // Process env already set externally
+  }
+}
+
 const databaseUrl = process.env.DATABASE_URL;
 
 if (!databaseUrl) {

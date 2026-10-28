@@ -1,6 +1,16 @@
 import { fileURLToPath } from "node:url";
 import { runner } from "node-pg-migrate";
 
+try {
+  process.loadEnvFile?.();
+} catch {
+  try {
+    process.loadEnvFile?.("../../.env");
+  } catch {
+    // Process env already set externally
+  }
+}
+
 const databaseUrl = process.env.MIGRATION_DATABASE_URL ?? process.env.DATABASE_URL;
 if (!databaseUrl) {
   throw new Error("MIGRATION_DATABASE_URL ou DATABASE_URL é obrigatório.");

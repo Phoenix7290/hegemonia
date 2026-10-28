@@ -276,4 +276,133 @@ describe("War Classic Rules Engine", () => {
     state.territories["mongolia"].ownerId = "p1";
     expect(checkPlayerVictory(state, "p1")).toBe(true);
   });
+
+  it("strictly prevents assigning roleplay objective if player has none of its core territories", () => {
+    // Run 50 simulated games with arbitrary seeds
+    for (let seed = 100; seed < 150; seed++) {
+      const game = createGame({
+        roomCode: `TEST_${seed}`,
+        players: [
+          { id: "p1", name: "Alpha", color: "blue" },
+          { id: "p2", name: "Bravo", color: "red" },
+          { id: "p3", name: "Charlie", color: "green" },
+        ],
+        seed,
+      });
+
+      for (const p of game.players) {
+        if (p.objective.coreTerritoryIds && p.objective.coreTerritoryIds.length > 0) {
+          const playerTerritories = Object.values(game.territories)
+            .filter((t) => t.ownerId === p.id)
+            .map((t) => t.id);
+          const hasAtLeastOneCore = p.objective.coreTerritoryIds.some((c) =>
+            playerTerritories.includes(c)
+          );
+          expect(hasAtLeastOneCore).toBe(true);
+        }
+      }
+    }
+  });
+
+  it("handles Capital assignment, +1 turn reinforcement bonus, and fortress tie defense (HEGEM-23)", () => {
+    const rng = createSeededRng("capital-test-seed-1");
+    let state = createGame({
+      id: "cap_match_1",
+      seed: "cap-test-seed-1",
+      players: [
+        { id: "p1", name: "General Azul", color: "blue" },
+        { id: "p2", name: "General Vermelho", color: "red" },
+      ],
+    });
+
+    const activePlayer = state.players[state.turnIndex];
+    const playerTerritories = Object.values(state.territories).filter((t) => t.ownerId === activePlayer.id);
+    const chosenTerritory = playerTerritories[0].id;
+
+    // 1. Explicitly select capital
+    state = applyAction(state, activePlayer.id, { type: "select_capital", territoryId: chosenTerritory }, rng);
+    const updatedPlayer = state.players.find((p) => p.id === activePlayer.id)!;
+    expect(updatedPlayer.capitalTerritoryId).toBe(chosenTerritory);
+    expect(updatedPlayer.isCapitalLost).toBe(false);
+
+    // 2. Check turn reinforcements calculation
+    const reinf = calculateTurnReinforcements(state, activePlayer.id);
+    expect(reinf.capitalBonus).toBe(1);
+    expect(reinf.total).toBe(reinf.baseArmies + reinf.continentBonus + 1);
+
+    // 3. If capital is not owned, capitalBonus must be 0
+    state.territories[chosenTerritory].ownerId = "other_player";
+    const reinfWithoutCap = calculateTurnReinforcements(state, activePlayer.id);
+    expect(reinfWithoutCap.capitalBonus).toBe(0);
+  });
+
+  it("triggers decapitation strike with morale penalty and economic flags upon capital capture (HEGEM-24)", () => {
+    const rng = createSeededRng("decapitation-test-seed");
+    let state = createGame({
+      id: "decap_match",
+      seed: "decap-seed",
+      players: [
+        { id: "p1", name: "General Azul", color: "blue" },
+        { id: "p2", name: "General Vermelho", color: "red" },
+      ],
+    });
+
+    const attacker = state.players[state.turnIndex];
+    const defender = state.players.find((p) => p.id !== attacker.id)!;
+
+    // Setup adjacent combat: attacker attacks defender's capital at argentina from brasil
+    state.round = 2; // Allow attack
+    state.phase = "attack";
+    attacker.unplacedArmies = 0;
+
+    state.territories["brasil"].ownerId = attacker.id;
+    state.territories["brasil"].armies = 20;
+
+    state.territories["argentina"].ownerId = defender.id;
+    state.territories["argentina"].armies = 1;
+
+    defender.capitalTerritoryId = "argentina";
+    defender.isCapitalLost = false;
+    defender.cards = [{ id: "card_argentina", territoryId: "argentina", symbol: "circle" }];
+    const attackerInitialCardCount = attacker.cards.length;
+
+    // Attack argentina until conquered
+    while (state.territories["argentina"].ownerId !== attacker.id) {
+      state = applyAction(
+        state,
+        attacker.id,
+        { type: "attack", fromTerritoryId: "brasil", toTerritoryId: "argentina", diceCount: 3 },
+        rng
+      );
+    }
+
+    const updatedDefender = state.players.find((p) => p.id === defender.id)!;
+    const updatedAttacker = state.players.find((p) => p.id === attacker.id)!;
+    expect(updatedDefender.isCapitalLost).toBe(true);
+    expect(updatedDefender.moralePenalty).toBe(2);
+    expect(updatedDefender.economicPenaltyMultiplier).toBe(0.5);
+
+    // Defender lost 1 card, attacker gained 1 card
+    expect(updatedDefender.cards.length).toBe(0);
+    expect(updatedAttacker.cards.length).toBe(attackerInitialCardCount + 1);
+
+    // Check that defender's reinforcements reflect the -2 morale penalty
+    const defenderReinf = calculateTurnReinforcements(state, defender.id);
+    expect(defenderReinf.moralePenalty).toBe(2);
+    expect(defenderReinf.capitalBonus).toBe(0);
+
+    // Complete pending conquest if any, end attack, end turn, advance rounds to test 5-round reorganization
+    if (state.pendingConquest) {
+      state = applyAction(state, attacker.id, { type: "occupy", armies: state.pendingConquest.minMove }, rng);
+    }
+    state.round = 7; // 2 + 5 = 7
+    state = applyAction(state, attacker.id, { type: "end_attack" }, rng);
+    state = applyAction(state, attacker.id, { type: "end_turn" }, rng);
+
+    // Defender turn starts: reorganization triggers
+    const reorganizedDefender = state.players.find((p) => p.id === defender.id)!;
+    expect(reorganizedDefender.isCapitalLost).toBe(false);
+    expect(reorganizedDefender.capitalTerritoryId).toBeUndefined();
+    expect(reorganizedDefender.economicPenaltyMultiplier).toBe(1.0);
+  });
 });
