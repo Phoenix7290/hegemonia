@@ -21,7 +21,10 @@ export interface CommunicationRosterPlayer {
   avatarUrl?: string | null;
 }
 
+export type ChatPanelSize = "normal" | "large" | "expanded";
+
 export interface CommunicationSettings {
+  chatSize: ChatPanelSize;
   showAvatars: boolean;
   showTimestamps: boolean;
   enterToSend: boolean;
@@ -34,6 +37,7 @@ export interface CommunicationSettings {
 }
 
 const DEFAULT_SETTINGS: CommunicationSettings = {
+  chatSize: "normal",
   showAvatars: true,
   showTimestamps: true,
   enterToSend: true,
@@ -51,7 +55,12 @@ function loadSettings(): CommunicationSettings {
   if (typeof localStorage === "undefined") return { ...DEFAULT_SETTINGS };
   try {
     const saved = JSON.parse(localStorage.getItem(SETTINGS_KEY) ?? "{}") as Partial<CommunicationSettings>;
+    const validSizes: ChatPanelSize[] = ["normal", "large", "expanded"];
     return {
+      chatSize:
+        saved.chatSize && validSizes.includes(saved.chatSize)
+          ? saved.chatSize
+          : DEFAULT_SETTINGS.chatSize,
       showAvatars: saved.showAvatars ?? DEFAULT_SETTINGS.showAvatars,
       showTimestamps: saved.showTimestamps ?? DEFAULT_SETTINGS.showTimestamps,
       enterToSend: saved.enterToSend ?? DEFAULT_SETTINGS.enterToSend,
@@ -278,6 +287,13 @@ export class CommunicationsController {
     this.settings = { ...this.settings, ...patch };
     localStorage.setItem(SETTINGS_KEY, JSON.stringify(this.settings));
     this.applyRadioSettings();
+  }
+
+  cycleChatSize(): void {
+    const order: ChatPanelSize[] = ["normal", "large", "expanded"];
+    const idx = order.indexOf(this.settings.chatSize);
+    const next = order[(idx + 1) % order.length];
+    this.updateSettings({ chatSize: next });
   }
 
   async refreshMicrophones(): Promise<void> {

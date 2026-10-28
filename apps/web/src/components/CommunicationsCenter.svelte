@@ -90,7 +90,11 @@
 
 <svelte:window onkeydown={globalKeydown} onkeyup={globalKeyup} />
 
-<section class="communications-center" class:compact aria-label="Centro de comunicações">
+<section
+  class="communications-center size-{controller.settings.chatSize}"
+  class:compact={compact && controller.settings.chatSize === "normal"}
+  aria-label="Centro de comunicações"
+>
   <header class="comms-toolbar">
     <div class="channel-tabs" role="tablist" aria-label="Frequências abertas">
       {#each controller.openTabIds as channelId (channelId)}
@@ -154,6 +158,15 @@
           </div>
         {/if}
       </div>
+      <button
+        class="toolbar-button"
+        class:active={controller.settings.chatSize !== "normal"}
+        onclick={() => controller.cycleChatSize()}
+        aria-label="Alternar tamanho do chat"
+        title={`Tamanho do chat: ${controller.settings.chatSize === "normal" ? "Padrão" : controller.settings.chatSize === "large" ? "Grande" : "Expandido"} (clique para alternar)`}
+      >
+        <Icon name={controller.settings.chatSize === "expanded" ? "minimize" : "expand"} size={13} />
+      </button>
       <button
         class="toolbar-button"
         onclick={() => (settingsOpen = true)}
@@ -664,6 +677,78 @@
   .compact .radio-identity small { display: none; }
   .compact .channel-status-line small { display: none; }
   .compact .messages-scroller { min-height: 90px; }
+
+  /* Size: Large */
+  .communications-center.size-large .channel-select {
+    font-size: 0.74rem;
+    max-width: 165px;
+    padding: 5px 8px;
+  }
+  .communications-center.size-large .channel-tab {
+    max-width: 185px;
+  }
+  .communications-center.size-large .sender-name {
+    font-size: 0.75rem;
+  }
+  .communications-center.size-large .message-body p {
+    font-size: 0.79rem;
+    line-height: 1.42;
+  }
+  .communications-center.size-large .intel-message p {
+    font-size: 0.74rem;
+  }
+  .communications-center.size-large textarea {
+    font-size: 0.78rem;
+    min-height: 40px;
+  }
+  .communications-center.size-large .send-button {
+    min-height: 40px;
+    font-size: 0.7rem;
+    padding: 6px 11px;
+  }
+
+  /* Size: Expanded */
+  .communications-center.size-expanded .channel-select {
+    font-size: 0.78rem;
+    max-width: 195px;
+    padding: 6px 10px;
+  }
+  .communications-center.size-expanded .channel-tab {
+    max-width: 220px;
+  }
+  .communications-center.size-expanded .chat-message {
+    padding: 8px 10px;
+    gap: 10px;
+  }
+  .communications-center.size-expanded .chat-message > :global(.avatar) {
+    width: 32px;
+    height: 32px;
+    font-size: 0.65rem;
+  }
+  .communications-center.size-expanded .sender-name {
+    font-size: 0.82rem;
+  }
+  .communications-center.size-expanded time {
+    font-size: 0.62rem;
+  }
+  .communications-center.size-expanded .message-body p {
+    font-size: 0.86rem;
+    line-height: 1.46;
+  }
+  .communications-center.size-expanded .intel-message p {
+    font-size: 0.78rem;
+  }
+  .communications-center.size-expanded textarea {
+    font-size: 0.84rem;
+    min-height: 44px;
+    padding: 8px 10px;
+  }
+  .communications-center.size-expanded .send-button {
+    min-height: 44px;
+    font-size: 0.74rem;
+    padding: 7px 13px;
+  }
+
   @media (max-width: 520px) {
     .radio-identity small, .voice-participants, .send-button span { display: none; }
     .channel-status-line small { display: none; }

@@ -16,6 +16,15 @@
     void controller.refreshMicrophones();
   });
 
+  function portal(node: HTMLElement) {
+    document.body.appendChild(node);
+    return {
+      destroy() {
+        node.remove();
+      },
+    };
+  }
+
   function keyLabel(code: string): string {
     if (code.startsWith("Key")) return code.slice(3);
     if (code.startsWith("Digit")) return code.slice(5);
@@ -23,7 +32,12 @@
   }
 
   function captureKey(event: KeyboardEvent): void {
-    if (!capturingKey) return;
+    if (!capturingKey) {
+      if (event.key === "Escape") {
+        onClose();
+      }
+      return;
+    }
     event.preventDefault();
     event.stopPropagation();
     if (event.code === "Escape") {
@@ -33,11 +47,18 @@
     controller.updateSettings({ pushToTalkKey: event.code });
     capturingKey = false;
   }
+
+  function handleBackdropClick(event: MouseEvent): void {
+    if (event.target === event.currentTarget) {
+      onClose();
+    }
+  }
 </script>
 
 <svelte:window onkeydown={captureKey} />
 
-<div class="settings-layer" role="presentation">
+<!-- svelte-ignore a11y_click_events_have_key_events -->
+<div class="settings-layer" use:portal role="presentation" onclick={handleBackdropClick}>
   <div class="settings-dialog" role="dialog" aria-modal="true" aria-labelledby="comms-settings-title">
     <header class="settings-header">
       <div>
@@ -52,6 +73,37 @@
     <div class="settings-content">
       <section class="settings-section">
         <h4>Interface & Notificações</h4>
+
+        <div class="field-block size-field-block">
+          <div class="size-field-header">
+            <span class="field-label">Tamanho do painel de chat</span>
+            <small>Amplia a janela de comunicações e a leitura das mensagens.</small>
+          </div>
+          <div class="segmented-control">
+            <button
+              type="button"
+              class:active={controller.settings.chatSize === "normal"}
+              onclick={() => controller.updateSettings({ chatSize: "normal" })}
+            >
+              Padrão
+            </button>
+            <button
+              type="button"
+              class:active={controller.settings.chatSize === "large"}
+              onclick={() => controller.updateSettings({ chatSize: "large" })}
+            >
+              Grande
+            </button>
+            <button
+              type="button"
+              class:active={controller.settings.chatSize === "expanded"}
+              onclick={() => controller.updateSettings({ chatSize: "expanded" })}
+            >
+              Expandido
+            </button>
+          </div>
+        </div>
+
         <label class="toggle-row">
           <span><strong>Fotos dos comandantes</strong><small>Exibe avatar ou iniciais nas abas e mensagens.</small></span>
           <input
@@ -100,12 +152,14 @@
           <span class="field-label">Modo de transmissão</span>
           <div class="segmented-control">
             <button
+              type="button"
               class:active={controller.settings.pushToTalk}
               onclick={() => controller.updateSettings({ pushToTalk: true })}
             >
               Pressionar para falar
             </button>
             <button
+              type="button"
               class:active={!controller.settings.pushToTalk}
               onclick={() => controller.updateSettings({ pushToTalk: false })}
             >
@@ -117,7 +171,7 @@
         {#if controller.settings.pushToTalk}
           <div class="key-row">
             <span><strong>Tecla de transmissão</strong><small>Também é possível segurar o botão do rádio.</small></span>
-            <button class:capturing={capturingKey} class="key-capture" onclick={() => (capturingKey = true)}>
+            <button type="button" class:capturing={capturingKey} class="key-capture" onclick={() => (capturingKey = true)}>
               {capturingKey ? "Pressione uma tecla..." : keyLabel(controller.settings.pushToTalkKey)}
             </button>
           </div>
@@ -157,7 +211,7 @@
 
     <footer class="settings-footer">
       <span>Preferências salvas automaticamente neste navegador.</span>
-      <button class="primary-button" onclick={onClose}>Concluir</button>
+      <button type="button" class="primary-button" onclick={onClose}>Concluir</button>
     </footer>
   </div>
 </div>
@@ -166,16 +220,17 @@
   .settings-layer {
     position: fixed;
     inset: 0;
-    z-index: 300;
+    z-index: 1200;
+    pointer-events: auto;
     display: grid;
     place-items: center;
     padding: 20px;
-    background: rgba(2, 5, 11, 0.76);
+    background: rgba(2, 5, 11, 0.78);
     backdrop-filter: blur(8px);
   }
   .settings-dialog {
-    width: min(720px, 100%);
-    max-height: min(780px, calc(100vh - 40px));
+    width: min(760px, 100%);
+    max-height: min(820px, calc(100vh - 40px));
     overflow: hidden;
     display: flex;
     flex-direction: column;
@@ -219,7 +274,7 @@
   }
   .settings-content {
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
     gap: 22px;
     padding: 20px;
     overflow-y: auto;
@@ -227,6 +282,7 @@
   .settings-section {
     display: flex;
     flex-direction: column;
+    min-width: 0;
     gap: 8px;
   }
   h4 {
@@ -236,6 +292,17 @@
     font-size: 0.75rem;
     letter-spacing: 0.12em;
     text-transform: uppercase;
+  }
+  .size-field-block {
+    padding: 10px;
+    background: rgba(15, 23, 42, 0.58);
+    border: 1px solid rgba(234, 179, 8, 0.28);
+    border-radius: 5px;
+  }
+  .size-field-header {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
   }
   .toggle-row,
   .key-row {
@@ -247,11 +314,13 @@
     background: rgba(15, 23, 42, 0.58);
     border: 1px solid rgba(148, 163, 184, 0.15);
     border-radius: 5px;
+    min-width: 0;
   }
   .toggle-row > span,
   .key-row > span {
     display: flex;
     flex-direction: column;
+    min-width: 0;
     gap: 2px;
   }
   strong {
@@ -295,6 +364,7 @@
     flex-direction: column;
     gap: 7px;
     padding: 10px 0;
+    min-width: 0;
   }
   .field-label {
     color: #cbd5e1;
@@ -310,10 +380,12 @@
     background: #050912;
     border: 1px solid rgba(148, 163, 184, 0.2);
     border-radius: 5px;
+    gap: 3px;
   }
   .segmented-control button {
     flex: 1;
-    padding: 7px;
+    min-width: 0;
+    padding: 7px 6px;
     border: 0;
     background: transparent;
     color: #94a3b8;
@@ -324,7 +396,8 @@
     color: #fef08a;
   }
   .key-capture {
-    min-width: 100px;
+    min-width: 96px;
+    flex-shrink: 0;
     color: #fef08a;
     font-family: var(--font-mono);
     font-size: 0.7rem;
