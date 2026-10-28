@@ -225,6 +225,31 @@
   let nextTradeBonus = $derived(game ? getTradeBonusArmies(game.tradeCount) : 4);
   let amIHost = $derived(lobbyPlayers.find((p) => p.token === myPlayerId)?.isHost ?? false);
 
+  // Diplomatic Dossier, World Tension & Treaties State
+  let activeDiplomacyTargetId = $state<string | null>(null);
+  let activeDiplomacyTarget = $derived(
+    game?.players.find((p) => p.id === activeDiplomacyTargetId) ?? null
+  );
+  let incomingTreatyProposals = $derived(
+    game?.treaties?.filter(
+      (t) => t.status === "pending" && t.toPlayerId === myPlayerId
+    ) ?? []
+  );
+  let targetTreatyWithMe = $derived.by(() => {
+    if (!game || !activeDiplomacyTargetId || !myPlayerId) return null;
+    return (
+      game.treaties?.find(
+        (t) =>
+          t.status !== "broken" &&
+          ((t.fromPlayerId === myPlayerId && t.toPlayerId === activeDiplomacyTargetId) ||
+            (t.fromPlayerId === activeDiplomacyTargetId && t.toPlayerId === myPlayerId))
+      ) ?? null
+    );
+  });
+  let activeCoalitionAgainstTarget = $derived(
+    game?.coalitions?.find((c) => c.targetPlayerId === activeDiplomacyTargetId) ?? null
+  );
+
   const SOUNDTRACKS = [
     { id: "ambient_procedural", label: "Marcha Tática (Sintetizador Web Audio)" },
     { id: "hoi4_axis_theme.mp3", label: "Hearts of Iron IV — Axis Theme" },
@@ -612,6 +637,49 @@
   function sendAction(action: unknown) {
     sound.playClick();
     connectedRoom?.send("game_action", action);
+  }
+
+  function handleProposeTreaty(targetPlayerId: string, treatyType: "nap" | "alliance") {
+    sendAction({
+      type: "propose_treaty",
+      targetPlayerId,
+      treatyType,
+    });
+  }
+
+  function handleAcceptTreaty(treatyId: string) {
+    sendAction({
+      type: "accept_treaty",
+      treatyId,
+    });
+  }
+
+  function handleRejectTreaty(treatyId: string) {
+    sendAction({
+      type: "reject_treaty",
+      treatyId,
+    });
+  }
+
+  function handleBreakTreaty(treatyId: string) {
+    sendAction({
+      type: "break_treaty",
+      treatyId,
+    });
+  }
+
+  function handleFormCoalition(targetPlayerId: string) {
+    sendAction({
+      type: "form_coalition",
+      targetPlayerId,
+    });
+  }
+
+  function handleJoinCoalition(coalitionId: string) {
+    sendAction({
+      type: "join_coalition",
+      coalitionId,
+    });
   }
 
   function onTerritoryClick(terrId: string) {
@@ -1143,6 +1211,34 @@
 
     <!-- FLOATING SUPREME COMMAND HUD LAYER -->
     <div class="hud-layer">
+      <!-- ⚡ REAL-TIME TREATY PROPOSALS TOAST -->
+      {#if incomingTreatyProposals.length > 0}
+        <div class="treaty-notifications-layer">
+          {#each incomingTreatyProposals as prop}
+            {@const sender = game.players.find((p) => p.id === prop.fromPlayerId)}
+            <div class="treaty-notif-toast">
+              <div class="toast-icon">
+                <Icon name="handshake" size={18} />
+              </div>
+              <div class="toast-body">
+                <strong>Proposta Diplomática Recebida</strong>
+                <span>
+                  {sender?.name ?? "General"} propôs um <strong>{prop.type === "alliance" ? "Tratado de Aliança Militar" : "Pacto de Não-Agressão (NAP)"}</strong>
+                </span>
+              </div>
+              <div class="toast-actions">
+                <button class="btn-toast-accept" onclick={() => handleAcceptTreaty(prop.id)}>
+                  <Icon name="check" size={12} /> Aceitar
+                </button>
+                <button class="btn-toast-reject" onclick={() => handleRejectTreaty(prop.id)}>
+                  <Icon name="close" size={12} /> Recusar
+                </button>
+              </div>
+            </div>
+          {/each}
+        </div>
+      {/if}
+
       <!-- ↖ TOP-LEFT: HEGEMONIA BRANDING, BALANCE OF POWER & CONTINENT/ASIA SUB-REGIONS -->
       {#if !isImmersiveMode && hudVisibility.continents}
         <aside class="hud-panel top-left-panel">
@@ -1166,53 +1262,266 @@
           </div>
         {/if}
 
-        <!-- Hegemony Power Bar (Segmented World Dominance %) -->
-        <div class="hegemony-bar-wrap">
-          <div class="hegemony-bar-label">
-            <span>BALANÇO DE PODER GLOBAL</span>
-            <span>44 TERRITÓRIOS</span>
+        <!-- Global World Tension Gauge (One-way Escalation) -->
+        <div class="world-tension-wrap" title="Tensão Mundial: {game.worldTension ?? 0}% (Alianças Militares em 50%)">
+          <div class="tension-top-row">
+            <span class="tension-title"><Icon name="globe" size={12} /> TENSÃO MUNDIAL</span>
+            <strong class="tension-value" class:high-tension={(game.worldTension ?? 0) >= 50}>{game.worldTension ?? 0}%</strong>
           </div>
-          <div class="hegemony-bar" title="Balanço de Poder Global (% de Territórios)">
-            {#each playerMetrics as m}
-              <div
-                class="hegemony-segment"
-                style="width: {m.sharePct}%; background: {COLOR_HEX[m.player.color]};"
-                title="{m.player.name}: {m.sharePct}% do Mundo ({m.terrCount} territórios, {m.totalArmies} divisões)"
-              ></div>
-            {/each}
+          <div class="tension-gauge-bar">
+            <div
+              class="tension-gauge-fill"
+              class:critical={(game.worldTension ?? 0) >= 66}
+              class:elevated={(game.worldTension ?? 0) >= 34}
+              style="width: {game.worldTension ?? 0}%;"
+            ></div>
+            <div class="tension-threshold-marker" style="left: 50%;" title="Desbloqueio de Alianças Militares (50%)"></div>
+          </div>
+          <div class="tension-subtext">
+            {#if (game.worldTension ?? 0) < 50}
+              <span>Alianças Militares bloqueadas (&ge; 50%)</span>
+            {:else}
+              <span class="unlocked-text">Alianças Militares Desbloqueadas</span>
+            {/if}
           </div>
         </div>
 
-        <!-- Generals Roster with Heraldic Flags & Strengths -->
-        <div class="generals-table">
-          {#each playerMetrics as m, idx}
-            {@const isTurn = idx === game.turnIndex}
-            <div
-              class="general-row"
-              class:active-turn={isTurn}
-              class:eliminated={m.player.eliminated}
-              style="border-left-color: {COLOR_HEX[m.player.color]};"
-            >
-              <div class="g-info">
-                <FactionFlag color={m.player.color} width={20} height={13} />
-                <span class="g-name">
-                  {m.player.name}
-                  {#if m.player.id === myPlayerId}
-                    <small class="you-badge">VOCÊ</small>
-                  {/if}
-                </span>
-                {#if isTurn}
-                  <span class="turn-indicator" title="Turno Ativo"><Icon name="crown" size={13} /></span>
-                {/if}
+        {#if activeDiplomacyTarget}
+          <!-- DOSSIÊ DIPLOMÁTICO VIEW -->
+          <div class="diplomacy-dossier">
+            <div class="dossier-header">
+              <button class="btn-dossier-back" onclick={() => (activeDiplomacyTargetId = null)}>
+                <Icon name="back" size={13} />
+                <span>Voltar ao Quadro Geral</span>
+              </button>
+            </div>
+
+            <div class="dossier-target-card" style="border-left-color: {COLOR_HEX[activeDiplomacyTarget.color]};">
+              <div class="target-card-top">
+                <FactionFlag color={activeDiplomacyTarget.color} width={24} height={16} />
+                <div class="target-card-info">
+                  <strong>{activeDiplomacyTarget.name}</strong>
+                  <small>DOSSIÊ DO GENERAL</small>
+                </div>
               </div>
-              <div class="g-stats">
-                <span title="Territórios Controlados" class="stat-pill">T: {m.terrCount}</span>
-                <span title="Total de Divisões" class="stat-pill">D: {m.totalArmies}</span>
-                <span title="Cartas de Suprimento" class="stat-pill">C: {m.player.cards.length}</span>
+
+              <!-- Infamy Gauge -->
+              <div class="infamy-wrap">
+                <div class="infamy-row">
+                  <span>INFÂMIA DO GENERAL</span>
+                  <strong class="infamy-value" class:high-infamy={(activeDiplomacyTarget.infamy ?? 0) >= 50}>
+                    {activeDiplomacyTarget.infamy ?? 0}%
+                  </strong>
+                </div>
+                <div class="infamy-bar">
+                  <div
+                    class="infamy-fill"
+                    class:grand-threat={(activeDiplomacyTarget.infamy ?? 0) >= 100}
+                    class:bilateral-threat={(activeDiplomacyTarget.infamy ?? 0) >= 50}
+                    style="width: {activeDiplomacyTarget.infamy ?? 0}%;"
+                  ></div>
+                  <div class="infamy-marker" style="left: 50%;" title="Coalizão Bilateral (50%)"></div>
+                  <div class="infamy-marker" style="left: 100%;" title="Grande Coalizão (100%)"></div>
+                </div>
               </div>
             </div>
-          {/each}
-        </div>
+
+            <!-- Treaty Status & Actions -->
+            <div class="dossier-section">
+              <div class="dossier-section-title">Status Diplomático Bilateral</div>
+              {#if targetTreatyWithMe}
+                {#if targetTreatyWithMe.status === "active"}
+                  <div class="treaty-active-box">
+                    <div class="treaty-active-badge">
+                      <Icon name="shield" size={13} />
+                      <span>{targetTreatyWithMe.type === "alliance" ? "Aliança Militar Ativa" : "Pacto de Não-Agressão (NAP) Ativo"}</span>
+                    </div>
+                    <p class="treaty-rule-desc">Ataques mútuos estão suspensos pelas leis de guerra.</p>
+                    <button
+                      class="btn-treaty-break"
+                      onclick={() => handleBreakTreaty(targetTreatyWithMe.id)}
+                      title="Rompe o tratado. Penalidade: +35% de Infâmia e +15% de Tensão Mundial."
+                    >
+                      <Icon name="swords" size={13} />
+                      <span>Trair Tratado (+35% Infâmia)</span>
+                    </button>
+                  </div>
+                {:else if targetTreatyWithMe.status === "pending"}
+                  {#if targetTreatyWithMe.fromPlayerId === myPlayerId}
+                    <div class="treaty-pending-box">
+                      <span>Proposta de {targetTreatyWithMe.type === "alliance" ? "Aliança" : "NAP"} enviada.</span>
+                      <button class="btn-ghost-sm" onclick={() => handleRejectTreaty(targetTreatyWithMe.id)}>
+                        Cancelar Proposta
+                      </button>
+                    </div>
+                  {:else}
+                    <div class="treaty-incoming-box">
+                      <strong>Proposta de {targetTreatyWithMe.type === "alliance" ? "Aliança Militar" : "Pacto de Não-Agressão"}</strong>
+                      <div class="treaty-incoming-actions">
+                        <button class="btn-tactical-success" onclick={() => handleAcceptTreaty(targetTreatyWithMe.id)}>
+                          <Icon name="check" size={13} /> Aceitar
+                        </button>
+                        <button class="btn-tactical-danger" onclick={() => handleRejectTreaty(targetTreatyWithMe.id)}>
+                          <Icon name="close" size={13} /> Recusar
+                        </button>
+                      </div>
+                    </div>
+                  {/if}
+                {/if}
+              {:else}
+                <div class="treaty-propose-box">
+                  <button
+                    class="btn-treaty-propose"
+                    onclick={() => handleProposeTreaty(activeDiplomacyTarget.id, "nap")}
+                  >
+                    <Icon name="handshake" size={13} />
+                    <span>Propor Pacto de Não-Agressão (NAP)</span>
+                  </button>
+                  <button
+                    class="btn-treaty-propose"
+                    class:btn-disabled={(game.worldTension ?? 0) < 50}
+                    disabled={(game.worldTension ?? 0) < 50}
+                    onclick={() => handleProposeTreaty(activeDiplomacyTarget.id, "alliance")}
+                    title={(game.worldTension ?? 0) < 50 ? "Requer Tensão Mundial de pelo menos 50%" : "Propor aliança militar mútua"}
+                  >
+                    <Icon name="crown" size={13} />
+                    <span>Propor Aliança Militar {(game.worldTension ?? 0) < 50 ? "(Requer 50% Tensão)" : ""}</span>
+                  </button>
+                </div>
+              {/if}
+            </div>
+
+            <!-- Coalitions Section -->
+            <div class="dossier-section">
+              <div class="dossier-section-title">Coalizões Militares de Contenção</div>
+              {#if activeCoalitionAgainstTarget}
+                <div class="coalition-active-box">
+                  <div class="coalition-header">
+                    <Icon name="swords" size={14} />
+                    <span>COALIZÃO ATIVA ({activeCoalitionAgainstTarget.memberPlayerIds.length}/{(activeDiplomacyTarget.infamy ?? 0) >= 100 ? 3 : 2} Membros)</span>
+                  </div>
+                  <div class="coalition-members">
+                    {#each activeCoalitionAgainstTarget.memberPlayerIds as mid}
+                      {@const mem = game.players.find((p) => p.id === mid)}
+                      {#if mem}
+                        <span class="coalition-member-tag" style="border-color: {COLOR_HEX[mem.color]};">
+                          <FactionFlag color={mem.color} width={14} height={9} />
+                          {mem.name} {mid === myPlayerId ? "(Você)" : ""}
+                        </span>
+                      {/if}
+                    {/each}
+                  </div>
+
+                  {#if !activeCoalitionAgainstTarget.memberPlayerIds.includes(myPlayerId)}
+                    {@const maxMembers = (activeDiplomacyTarget.infamy ?? 0) >= 100 ? 3 : 2}
+                    {#if activeCoalitionAgainstTarget.memberPlayerIds.length < maxMembers}
+                      <button
+                        class="btn-coalition-join"
+                        onclick={() => handleJoinCoalition(activeCoalitionAgainstTarget.id)}
+                      >
+                        <Icon name="swords" size={13} />
+                        <span>Unir-se à Coalizão contra {activeDiplomacyTarget.name}</span>
+                      </button>
+                    {:else}
+                      <p class="coalition-full-note">Capacidade máxima da coalizão atingida.</p>
+                    {/if}
+                  {:else}
+                    <div class="coalition-joined-badge">
+                      <Icon name="check" size={12} /> Você é membro ativo desta coalizão
+                    </div>
+                  {/if}
+                </div>
+              {:else if (activeDiplomacyTarget.infamy ?? 0) >= 50}
+                <div class="coalition-call-box">
+                  <p class="coalition-call-desc">
+                    A Infâmia de {activeDiplomacyTarget.name} ({activeDiplomacyTarget.infamy}%) ultrapassou o limiar de alarme global.
+                  </p>
+                  <button
+                    class="btn-coalition-declare"
+                    onclick={() => handleFormCoalition(activeDiplomacyTarget.id)}
+                  >
+                    <Icon name="swords" size={14} />
+                    <span>Declarar Coalizão Militar</span>
+                  </button>
+                </div>
+              {:else}
+                <div class="coalition-locked-box">
+                  <Icon name="lock" size={13} />
+                  <span>Coalizões bloqueadas. Alvo possui apenas {activeDiplomacyTarget.infamy ?? 0}% de Infâmia (requer ≥ 50%).</span>
+                </div>
+              {/if}
+
+              <!-- Hegemon Last Stand Alert -->
+              {#if activeCoalitionAgainstTarget && activeCoalitionAgainstTarget.memberPlayerIds.length >= 2}
+                {@const bonus = (activeDiplomacyTarget.infamy ?? 0) >= 100 && activeCoalitionAgainstTarget.memberPlayerIds.length >= 3 ? 2 : 1}
+                <div class="hegemon-bonus-banner">
+                  <span>⭐ Mobilização Total Hegemon: +{bonus} nos dados contra membros da coalizão</span>
+                </div>
+              {/if}
+            </div>
+          </div>
+        {:else}
+          <!-- Hegemony Power Bar (Segmented World Dominance %) -->
+          <div class="hegemony-bar-wrap">
+            <div class="hegemony-bar-label">
+              <span>BALANÇO DE PODER GLOBAL</span>
+              <span>44 TERRITÓRIOS</span>
+            </div>
+            <div class="hegemony-bar" title="Balanço de Poder Global (% de Territórios)">
+              {#each playerMetrics as m}
+                <div
+                  class="hegemony-segment"
+                  style="width: {m.sharePct}%; background: {COLOR_HEX[m.player.color]};"
+                  title="{m.player.name}: {m.sharePct}% do Mundo ({m.terrCount} territórios, {m.totalArmies} divisões)"
+                ></div>
+              {/each}
+            </div>
+          </div>
+
+          <!-- Generals Roster with Heraldic Flags & Strengths -->
+          <div class="generals-table">
+            {#each playerMetrics as m, idx}
+              {@const isTurn = idx === game.turnIndex}
+              <div
+                class="general-row"
+                class:active-turn={isTurn}
+                class:eliminated={m.player.eliminated}
+                style="border-left-color: {COLOR_HEX[m.player.color]};"
+              >
+                <div class="g-info">
+                  <FactionFlag color={m.player.color} width={20} height={13} />
+                  <span class="g-name">
+                    {m.player.name}
+                    {#if m.player.id === myPlayerId}
+                      <small class="you-badge">VOCÊ</small>
+                    {/if}
+                  </span>
+                  {#if isTurn}
+                    <span class="turn-indicator" title="Turno Ativo"><Icon name="crown" size={13} /></span>
+                  {/if}
+                </div>
+                <div class="g-stats">
+                  <span title="Territórios Controlados" class="stat-pill">T: {m.terrCount}</span>
+                  <span title="Total de Divisões" class="stat-pill">D: {m.totalArmies}</span>
+                  <span title="Cartas de Suprimento" class="stat-pill">C: {m.player.cards.length}</span>
+                  {#if (m.player.infamy ?? 0) > 0}
+                    <span title="Infâmia do General" class="stat-pill infamy-pill">🔥 {m.player.infamy}%</span>
+                  {/if}
+                  {#if m.player.id !== myPlayerId && !m.player.eliminated}
+                    <button
+                      class="btn-diplomacy-icon"
+                      class:active={activeDiplomacyTargetId === m.player.id}
+                      title="Dossiê Diplomático com {m.player.name}"
+                      onclick={() => (activeDiplomacyTargetId = activeDiplomacyTargetId === m.player.id ? null : m.player.id)}
+                    >
+                      <Icon name="handshake" size={12} />
+                    </button>
+                  {/if}
+                </div>
+              </div>
+            {/each}
+          </div>
+        {/if}
 
         <!-- Continents & Asian Sub-Regions Toggle -->
         <div class="continents-toggle-row">
@@ -2170,6 +2479,561 @@
     background: rgba(5, 9, 18, 0.75);
     padding: 0.1rem 0.32rem;
     border-radius: 3px;
+  }
+
+  /* World Tension Gauge */
+  .world-tension-wrap {
+    display: flex;
+    flex-direction: column;
+    gap: 0.22rem;
+    background: rgba(15, 23, 42, 0.7);
+    padding: 0.35rem 0.5rem;
+    border-radius: 5px;
+    border: 1px solid rgba(234, 179, 8, 0.25);
+  }
+  .tension-top-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .tension-title {
+    font-family: var(--font-tactical);
+    font-size: 0.62rem;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    color: #94a3b8;
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+  }
+  .tension-value {
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    font-weight: 800;
+    color: #facc15;
+  }
+  .tension-value.high-tension {
+    color: #f87171;
+    text-shadow: 0 0 6px rgba(239, 68, 68, 0.5);
+  }
+  .tension-gauge-bar {
+    position: relative;
+    height: 6px;
+    width: 100%;
+    background: #0f172a;
+    border-radius: 3px;
+    overflow: hidden;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+  }
+  .tension-gauge-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #38bdf8 0%, #facc15 50%, #ef4444 100%);
+    transition: width 0.4s ease;
+  }
+  .tension-gauge-fill.critical {
+    box-shadow: 0 0 8px rgba(239, 68, 68, 0.8);
+  }
+  .tension-threshold-marker {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    background: #ffffff;
+    opacity: 0.75;
+    pointer-events: none;
+  }
+  .tension-subtext {
+    font-family: var(--font-mono);
+    font-size: 0.56rem;
+    color: #64748b;
+  }
+  .tension-subtext .unlocked-text {
+    color: #4ade80;
+    font-weight: 700;
+  }
+
+  /* Infamy Pill & Diplomacy Button in Generals Table */
+  .infamy-pill {
+    background: rgba(239, 68, 68, 0.22);
+    color: #fca5a5;
+    border: 1px solid rgba(239, 68, 68, 0.45);
+  }
+  .btn-diplomacy-icon {
+    background: rgba(212, 175, 55, 0.15);
+    border: 1px solid rgba(212, 175, 55, 0.45);
+    color: #fef08a;
+    padding: 2px 4px;
+    border-radius: 3px;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.15s ease;
+  }
+  .btn-diplomacy-icon:hover, .btn-diplomacy-icon.active {
+    background: rgba(212, 175, 55, 0.4);
+    box-shadow: 0 0 8px rgba(250, 204, 21, 0.4);
+    transform: scale(1.05);
+  }
+
+  /* Diplomatic Dossier Panel */
+  .diplomacy-dossier {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    overflow-y: auto;
+    max-height: calc(100vh - 220px);
+    padding-right: 0.15rem;
+  }
+  .dossier-header {
+    display: flex;
+    align-items: center;
+  }
+  .btn-dossier-back {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    background: rgba(30, 41, 59, 0.6);
+    border: 1px solid rgba(148, 163, 184, 0.3);
+    color: #cbd5e1;
+    font-family: var(--font-tactical);
+    font-size: 0.68rem;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    padding: 0.24rem 0.5rem;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+  .btn-dossier-back:hover {
+    background: rgba(51, 65, 85, 0.8);
+    color: #ffffff;
+  }
+  .dossier-target-card {
+    background: rgba(15, 23, 42, 0.75);
+    border-left: 4px solid #475569;
+    border-radius: 5px;
+    padding: 0.45rem 0.55rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+  }
+  .target-card-top {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+  .target-card-info {
+    display: flex;
+    flex-direction: column;
+  }
+  .target-card-info strong {
+    font-size: 0.84rem;
+    color: #f8fafc;
+  }
+  .target-card-info small {
+    font-family: var(--font-tactical);
+    font-size: 0.58rem;
+    color: #94a3b8;
+    letter-spacing: 0.08em;
+  }
+  .infamy-wrap {
+    display: flex;
+    flex-direction: column;
+    gap: 0.18rem;
+  }
+  .infamy-row {
+    display: flex;
+    justify-content: space-between;
+    font-family: var(--font-tactical);
+    font-size: 0.6rem;
+    font-weight: 700;
+    color: #cbd5e1;
+  }
+  .infamy-value.high-infamy {
+    color: #ef4444;
+    font-weight: 800;
+  }
+  .infamy-bar {
+    position: relative;
+    height: 6px;
+    width: 100%;
+    background: #0f172a;
+    border-radius: 3px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+  }
+  .infamy-fill {
+    height: 100%;
+    background: #f59e0b;
+    border-radius: 2px;
+    transition: width 0.3s ease;
+  }
+  .infamy-fill.bilateral-threat {
+    background: #f97316;
+  }
+  .infamy-fill.grand-threat {
+    background: #ef4444;
+    box-shadow: 0 0 8px rgba(239, 68, 68, 0.7);
+  }
+  .infamy-marker {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    background: rgba(255, 255, 255, 0.5);
+  }
+
+  .dossier-section {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    background: rgba(15, 23, 42, 0.5);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-radius: 5px;
+    padding: 0.45rem 0.55rem;
+  }
+  .dossier-section-title {
+    font-family: var(--font-tactical);
+    font-size: 0.62rem;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    color: #eab308;
+    text-transform: uppercase;
+  }
+  .treaty-active-box {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+  }
+  .treaty-active-badge {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    background: rgba(34, 197, 94, 0.16);
+    border: 1px solid rgba(34, 197, 94, 0.4);
+    color: #86efac;
+    font-size: 0.72rem;
+    font-weight: 700;
+    padding: 0.25rem 0.45rem;
+    border-radius: 4px;
+  }
+  .treaty-rule-desc {
+    margin: 0;
+    font-size: 0.62rem;
+    color: #94a3b8;
+  }
+  .btn-treaty-break {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.35rem;
+    background: rgba(239, 68, 68, 0.2);
+    border: 1px solid #ef4444;
+    color: #fca5a5;
+    font-family: var(--font-tactical);
+    font-size: 0.66rem;
+    font-weight: 800;
+    padding: 0.32rem 0.5rem;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+  .btn-treaty-break:hover {
+    background: rgba(239, 68, 68, 0.35);
+    box-shadow: 0 0 10px rgba(239, 68, 68, 0.4);
+  }
+  .treaty-propose-box {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+  }
+  .btn-treaty-propose {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.4rem;
+    background: rgba(30, 41, 59, 0.65);
+    border: 1px solid rgba(212, 175, 55, 0.35);
+    color: #fef08a;
+    font-family: var(--font-tactical);
+    font-size: 0.68rem;
+    font-weight: 700;
+    padding: 0.35rem 0.5rem;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+  .btn-treaty-propose:hover:not(:disabled) {
+    background: rgba(212, 175, 55, 0.25);
+    border-color: #facc15;
+  }
+  .btn-treaty-propose.btn-disabled, .btn-treaty-propose:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+    border-color: rgba(148, 163, 184, 0.2);
+    color: #94a3b8;
+  }
+  .treaty-pending-box {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 0.68rem;
+    color: #cbd5e1;
+    background: rgba(30, 41, 59, 0.4);
+    padding: 0.3rem 0.45rem;
+    border-radius: 4px;
+  }
+  .btn-ghost-sm {
+    background: transparent;
+    border: 1px solid #64748b;
+    color: #cbd5e1;
+    font-size: 0.6rem;
+    padding: 1px 5px;
+    border-radius: 3px;
+    cursor: pointer;
+  }
+  .treaty-incoming-box {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    background: rgba(34, 197, 94, 0.12);
+    border: 1px solid rgba(34, 197, 94, 0.35);
+    padding: 0.35rem 0.5rem;
+    border-radius: 4px;
+    font-size: 0.72rem;
+  }
+  .treaty-incoming-actions {
+    display: flex;
+    gap: 0.35rem;
+  }
+  .btn-tactical-success {
+    flex: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.25rem;
+    background: rgba(16, 185, 129, 0.25);
+    border: 1px solid #10b981;
+    color: #6ee7b7;
+    font-size: 0.68rem;
+    font-weight: 700;
+    padding: 0.25rem;
+    border-radius: 3px;
+    cursor: pointer;
+  }
+  .btn-tactical-danger {
+    flex: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.25rem;
+    background: rgba(239, 68, 68, 0.25);
+    border: 1px solid #ef4444;
+    color: #fca5a5;
+    font-size: 0.68rem;
+    font-weight: 700;
+    padding: 0.25rem;
+    border-radius: 3px;
+    cursor: pointer;
+  }
+
+  /* Coalitions Widget */
+  .coalition-active-box {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+  }
+  .coalition-header {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    font-family: var(--font-tactical);
+    font-size: 0.68rem;
+    font-weight: 800;
+    color: #f87171;
+  }
+  .coalition-members {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem;
+  }
+  .coalition-member-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    background: rgba(15, 23, 42, 0.8);
+    border-left: 2px solid #64748b;
+    padding: 0.15rem 0.35rem;
+    border-radius: 3px;
+    font-size: 0.65rem;
+    color: #f1f5f9;
+  }
+  .btn-coalition-join {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.35rem;
+    background: rgba(220, 38, 38, 0.25);
+    border: 1px solid #dc2626;
+    color: #fca5a5;
+    font-family: var(--font-tactical);
+    font-size: 0.68rem;
+    font-weight: 800;
+    padding: 0.35rem;
+    border-radius: 4px;
+    cursor: pointer;
+  }
+  .btn-coalition-join:hover {
+    background: rgba(220, 38, 38, 0.4);
+  }
+  .coalition-full-note {
+    margin: 0;
+    font-size: 0.62rem;
+    color: #94a3b8;
+  }
+  .coalition-joined-badge {
+    font-size: 0.66rem;
+    color: #4ade80;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+  }
+  .coalition-call-box {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+  }
+  .coalition-call-desc {
+    margin: 0;
+    font-size: 0.62rem;
+    color: #cbd5e1;
+  }
+  .btn-coalition-declare {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.35rem;
+    background: linear-gradient(90deg, rgba(220, 38, 38, 0.3), rgba(185, 28, 28, 0.3));
+    border: 1px solid #ef4444;
+    color: #fee2e2;
+    font-family: var(--font-tactical);
+    font-size: 0.68rem;
+    font-weight: 800;
+    padding: 0.35rem;
+    border-radius: 4px;
+    cursor: pointer;
+  }
+  .btn-coalition-declare:hover {
+    background: rgba(220, 38, 38, 0.5);
+  }
+  .coalition-locked-box {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    font-size: 0.62rem;
+    color: #64748b;
+  }
+  .hegemon-bonus-banner {
+    background: linear-gradient(90deg, rgba(245, 158, 11, 0.2), rgba(239, 68, 68, 0.2));
+    border: 1px solid rgba(245, 158, 11, 0.4);
+    border-radius: 4px;
+    padding: 0.25rem 0.4rem;
+    font-family: var(--font-tactical);
+    font-size: 0.62rem;
+    font-weight: 800;
+    color: #fde047;
+    text-align: center;
+  }
+
+  /* Floating Real-time Treaty Proposals Toast Banner */
+  .treaty-notifications-layer {
+    position: fixed;
+    top: 1rem;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 100;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    pointer-events: auto;
+  }
+  .treaty-notif-toast {
+    display: flex;
+    align-items: center;
+    gap: 0.65rem;
+    background: linear-gradient(135deg, rgba(15, 23, 42, 0.95), rgba(30, 41, 59, 0.95));
+    border: 1px solid rgba(234, 179, 8, 0.7);
+    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.7);
+    padding: 0.55rem 0.85rem;
+    border-radius: 6px;
+    color: #f8fafc;
+    animation: toast-slide-down 0.25s ease-out;
+  }
+  @keyframes toast-slide-down {
+    from {
+      opacity: 0;
+      transform: translateY(-10px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+  .toast-icon {
+    color: #facc15;
+    display: flex;
+  }
+  .toast-body {
+    display: flex;
+    flex-direction: column;
+  }
+  .toast-body strong {
+    font-size: 0.75rem;
+    color: #fef08a;
+  }
+  .toast-body span {
+    font-size: 0.7rem;
+    color: #cbd5e1;
+  }
+  .toast-actions {
+    display: flex;
+    gap: 0.35rem;
+    margin-left: 0.5rem;
+  }
+  .btn-toast-accept {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    background: #16a34a;
+    border: none;
+    color: #ffffff;
+    font-family: var(--font-tactical);
+    font-size: 0.68rem;
+    font-weight: 800;
+    padding: 0.3rem 0.6rem;
+    border-radius: 4px;
+    cursor: pointer;
+  }
+  .btn-toast-accept:hover {
+    background: #15803d;
+  }
+  .btn-toast-reject {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    background: #dc2626;
+    border: none;
+    color: #ffffff;
+    font-family: var(--font-tactical);
+    font-size: 0.68rem;
+    font-weight: 800;
+    padding: 0.3rem 0.6rem;
+    border-radius: 4px;
+    cursor: pointer;
+  }
+  .btn-toast-reject:hover {
+    background: #b91c1c;
   }
 
   .btn-ghost {

@@ -210,6 +210,7 @@ export function createGame(opts: CreateGameOptions): GameState {
       isCapitalLost: false,
       economicPenaltyMultiplier: 1.0,
       moralePenalty: 0,
+      infamy: 0,
     };
   });
 
@@ -240,6 +241,9 @@ export function createGame(opts: CreateGameOptions): GameState {
     winnerId: null,
     seedCommitHash: hashSeed(opts.seed),
     log: [`Partida iniciada com ${players.length} jogadores. Rodada 1: apenas posicionamento.`],
+    worldTension: 0,
+    treaties: [],
+    coalitions: [],
   };
 
   // Give first player their initial turn reinforcements
@@ -326,6 +330,123 @@ export function checkPlayerVictory(
   return false;
 }
 
+export interface ObjectiveProgress {
+  completionPct: number;
+  held: number;
+  total: number;
+  description: string;
+}
+
+/**
+ * Calculates a player's objective progress percentage (0 - 100%) and held/total units.
+ * Used for post-match telemetry, analytical balance, and UI tracking.
+ */
+export function calculateObjectiveProgress(
+  state: GameState,
+  playerId: string,
+  map: GameMapDef = CLASSIC_MAP
+): ObjectiveProgress {
+  const player = state.players.find((p) => p.id === playerId);
+  if (!player) {
+    return { completionPct: 0, held: 0, total: 1, description: "Jogador não encontrado" };
+  }
+
+  if (state.winnerId === playerId) {
+    return { completionPct: 100, held: 1, total: 1, description: player.objective.descriptionPt };
+  }
+
+  const ownedTerritories = Object.values(state.territories).filter(
+    (t) => t.ownerId === playerId
+  );
+  const ownedSet = new Set(ownedTerritories.map((t) => t.id));
+  const rule = player.objective.rule;
+
+  if (rule.type === "territories") {
+    const qualifying = ownedTerritories.filter(
+      (t) => t.armies >= rule.minArmiesPerTerritory
+    ).length;
+    const total = rule.count;
+    const completionPct = Math.min(100, Math.round((qualifying / total) * 100));
+    return { completionPct, held: qualifying, total, description: player.objective.descriptionPt };
+  }
+
+  if (rule.type === "specific_territories") {
+    const reqHeld = rule.territoryIds.filter((id) => ownedSet.has(id)).length;
+    let extraHeld = 0;
+    let extraTotal = 0;
+    if (rule.extraAnyOf && rule.extraAnyOf.length > 0) {
+      extraTotal = rule.extraAnyOf[0].length;
+      extraHeld = Math.max(
+        ...rule.extraAnyOf.map((grp) => grp.filter((id) => ownedSet.has(id)).length)
+      );
+    }
+    const held = reqHeld + extraHeld;
+    const total = rule.territoryIds.length + extraTotal;
+    const completionPct = Math.min(100, Math.round((held / total) * 100));
+    return { completionPct, held, total, description: player.objective.descriptionPt };
+  }
+
+  if (rule.type === "continents") {
+    const requiredContinentTerritoryIds = map.territories
+      .filter((t) => rule.continents.includes(t.continent))
+      .map((t) => t.id);
+    let held = requiredContinentTerritoryIds.filter((id) => ownedSet.has(id)).length;
+    let total = requiredContinentTerritoryIds.length;
+    if (rule.extraAnyContinent) {
+      const otherContinents = map.continents.filter((c) => !rule.continents.includes(c.id));
+      let bestExtraRatio = 0;
+      let bestExtraHeld = 0;
+      let bestExtraTotal = 1;
+      for (const oc of otherContinents) {
+        const oTerrs = map.territories.filter((t) => t.continent === oc.id);
+        const oHeld = oTerrs.filter((t) => ownedSet.has(t.id)).length;
+        if (oHeld / oTerrs.length > bestExtraRatio) {
+          bestExtraRatio = oHeld / oTerrs.length;
+          bestExtraHeld = oHeld;
+          bestExtraTotal = oTerrs.length;
+        }
+      }
+      held += bestExtraHeld;
+      total += bestExtraTotal;
+    }
+    const completionPct = Math.min(100, Math.round((held / total) * 100));
+    return { completionPct, held, total, description: player.objective.descriptionPt };
+  }
+
+  if (rule.type === "destroy_color") {
+    const targetPlayer = state.players.find((p) => p.color === rule.targetColor);
+    const useFallback =
+      !targetPlayer ||
+      targetPlayer.id === player.id ||
+      (targetPlayer.eliminated && targetPlayer.eliminatedBy !== player.id);
+
+    if (useFallback) {
+      const held = ownedTerritories.length;
+      const total = rule.fallbackTerritories;
+      const completionPct = Math.min(100, Math.round((held / total) * 100));
+      return { completionPct, held, total, description: player.objective.descriptionPt };
+    }
+
+    if (targetPlayer.eliminated && targetPlayer.eliminatedBy === player.id) {
+      return { completionPct: 100, held: 1, total: 1, description: player.objective.descriptionPt };
+    }
+    const targetTerritories = Object.values(state.territories).filter(
+      (t) => t.ownerId === targetPlayer.id
+    ).length;
+    const initialApprox = 7;
+    const eliminatedShare = Math.max(0, initialApprox - targetTerritories);
+    const completionPct = Math.min(90, Math.round((eliminatedShare / initialApprox) * 100));
+    return {
+      completionPct,
+      held: eliminatedShare,
+      total: initialApprox,
+      description: player.objective.descriptionPt,
+    };
+  }
+
+  return { completionPct: 0, held: 0, total: 1, description: player.objective.descriptionPt };
+}
+
 /**
  * Pure authoritative action reducer: validates and applies a player action.
  */
@@ -342,7 +463,20 @@ export function applyAction(
 
   const state: GameState = structuredClone(prevState);
   const currentPlayer = state.players[state.turnIndex];
-  if (!currentPlayer || currentPlayer.id !== playerId) {
+  const actingPlayer = state.players.find((p) => p.id === playerId);
+  if (!actingPlayer || actingPlayer.eliminated) {
+    throw new Error("Jogador inválido ou eliminado.");
+  }
+
+  const isOutOfTurnAction =
+    action.type === "propose_treaty" ||
+    action.type === "accept_treaty" ||
+    action.type === "reject_treaty" ||
+    action.type === "break_treaty" ||
+    action.type === "form_coalition" ||
+    action.type === "join_coalition";
+
+  if (!isOutOfTurnAction && (!currentPlayer || currentPlayer.id !== playerId)) {
     throw new Error("Não é o seu turno.");
   }
 
@@ -474,6 +608,67 @@ export function applyAction(
         throw new Error("Os territórios não fazem fronteira.");
       }
 
+      // Check active diplomatic treaties (NAP or Alliance)
+      const hasActiveTreaty = state.treaties?.some(
+        (t) =>
+          t.status === "active" &&
+          ((t.fromPlayerId === playerId && t.toPlayerId === toTerr.ownerId) ||
+            (t.fromPlayerId === toTerr.ownerId && t.toPlayerId === playerId))
+      );
+      if (hasActiveTreaty) {
+        throw new Error(
+          "Você possui um tratado de paz ativo com este general. Rompa o tratado antes de atacar."
+        );
+      }
+
+      // Check coalition mutual non-aggression: members of the same coalition cannot attack each other
+      const sharedCoalition = state.coalitions?.some(
+        (c) =>
+          c.memberPlayerIds.includes(playerId) &&
+          c.memberPlayerIds.includes(toTerr.ownerId)
+      );
+      if (sharedCoalition) {
+        throw new Error(
+          "Generais da mesma coalizão não podem se atacar enquanto a coalizão estiver ativa."
+        );
+      }
+
+      const defenderPlayer = state.players.find((p) => p.id === toTerr.ownerId);
+      const isDefendingCapital =
+        defenderPlayer?.capitalTerritoryId === toTerr.id &&
+        toTerr.ownerId === defenderPlayer.id;
+
+      let attackerModifier = 0;
+      let defenderModifier = 0;
+      let lastStandBonus = false;
+
+      // Mobilização Total (Last Stand): Hegemon bonus against coalition members
+      const defenderCoalition = state.coalitions?.find(
+        (c) => c.targetPlayerId === toTerr.ownerId && c.memberPlayerIds.includes(playerId)
+      );
+      if (defenderCoalition && defenderPlayer) {
+        if ((defenderPlayer.infamy ?? 0) >= 100 && defenderCoalition.memberPlayerIds.length >= 3) {
+          defenderModifier = 2;
+          lastStandBonus = true;
+        } else if ((defenderPlayer.infamy ?? 0) >= 50 && defenderCoalition.memberPlayerIds.length >= 2) {
+          defenderModifier = 1;
+          lastStandBonus = true;
+        }
+      }
+
+      const attackerCoalition = state.coalitions?.find(
+        (c) => c.targetPlayerId === playerId && c.memberPlayerIds.includes(toTerr.ownerId)
+      );
+      if (attackerCoalition) {
+        if ((currentPlayer.infamy ?? 0) >= 100 && attackerCoalition.memberPlayerIds.length >= 3) {
+          attackerModifier = 2;
+          lastStandBonus = true;
+        } else if ((currentPlayer.infamy ?? 0) >= 50 && attackerCoalition.memberPlayerIds.length >= 2) {
+          attackerModifier = 1;
+          lastStandBonus = true;
+        }
+      }
+
       const maxAttackerDice = Math.min(3, fromTerr.armies - 1);
       const attackerDiceCount = action.diceCount
         ? Math.min(action.diceCount, maxAttackerDice)
@@ -487,10 +682,12 @@ export function applyAction(
         (a, b) => b - a
       );
 
-      const defenderPlayer = state.players.find((p) => p.id === toTerr.ownerId);
-      const isDefendingCapital =
-        defenderPlayer?.capitalTerritoryId === toTerr.id &&
-        toTerr.ownerId === defenderPlayer.id;
+      if (attackerModifier > 0 && attackerDice.length > 0) {
+        attackerDice[0] += attackerModifier;
+      }
+      if (defenderModifier > 0 && defenderDice.length > 0) {
+        defenderDice[0] += defenderModifier;
+      }
 
       let attackerLosses = 0;
       let defenderLosses = 0;
@@ -523,6 +720,9 @@ export function applyAction(
         attackerLosses,
         defenderLosses,
         conquered,
+        attackerModifier,
+        defenderModifier,
+        lastStandBonus,
       };
 
       const fromName = fromDef.namePt;
@@ -530,13 +730,17 @@ export function applyAction(
       const capitalCombatTag = isDefendingCapital
         ? ` [⭐ Capital Fortificada${capitalTiesDefended > 0 ? ` (+${capitalTiesDefended} empates resistidos)` : ""}]`
         : "";
+      const lastStandTag = lastStandBonus
+        ? ` [⭐ Mobilização Total +${attackerModifier || defenderModifier}]`
+        : "";
       state.log.push(
-        `Combate ${fromName} [${attackerDice.join(",")}] vs ${toName}${capitalCombatTag} [${defenderDice.join(",")}] → baixas ATQ:${attackerLosses} DEF:${defenderLosses}`
+        `Combate ${fromName} [${attackerDice.join(",")}] vs ${toName}${capitalCombatTag}${lastStandTag} [${defenderDice.join(",")}] → baixas ATQ:${attackerLosses} DEF:${defenderLosses}`
       );
 
       if (conquered) {
         toTerr.ownerId = playerId;
         currentPlayer.conqueredThisTurn = true;
+        state.worldTension = Math.min(100, (state.worldTension ?? 0) + 0.5);
 
         // Check if player recaptured their own previously lost capital
         if (currentPlayer.capitalTerritoryId === toTerr.id && currentPlayer.isCapitalLost) {
@@ -553,6 +757,8 @@ export function applyAction(
           defenderPlayer.capitalLostTurn = state.round;
           defenderPlayer.economicPenaltyMultiplier = 0.5;
           defenderPlayer.moralePenalty = 2;
+          state.worldTension = Math.min(100, (state.worldTension ?? 0) + 20);
+          currentPlayer.infamy = Math.min(100, (currentPlayer.infamy ?? 0) + 15);
 
           let stolenCardNotice = "";
           if (defenderPlayer.cards.length > 0) {
@@ -601,6 +807,8 @@ export function applyAction(
           const defenderPlayer = state.players.find((p) => p.id === defenderId)!;
           defenderPlayer.eliminated = true;
           defenderPlayer.eliminatedBy = playerId;
+          state.worldTension = Math.min(100, (state.worldTension ?? 0) + 25);
+          currentPlayer.infamy = Math.min(100, (currentPlayer.infamy ?? 0) + 25);
           // Eliminator takes victim's cards
           if (defenderPlayer.cards.length > 0) {
             currentPlayer.cards.push(...defenderPlayer.cards);
@@ -682,6 +890,163 @@ export function applyAction(
       break;
     }
 
+    case "propose_treaty": {
+      if (action.targetPlayerId === playerId) {
+        throw new Error("Você não pode propor um tratado a si mesmo.");
+      }
+      const target = state.players.find((p) => p.id === action.targetPlayerId);
+      if (!target || target.eliminated) {
+        throw new Error("General-alvo inválido ou eliminado.");
+      }
+      if (action.treatyType === "alliance" && (state.worldTension ?? 0) < 50) {
+        throw new Error(
+          "Alianças Militares só podem ser firmadas com Tensão Mundial de pelo menos 50%."
+        );
+      }
+      state.treaties = state.treaties ?? [];
+      const existing = state.treaties.find(
+        (t) =>
+          t.status !== "broken" &&
+          ((t.fromPlayerId === playerId && t.toPlayerId === action.targetPlayerId) ||
+            (t.fromPlayerId === action.targetPlayerId && t.toPlayerId === playerId))
+      );
+      if (existing) {
+        if (existing.status === "active") throw new Error("Já existe um tratado ativo com este general.");
+        if (existing.status === "pending") throw new Error("Já existe uma proposta de tratado em análise.");
+      }
+
+      const treatyId = `treaty_${Date.now()}_${rng.nextInt(100, 999)}`;
+      state.treaties.push({
+        id: treatyId,
+        fromPlayerId: playerId,
+        toPlayerId: action.targetPlayerId,
+        type: action.treatyType,
+        status: "pending",
+        createdRound: state.round,
+      });
+
+      const treatyLabel = action.treatyType === "alliance" ? "Aliança Militar" : "Pacto de Não-Agressão";
+      state.log.push(`📜 ${actingPlayer.name} enviou uma proposta de ${treatyLabel} para ${target.name}.`);
+      break;
+    }
+
+    case "accept_treaty": {
+      state.treaties = state.treaties ?? [];
+      const treaty = state.treaties.find((t) => t.id === action.treatyId);
+      if (!treaty || treaty.status !== "pending") {
+        throw new Error("Tratado não encontrado ou já processado.");
+      }
+      if (treaty.toPlayerId !== playerId) {
+        throw new Error("Apenas o general destinatário pode aceitar o tratado.");
+      }
+      treaty.status = "active";
+      const fromP = state.players.find((p) => p.id === treaty.fromPlayerId);
+      const toP = state.players.find((p) => p.id === treaty.toPlayerId);
+      const label = treaty.type === "alliance" ? "Aliança Militar" : "Pacto de Não-Agressão";
+      state.log.push(`🤝 TRATADO FIRMADO! ${fromP?.name} e ${toP?.name} ratificaram um ${label}!`);
+      break;
+    }
+
+    case "reject_treaty": {
+      state.treaties = state.treaties ?? [];
+      const treatyIdx = state.treaties.findIndex((t) => t.id === action.treatyId);
+      if (treatyIdx === -1) throw new Error("Tratado não encontrado.");
+      const treaty = state.treaties[treatyIdx];
+      if (treaty.toPlayerId !== playerId && treaty.fromPlayerId !== playerId) {
+        throw new Error("Você não tem permissão para rejeitar ou cancelar este tratado.");
+      }
+      state.treaties.splice(treatyIdx, 1);
+      const label = treaty.type === "alliance" ? "Aliança Militar" : "Pacto de Não-Agressão";
+      state.log.push(`❌ Proposta de ${label} foi recusada.`);
+      break;
+    }
+
+    case "break_treaty": {
+      state.treaties = state.treaties ?? [];
+      const treaty = state.treaties.find((t) => t.id === action.treatyId);
+      if (!treaty || treaty.status !== "active") {
+        throw new Error("Tratado ativo não encontrado.");
+      }
+      if (treaty.fromPlayerId !== playerId && treaty.toPlayerId !== playerId) {
+        throw new Error("Você não é signatário deste tratado.");
+      }
+      const otherId = treaty.fromPlayerId === playerId ? treaty.toPlayerId : treaty.fromPlayerId;
+      const otherP = state.players.find((p) => p.id === otherId);
+
+      treaty.status = "broken";
+      state.treaties = state.treaties.filter((t) => t.id !== treaty.id);
+
+      actingPlayer.infamy = Math.min(100, (actingPlayer.infamy ?? 0) + 35);
+      state.worldTension = Math.min(100, (state.worldTension ?? 0) + 15);
+
+      const label = treaty.type === "alliance" ? "Aliança Militar" : "Pacto de Não-Agressão";
+      state.log.push(
+        `💥 TRAIÇÃO DIPLOMÁTICA! ${actingPlayer.name} rompeu unilateralmente o ${label} com ${otherP?.name}! (+35% de Infâmia, +15% de Tensão Mundial)`
+      );
+      break;
+    }
+
+    case "form_coalition": {
+      if (action.targetPlayerId === playerId) {
+        throw new Error("Você não pode formar uma coalizão contra si mesmo.");
+      }
+      const target = state.players.find((p) => p.id === action.targetPlayerId);
+      if (!target || target.eliminated) {
+        throw new Error("Alvo da coalizão inválido ou eliminado.");
+      }
+      if ((target.infamy ?? 0) < 50) {
+        throw new Error(
+          `O general ${target.name} possui apenas ${target.infamy ?? 0}% de Infâmia. Coalizões exigem pelo menos 50%.`
+        );
+      }
+      state.coalitions = state.coalitions ?? [];
+      let coalition = state.coalitions.find((c) => c.targetPlayerId === action.targetPlayerId);
+      if (coalition) {
+        if (coalition.memberPlayerIds.includes(playerId)) {
+          throw new Error("Você já faz parte desta coalizão.");
+        }
+        const maxMembers = target.infamy >= 100 ? 3 : 2;
+        if (coalition.memberPlayerIds.length >= maxMembers) {
+          throw new Error(`Esta coalizão já atingiu a capacidade máxima (${maxMembers} generais).`);
+        }
+        coalition.memberPlayerIds.push(playerId);
+        state.log.push(`⚔️ ${actingPlayer.name} ingressou na Coalizão contra ${target.name}!`);
+      } else {
+        coalition = {
+          id: `coalition_${Date.now()}_${rng.nextInt(100, 999)}`,
+          targetPlayerId: action.targetPlayerId,
+          memberPlayerIds: [playerId],
+          createdRound: state.round,
+        };
+        state.coalitions.push(coalition);
+        state.log.push(
+          `⚔️ COALIZÃO DECLARADA! ${actingPlayer.name} convocou uma coalizão militar contra o infame ${target.name}!`
+        );
+      }
+      break;
+    }
+
+    case "join_coalition": {
+      state.coalitions = state.coalitions ?? [];
+      const coalition = state.coalitions.find((c) => c.id === action.coalitionId);
+      if (!coalition) throw new Error("Coalizão não encontrada.");
+      if (coalition.targetPlayerId === playerId) {
+        throw new Error("Você é o alvo desta coalizão.");
+      }
+      if (coalition.memberPlayerIds.includes(playerId)) {
+        throw new Error("Você já faz parte desta coalizão.");
+      }
+      const target = state.players.find((p) => p.id === coalition.targetPlayerId);
+      const maxMembers = target && (target.infamy ?? 0) >= 100 ? 3 : 2;
+      if (coalition.memberPlayerIds.length >= maxMembers) {
+        throw new Error(`A coalizão já possui o limite máximo de ${maxMembers} generais.`);
+      }
+      coalition.memberPlayerIds.push(playerId);
+      const targetName = target ? target.name : "inimigo";
+      state.log.push(`⚔️ ${actingPlayer.name} uniu-se à Coalizão contra ${targetName}!`);
+      break;
+    }
+
     case "end_turn": {
       if (state.pendingConquest) {
         throw new Error("Conclua a ocupação do território conquistado antes de encerrar o turno.");
@@ -731,10 +1096,33 @@ function advanceTurn(state: GameState, rng: SeededRng, map: GameMapDef): void {
 
   // Advance to next non-eliminated player
   const totalPlayers = state.players.length;
+  let roundAdvanced = false;
   for (let step = 1; step <= totalPlayers; step++) {
     const nextIdx = (state.turnIndex + step) % totalPlayers;
-    if (nextIdx < state.turnIndex || (state.turnIndex === totalPlayers - 1 && nextIdx === 0)) {
+    if (
+      !roundAdvanced &&
+      (nextIdx < state.turnIndex || (state.turnIndex === totalPlayers - 1 && nextIdx === 0))
+    ) {
       state.round += 1;
+      roundAdvanced = true;
+      state.worldTension = Math.min(100, Number(((state.worldTension ?? 0) + 0.5).toFixed(1)));
+
+      const totalTerritories = Object.keys(state.territories).length;
+      if (totalTerritories > 0) {
+        for (const p of state.players) {
+          if (!p.eliminated) {
+            const heldCount = Object.values(state.territories).filter(
+              (t) => t.ownerId === p.id
+            ).length;
+            if (heldCount / totalTerritories >= 0.38) {
+              p.infamy = Math.min(100, (p.infamy ?? 0) + 5);
+              state.log.push(
+                `⚠️ HEGEMONIA AMEAÇADORA: ${p.name} controla ${heldCount}/${totalTerritories} territórios (${Math.round((heldCount / totalTerritories) * 100)}%) e gera alarme global! (+5% Infâmia)`
+              );
+            }
+          }
+        }
+      }
     }
     const candidate = state.players[nextIdx];
     if (!candidate.eliminated) {

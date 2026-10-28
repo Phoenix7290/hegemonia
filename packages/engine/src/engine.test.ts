@@ -406,3 +406,232 @@ describe("War Classic Rules Engine", () => {
     expect(reorganizedDefender.economicPenaltyMultiplier).toBe(1.0);
   });
 });
+
+describe("Diplomacy, Treaties, World Tension and Coalitions", () => {
+  it("allows proposing and accepting a NAP, and blocks attacks between signers", () => {
+    const rng = createSeededRng("diplomacy-nap-test");
+    let state = createGame({
+      players: [
+        { id: "p1", name: "Alpha", isBot: false },
+        { id: "p2", name: "Bravo", isBot: false },
+        { id: "p3", name: "Charlie", isBot: false },
+      ],
+      seed: "diplomacy-nap-test",
+    });
+
+    // p1 proposes NAP to p2
+    state = applyAction(state, "p1", {
+      type: "propose_treaty",
+      targetPlayerId: "p2",
+      treatyType: "nap",
+    }, rng);
+
+    expect(state.treaties.length).toBe(1);
+    expect(state.treaties[0].status).toBe("pending");
+
+    // p2 accepts NAP out of turn
+    state = applyAction(state, "p2", {
+      type: "accept_treaty",
+      treatyId: state.treaties[0].id,
+    }, rng);
+
+    expect(state.treaties[0].status).toBe("active");
+
+    // Advance to round 2 attack phase for p1
+    state.round = 2;
+    state.phase = "attack";
+    state.turnIndex = state.players.findIndex((p) => p.id === "p1");
+    state.players[state.turnIndex].unplacedArmies = 0;
+    state.territories["brasil"].ownerId = "p1";
+    state.territories["brasil"].armies = 10;
+    state.territories["argentina"].ownerId = "p2";
+    state.territories["argentina"].armies = 2;
+
+    // Attacking p2 should throw error due to active treaty
+    expect(() =>
+      applyAction(state, "p1", {
+        type: "attack",
+        fromTerritoryId: "brasil",
+        toTerritoryId: "argentina",
+      }, rng)
+    ).toThrow(/tratado de paz ativo/);
+  });
+
+  it("blocks Alliance proposals when World Tension < 50% and allows when >= 50%", () => {
+    const rng = createSeededRng("alliance-tension-test");
+    let state = createGame({
+      players: [
+        { id: "p1", name: "Alpha", isBot: false },
+        { id: "p2", name: "Bravo", isBot: false },
+      ],
+      seed: "alliance-tension-test",
+    });
+
+    state.worldTension = 40;
+    expect(() =>
+      applyAction(state, "p1", {
+        type: "propose_treaty",
+        targetPlayerId: "p2",
+        treatyType: "alliance",
+      }, rng)
+    ).toThrow(/50%/);
+
+    state.worldTension = 50;
+    state = applyAction(state, "p1", {
+      type: "propose_treaty",
+      targetPlayerId: "p2",
+      treatyType: "alliance",
+    }, rng);
+
+    expect(state.treaties[0].type).toBe("alliance");
+    expect(state.treaties[0].status).toBe("pending");
+  });
+
+  it("penalizes treaty breaking (+35% infamy, +15% tension) and allows attack afterwards", () => {
+    const rng = createSeededRng("treaty-betrayal-test");
+    let state = createGame({
+      players: [
+        { id: "p1", name: "Alpha", isBot: false },
+        { id: "p2", name: "Bravo", isBot: false },
+      ],
+      seed: "treaty-betrayal-test",
+    });
+
+    state.treaties.push({
+      id: "treaty_test_1",
+      fromPlayerId: "p1",
+      toPlayerId: "p2",
+      type: "nap",
+      status: "active",
+      createdRound: 1,
+    });
+
+    expect(state.players[0].infamy).toBe(0);
+    expect(state.worldTension).toBe(0);
+
+    // p1 breaks treaty
+    state = applyAction(state, "p1", {
+      type: "break_treaty",
+      treatyId: "treaty_test_1",
+    }, rng);
+
+    expect(state.players[0].infamy).toBe(35);
+    expect(state.worldTension).toBe(15);
+    expect(state.treaties.length).toBe(0);
+  });
+
+  it("manages dynamic coalitions and applies Last Stand bonus in combat", () => {
+    const rng = createSeededRng("coalition-combat-test");
+    let state = createGame({
+      players: [
+        { id: "p1", name: "Warmonger", isBot: false },
+        { id: "p2", name: "DefenderA", isBot: false },
+        { id: "p3", name: "DefenderB", isBot: false },
+        { id: "p4", name: "DefenderC", isBot: false },
+      ],
+      seed: "coalition-combat-test",
+    });
+
+    // P1 infamy is 0 -> cannot form coalition
+    expect(() =>
+      applyAction(state, "p2", {
+        type: "form_coalition",
+        targetPlayerId: "p1",
+      }, rng)
+    ).toThrow(/50%/);
+
+    // Give P1 50% infamy -> allows 2-member coalition
+    state.players[0].infamy = 50;
+    state = applyAction(state, "p2", {
+      type: "form_coalition",
+      targetPlayerId: "p1",
+    }, rng);
+    expect(state.coalitions.length).toBe(1);
+    expect(state.coalitions[0].memberPlayerIds).toEqual(["p2"]);
+
+    // p3 joins coalition (now 2 members)
+    state = applyAction(state, "p3", {
+      type: "join_coalition",
+      coalitionId: state.coalitions[0].id,
+    }, rng);
+    expect(state.coalitions[0].memberPlayerIds.length).toBe(2);
+
+    // p4 cannot join because infamy is 50% (cap is 2)
+    expect(() =>
+      applyAction(state, "p4", {
+        type: "join_coalition",
+        coalitionId: state.coalitions[0].id,
+      }, rng)
+    ).toThrow(/limite máximo/);
+
+    // Set p1 infamy to 100% -> p4 can now join (cap 3)
+    state.players[0].infamy = 100;
+    state = applyAction(state, "p4", {
+      type: "join_coalition",
+      coalitionId: state.coalitions[0].id,
+    }, rng);
+    expect(state.coalitions[0].memberPlayerIds.length).toBe(3);
+
+    // Mutual non-aggression between coalition members (p2 attacking p3)
+    state.round = 2;
+    state.phase = "attack";
+    state.turnIndex = state.players.findIndex((p) => p.id === "p2");
+    state.players[state.turnIndex].unplacedArmies = 0;
+    state.territories["brasil"].ownerId = "p2";
+    state.territories["brasil"].armies = 5;
+    state.territories["argentina"].ownerId = "p3";
+    state.territories["argentina"].armies = 2;
+
+    expect(() =>
+      applyAction(state, "p2", {
+        type: "attack",
+        fromTerritoryId: "brasil",
+        toTerritoryId: "argentina",
+      }, rng)
+    ).toThrow(/mesma coalizão/);
+
+    // When p2 attacks p1 (the 100% infamy hegemon), p1 gets +2 Last Stand modifier
+    state.territories["argentina"].ownerId = "p1";
+    state = applyAction(state, "p2", {
+      type: "attack",
+      fromTerritoryId: "brasil",
+      toTerritoryId: "argentina",
+      diceCount: 1,
+    }, rng);
+
+    // Find the combat log or verify state
+    const combatLog = state.log[state.log.length - 1];
+    expect(combatLog).toContain("Mobilização");
+  });
+
+  it("increases Hegemon infamy (+5%) and tension (+0.5%) upon round advance when holding >= 38% of territories", () => {
+    const rng = createSeededRng("hegemon-round-advance");
+    let state = createGame({
+      players: [
+        { id: "p1", name: "Hegemon", isBot: false },
+        { id: "p2", name: "Minor", isBot: false },
+      ],
+      seed: "hegemon-round-advance",
+    });
+
+    const territoryKeys = Object.keys(state.territories);
+    const numToHold = Math.ceil(territoryKeys.length * 0.4); // 40% > 38%
+    for (let i = 0; i < numToHold; i++) {
+      state.territories[territoryKeys[i]].ownerId = "p1";
+    }
+
+    state.phase = "deploy";
+    state.players[0].unplacedArmies = 0;
+    state.turnIndex = 0;
+    state = applyAction(state, "p1", { type: "end_turn" }, rng);
+
+    // P2 turn now
+    state.players[1].unplacedArmies = 0;
+    state = applyAction(state, "p2", { type: "end_turn" }, rng);
+
+    // Round advanced to 2
+    expect(state.round).toBe(2);
+    expect(state.worldTension).toBe(0.5);
+    expect(state.players[0].infamy).toBe(5);
+  });
+});

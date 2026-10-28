@@ -237,6 +237,12 @@
             <span class="dice-side-label">DEF</span>
           </div>
         </div>
+
+        {#if lastCombat.lastStandBonus}
+          <div class="last-stand-badge" title="Bônus de Mobilização Total / Última Resistência">
+            ⭐ Mobilização Total ({lastCombat.attackerModifier ? `ATQ +${lastCombat.attackerModifier}` : `DEF +${lastCombat.defenderModifier}`})
+          </div>
+        {/if}
       </div>
     {/if}
 
@@ -466,6 +472,22 @@
     font-size: 0.65rem;
     font-weight: 800;
     color: #64748b;
+  }
+
+  .last-stand-badge {
+    margin-top: 0.35rem;
+    padding: 0.2rem 0.5rem;
+    background: linear-gradient(90deg, rgba(245, 158, 11, 0.25), rgba(239, 68, 68, 0.25));
+    border: 1px solid #f59e0b;
+    border-radius: 4px;
+    font-family: var(--font-tactical);
+    font-size: 0.66rem;
+    font-weight: 800;
+    letter-spacing: 0.06em;
+    color: #fde047;
+    text-align: center;
+    text-transform: uppercase;
+    box-shadow: 0 0 10px rgba(245, 158, 11, 0.2);
   }
 
   /* Log Scroller */
