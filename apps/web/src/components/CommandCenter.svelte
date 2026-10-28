@@ -444,7 +444,7 @@
 
           <!-- RIGHT: BRIEFING RADIO COMMS & CAMPAIGN RULES SUMMARY -->
           <aside class="briefing-side-col">
-            <div class="lobby-comms-box">
+            <div class="lobby-comms-box chat-size-{communications.settings.chatSize}">
               <CommunicationsCenter controller={communications} />
             </div>
 
@@ -1259,6 +1259,13 @@
     border: 1px solid rgba(148, 163, 184, 0.22);
     border-radius: 6px;
     padding: 12px;
+    transition: min-height 0.2s ease;
+  }
+  .lobby-comms-box.chat-size-large {
+    min-height: 460px;
+  }
+  .lobby-comms-box.chat-size-expanded {
+    min-height: 580px;
   }
 
   .campaign-protocol-box {

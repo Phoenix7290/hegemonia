@@ -154,7 +154,7 @@
 </script>
 
 <aside
-  class="war-journal-panel"
+  class="war-journal-panel chat-size-{communications.settings.chatSize}"
   class:collapsed
   class:communications-open={activeTab === "chat" && !collapsed}
 >
@@ -276,6 +276,7 @@
     grid-column: 3;
     grid-row: 3;
     align-self: end;
+    justify-self: end;
     width: 100%;
     max-height: 280px;
     background: linear-gradient(180deg, rgba(11, 18, 33, 0.95) 0%, rgba(6, 11, 21, 0.97) 100%);
@@ -287,12 +288,29 @@
     flex-direction: column;
     gap: 0.45rem;
     backdrop-filter: blur(14px);
+    transition: width 0.2s ease, max-height 0.2s ease;
   }
   .war-journal-panel.collapsed {
     max-height: 44px;
   }
   .war-journal-panel.communications-open {
-    max-height: calc(100vh - 100px);
+    max-height: calc(100vh - 96px);
+    z-index: 30;
+  }
+  .war-journal-panel:not(.collapsed).chat-size-large {
+    width: min(490px, calc(100vw - 24px));
+    max-height: 360px;
+  }
+  .war-journal-panel.communications-open.chat-size-large {
+    max-height: calc(100vh - 96px);
+  }
+  .war-journal-panel:not(.collapsed).chat-size-expanded {
+    width: min(640px, calc(100vw - 24px));
+    max-height: 440px;
+    z-index: 35;
+  }
+  .war-journal-panel.communications-open.chat-size-expanded {
+    max-height: calc(100vh - 88px);
   }
 
   .journal-header {
@@ -542,5 +560,20 @@
     display: flex;
     min-height: 260px;
     height: min(380px, calc(100vh - 190px));
+    transition: height 0.2s ease;
+  }
+  .war-journal-panel.chat-size-large .journal-communications {
+    min-height: 360px;
+    height: min(500px, calc(100vh - 150px));
+  }
+  .war-journal-panel.chat-size-expanded .journal-communications {
+    min-height: 460px;
+    height: min(640px, calc(100vh - 135px));
+  }
+  .war-journal-panel.chat-size-large .journal-scroller {
+    height: 210px;
+  }
+  .war-journal-panel.chat-size-expanded .journal-scroller {
+    height: 280px;
   }
 </style>
