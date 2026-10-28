@@ -1,5 +1,7 @@
 <script lang="ts">
-  import type { GameState, PlayerColor, PlayerState } from "@hegemonia/shared";
+  import type { GameState, PlayerState } from "@hegemonia/shared";
+  import { i18n, t } from "../i18n/index.svelte";
+  import { getFactionName, getObjectiveDescription } from "../i18n/content.svelte";
   import FactionFlag from "./FactionFlag.svelte";
   import Icon from "./Icon.svelte";
 
@@ -26,15 +28,6 @@
 
   let minimized = $state(false);
 
-  const FACTION_NAME_PT: Record<PlayerColor, string> = {
-    blue: "União Atlântica (Azul)",
-    red: "Diretório Vermelho",
-    green: "Pacto Esmeralda (Verde)",
-    yellow: "Império Áureo (Amarelo)",
-    black: "Legião de Ferro (Preto)",
-    white: "Coalizão Boreal (Branco)",
-  };
-
   let winner = $derived(game.players.find((p) => p.id === game.winnerId) ?? null);
   let isWinnerMe = $derived(Boolean(winner && winner.id === myPlayerId));
 
@@ -53,15 +46,15 @@
     <div class="v-min-left">
       <Icon name="laurel" size={20} />
       <span>
-        CAMPANHA ENCERRADA — VITÓRIA DE <strong>{winner?.name?.toUpperCase()}</strong>
+        {t("victory_campaign_ended", { name: winner?.name?.toUpperCase() ?? "" })}
       </span>
     </div>
     <div class="v-min-actions">
       <button class="outline-button" onclick={() => (minimized = false)}>
-        <Icon name="eye" size={14} /> Ver Relatório Final
+        <Icon name="eye" size={14} /> {t("victory_btn_view_report")}
       </button>
       <button class="gold-button" onclick={onReturnToLobby}>
-        <Icon name="back" size={14} /> Voltar ao Quartel-General
+        <Icon name="back" size={14} /> {t("victory_btn_return_hq")}
       </button>
     </div>
   </div>
@@ -69,12 +62,12 @@
   <div class="victory-backdrop">
     <article class="victory-dossier-modal">
       <div class="victory-hero-banner">
-        <img src="/assets/victory-header.webp" alt="Hegemonia Alcançada" class="victory-banner-img" />
+        <img src="/assets/victory-header.webp" alt={t("victory_modal_title")} class="victory-banner-img" />
         <div class="victory-banner-overlay">
           <span class="victory-kicker">
-            {isWinnerMe ? "TRIUNFO SUPREMO // DIRETRIZ CUMPRIDA" : "RELATÓRIO DE CAPITULAÇÃO GLOBAL"}
+            {isWinnerMe ? t("victory_kicker_win") : t("victory_kicker_defeat")}
           </span>
-          <h2>HEGEMONIA ALCANÇADA</h2>
+          <h2>{t("victory_modal_title")}</h2>
         </div>
       </div>
 
@@ -83,30 +76,36 @@
           <div class="winner-showcase">
             <FactionFlag color={winner.color} width={44} height={28} />
             <div class="winner-meta">
-              <span class="winner-faction">{FACTION_NAME_PT[winner.color]}</span>
-              <h3>Comandante {winner.name}</h3>
+              <span class="winner-faction">{getFactionName(winner.color)}</span>
+              <h3>{t("commander")} {winner.name}</h3>
             </div>
-            <span class="winner-round-badge">RODADA {game.round}</span>
+            <span class="winner-round-badge">{t("round", { round: game.round }).toUpperCase()}</span>
           </div>
 
           <div class="fulfilled-directive">
-            <span class="directive-label"><Icon name="target" size={14} /> Diretriz Estratégica Cumprida:</span>
-            <p>{winner.objective.descriptionPt}</p>
+            <span class="directive-label"><Icon name="target" size={14} /> {t("victory_directive_fulfilled")}</span>
+            <p>
+              {winner.objective.id
+                ? getObjectiveDescription(winner.objective.id)
+                : i18n.locale === "en"
+                  ? winner.objective.descriptionEn
+                  : winner.objective.descriptionPt}
+            </p>
           </div>
         {/if}
 
         <div class="standings-section">
-          <h4>Balanço Final de Forças</h4>
+          <h4>{t("victory_standings_title")}</h4>
           <div class="standings-list">
             {#each sortedStandings as row, i}
               <div class="standing-row" class:winner-row={row.player.id === game.winnerId}>
                 <span class="standing-pos">#{i + 1}</span>
                 <FactionFlag color={row.player.color} width={22} height={14} />
                 <strong class="standing-name">
-                  {row.player.name} {row.player.id === myPlayerId ? "(Você)" : ""}
+                  {row.player.name} {row.player.id === myPlayerId ? `(${t("you")})` : ""}
                 </strong>
-                <span class="standing-stat">{row.terrCount} Territórios ({row.sharePct}%)</span>
-                <span class="standing-stat">{row.totalArmies} Divisões</span>
+                <span class="standing-stat">{t("victory_terr_stat", { count: row.terrCount, pct: row.sharePct })}</span>
+                <span class="standing-stat">{t("divisions", { count: row.totalArmies })}</span>
               </div>
             {/each}
           </div>
@@ -114,12 +113,12 @@
 
         <div class="crypto-audit-box">
           <div>
-            <span>Hash de Compromisso (Seed Commit):</span>
+            <span>{t("victory_seed_commit")}</span>
             <code>{game.seedCommitHash}</code>
           </div>
           {#if game.revealedSeed}
             <div>
-              <span>Semente Criptográfica Revelada (PRNG):</span>
+              <span>{t("victory_seed_revealed")}</span>
               <code>{game.revealedSeed}</code>
             </div>
           {/if}
@@ -127,15 +126,15 @@
 
         <div class="victory-footer-actions">
           <button class="outline-button" onclick={() => (minimized = true)}>
-            <Icon name="globe" size={15} /> Inspecionar Mapa Final
+            <Icon name="globe" size={15} /> {t("victory_btn_inspect_map")}
           </button>
           {#if amIHost && onReturnRoomToLobby}
             <button class="outline-button" onclick={onReturnRoomToLobby}>
-              <Icon name="users" size={15} /> Reabrir Lobby da Sala
+              <Icon name="users" size={15} /> {t("victory_btn_reset_briefing")}
             </button>
           {/if}
           <button class="gold-button" onclick={onReturnToLobby}>
-            <Icon name="shield" size={15} /> Retornar ao Quartel-General
+            <Icon name="shield" size={15} /> {t("victory_btn_return_hq")}
           </button>
         </div>
       </div>

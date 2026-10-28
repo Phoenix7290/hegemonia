@@ -1,7 +1,8 @@
 <script lang="ts">
   import type { CombatRollResult, PlayerState } from "@hegemonia/shared";
-  import { CLASSIC_MAP } from "@hegemonia/maps";
   import type { CommunicationsController } from "../lib/communications.svelte";
+  import { t } from "../i18n/index.svelte";
+  import { getTerritoryName } from "../i18n/content.svelte";
   import CommunicationsCenter from "./CommunicationsCenter.svelte";
   import Icon from "./Icon.svelte";
 
@@ -19,8 +20,6 @@
 
   let collapsed = $state(false);
   let activeTab = $state<"log" | "chat">("log");
-
-  const territoryNameMap = new Map(CLASSIC_MAP.territories.map((t) => [t.id, t.namePt]));
 
   const COLOR_HEX: Record<string, string> = {
     blue: "#3b82f6",
@@ -54,7 +53,7 @@
       return {
         raw,
         kind: "comms",
-        tag: "RÁDIO",
+        tag: t("tag_radio"),
         playerColor,
         text: raw.replace(/^\[COMMS\]\s*/, ""),
       };
@@ -64,7 +63,7 @@
       return {
         raw,
         kind: "timeout",
-        tag: "TEMPO",
+        tag: t("tag_timeout"),
         playerColor,
         text: raw.replace(/^\[TEMPO\]\s*/, ""),
       };
@@ -74,7 +73,7 @@
       return {
         raw,
         kind: "victory",
-        tag: "VITÓRIA",
+        tag: t("tag_victory"),
         playerColor,
         text: raw,
       };
@@ -85,7 +84,7 @@
       return {
         raw,
         kind: "conquest",
-        tag: "CONQUISTA",
+        tag: t("tag_conquest"),
         playerColor,
         text: raw,
         attDice: diceMatch ? diceMatch[1] : undefined,
@@ -98,7 +97,7 @@
       return {
         raw,
         kind: "combat",
-        tag: "COMBATE",
+        tag: t("tag_combat"),
         playerColor,
         text: raw,
         attDice: diceMatch ? diceMatch[1] : undefined,
@@ -110,7 +109,7 @@
       return {
         raw,
         kind: "trade",
-        tag: "SUPRIMENTO",
+        tag: t("tag_trade"),
         playerColor,
         text: raw,
       };
@@ -120,7 +119,7 @@
       return {
         raw,
         kind: "deploy",
-        tag: "ORDEM",
+        tag: t("tag_order"),
         playerColor,
         text: raw,
       };
@@ -130,7 +129,7 @@
       return {
         raw,
         kind: "round",
-        tag: "FASE",
+        tag: t("tag_phase"),
         playerColor,
         text: raw,
       };
@@ -139,7 +138,7 @@
     return {
       raw,
       kind: "info",
-      tag: "INTEL",
+      tag: t("tag_intel"),
       playerColor,
       text: raw,
     };
@@ -169,7 +168,7 @@
         }}
       >
         <Icon name="log" size={13} />
-        <span>Diário de Guerra</span>
+        <span>{t("war_journal_title")}</span>
         <small class="j-count">{combatLogs.length}</small>
       </button>
 
@@ -182,7 +181,7 @@
         }}
       >
         <Icon name="chat" size={13} />
-        <span>Rádio Comms</span>
+        <span>{t("radio_comms_title")}</span>
         {#if communications.totalUnread > 0}
           <small class="j-count comms-count">{communications.totalUnread}</small>
         {/if}
@@ -192,7 +191,7 @@
     <button
       class="j-collapse-btn"
       onclick={() => (collapsed = !collapsed)}
-      title={collapsed ? "Expandir Diário" : "Recolher Diário"}
+      title={collapsed ? t("expand_journal") : t("collapse_journal")}
     >
       {collapsed ? "▲" : "▼"}
     </button>
@@ -203,22 +202,22 @@
       <div class="combat-telemetry-card" class:conquered={lastCombat.conquered}>
         <div class="telemetry-top">
           <span class="telemetry-route">
-            {territoryNameMap.get(lastCombat.fromTerritoryId) ?? lastCombat.fromTerritoryId}
+            {getTerritoryName(lastCombat.fromTerritoryId)}
             <strong>→</strong>
-            {territoryNameMap.get(lastCombat.toTerritoryId) ?? lastCombat.toTerritoryId}
+            {getTerritoryName(lastCombat.toTerritoryId)}
           </span>
           {#if lastCombat.conquered}
-            <span class="conquered-pill">TOMADO</span>
+            <span class="conquered-pill">{t("conquest_taken")}</span>
           {:else}
             <span class="losses-pill">
-              Baixas: ATQ -{lastCombat.attackerLosses} / DEF -{lastCombat.defenderLosses}
+              {t("combat_losses", { att: lastCombat.attackerLosses, def: lastCombat.defenderLosses })}
             </span>
           {/if}
         </div>
 
         <div class="dice-comparison-row">
           <div class="dice-group att-group">
-            <span class="dice-side-label">ATQ</span>
+            <span class="dice-side-label">{t("att_short")}</span>
             {#each lastCombat.attackerDice as d, i}
               {@const defDie = lastCombat.defenderDice[i]}
               {@const wonPair = defDie !== undefined && d > defDie}
@@ -226,7 +225,7 @@
             {/each}
           </div>
 
-          <span class="dice-vs">VS</span>
+          <span class="dice-vs">{t("vs")}</span>
 
           <div class="dice-group def-group">
             {#each lastCombat.defenderDice as d, i}
@@ -234,7 +233,7 @@
               {@const wonPair = attDie !== undefined && d >= attDie}
               <span class="die-pip def-pip" class:die-win={wonPair}>{d}</span>
             {/each}
-            <span class="dice-side-label">DEF</span>
+            <span class="dice-side-label">{t("def_short")}</span>
           </div>
         </div>
 
@@ -257,15 +256,15 @@
               <span class="entry-tag tag-{entry.kind}">{entry.tag}</span>
               {#if entry.attDice && entry.defDice}
                 <div class="inline-dice-badges">
-                  <span class="mini-att">ATQ [{entry.attDice}]</span>
-                  <span class="mini-def">DEF [{entry.defDice}]</span>
+                  <span class="mini-att">{t("att_short")} [{entry.attDice}]</span>
+                  <span class="mini-def">{t("def_short")} [{entry.defDice}]</span>
                 </div>
               {/if}
             </div>
             <p class="entry-text">{entry.text}</p>
           </div>
         {:else}
-          <div class="journal-empty">Aguardando primeiras movimentações táticas...</div>
+          <div class="journal-empty">{t("journal_empty_state")}</div>
         {/each}
       </div>
     {:else}

@@ -1,0 +1,28 @@
+import type { TranslationCatalog } from "../../types";
+
+export const enErrors: TranslationCatalog = {
+  error_default: "An unexpected error occurred.",
+  error_network: "Network connection failure.",
+  error_server_internal: "Internal server error.",
+  error_validation: "Invalid command data.",
+  error_file_too_large: "File exceeds permitted limit (max 5 MiB).",
+  error_invalid_image: "Unable to process this image.",
+  error_unsupported_format: "Unsupported format. Use JPEG, PNG, WebP, GIF, or AVIF.",
+  error_auth_failed: "Authentication failed.",
+  error_invalid_credentials: "Invalid credentials.",
+  error_account_exists: "Email or username already registered.",
+  error_room_full: "Room is full (max 6 players).",
+  error_match_started: "Match has already started.",
+  error_match_no_actions: "Match no longer accepts actions.",
+  error_match_not_found: "Match not found.",
+  error_player_not_found: "Participant not found in this match.",
+  error_authenticated_identity: "This player identity belongs to an authenticated account.",
+  error_profile_not_found: "Military record not found.",
+  error_self_action: "This action cannot be performed on your own profile.",
+  error_stats_private: "This commander keeps their statistics private.",
+  error_history_private: "This commander keeps their history private.",
+  error_request_blocked: "Unable to send friend request.",
+  error_request_not_found: "Pending request not found.",
+  error_social_unavailable: "Military social network unavailable.",
+  error_action_unavailable: "Military action unavailable.",
+};

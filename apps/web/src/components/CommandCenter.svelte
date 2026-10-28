@@ -3,6 +3,8 @@
   import { api, navigate } from "../lib/api";
   import { auth } from "../lib/auth.svelte";
   import type { CommunicationsController } from "../lib/communications.svelte";
+  import { t } from "../i18n/index.svelte";
+  import { getFactionName, getFactionDoctrine } from "../i18n/content.svelte";
   import Avatar from "./Avatar.svelte";
   import CommunicationsCenter from "./CommunicationsCenter.svelte";
   import FactionFlag from "./FactionFlag.svelte";
@@ -56,24 +58,6 @@
 
   const ALL_COLORS: PlayerColor[] = ["blue", "red", "green", "yellow", "black", "white"];
 
-  const FACTION_NAME_PT: Record<PlayerColor, string> = {
-    blue: "União Atlântica",
-    red: "Diretório Vermelho",
-    green: "Pacto Esmeralda",
-    yellow: "Império Áureo",
-    black: "Legião de Ferro",
-    white: "Coalizão Boreal",
-  };
-
-  const FACTION_DOCTRINE_PT: Record<PlayerColor, string> = {
-    blue: "Supremacia Naval & OTAN",
-    red: "Massa Blindada Continental",
-    green: "Defesa em Profundidade",
-    yellow: "Hegemonia Imperial Dourada",
-    black: "Divisões Couraçadas de Elite",
-    white: "Vanguarda Ártica & Aérea",
-  };
-
   let topCommanders = $state<LeaderboardRow[]>([]);
   let copiedCode = $state(false);
 
@@ -112,7 +96,7 @@
           class="hero-emblem-img"
         />
         <p class="hero-tagline">
-          COMANDO ESTRATÉGICO MULTIJOGADOR • CARTOGRAFIA NATURAL EARTH • MOTOR CRIPTOGRÁFICO DETERMINÍSTICO
+          {t("deck_hero_tagline")}
         </p>
       </header>
 
@@ -125,8 +109,8 @@
           <div class="card-corner br"></div>
 
           <div class="ops-header">
-            <span class="eyebrow">CENTRO DE OPERAÇÕES TÁTICAS</span>
-            <h2>Desdobramento de Campanha</h2>
+            <span class="eyebrow">{t("deck_ops_eyebrow")}</span>
+            <h2>{t("deck_ops_title")}</h2>
           </div>
 
           <!-- Commander Identity Box -->
@@ -135,8 +119,8 @@
               <Avatar name={auth.user.displayName} avatarUrl={auth.user.avatarUrl} size="medium" />
               <div class="cid-meta">
                 <div class="cid-badges">
-                  <span class="status-pill verified"><Icon name="shield" size={12} /> CONTA OFICIAL</span>
-                  <span class="status-pill ranked">RANKING ATIVO</span>
+                  <span class="status-pill verified"><Icon name="shield" size={12} /> {t("deck_verified_account")}</span>
+                  <span class="status-pill ranked">{t("deck_ranked_active")}</span>
                 </div>
                 <strong>{auth.user.displayName}</strong>
                 <small>@{auth.user.username}</small>
@@ -145,24 +129,24 @@
                 class="outline-button cid-action"
                 onclick={() => navigate(`/profile/${auth.user!.username}`)}
               >
-                Dossiê
+                {t("deck_btn_dossier")}
               </button>
             </div>
           {:else}
             <div class="commander-id-card guest">
               <div class="guest-field">
-                <label for="cmd-name">IDENTIFICAÇÃO DE COMANDO (MODO CONVIDADO)</label>
+                <label for="cmd-name">{t("deck_guest_label")}</label>
                 <input
                   id="cmd-name"
                   bind:value={playerName}
                   maxlength="24"
-                  placeholder="Ex: Marechal V. Kovalenko"
+                  placeholder={t("deck_guest_placeholder")}
                 />
               </div>
               <div class="guest-auth-bar">
-                <span>Deseja registrar vitórias no Ranking Global e desbloquear medalhas?</span>
+                <span>{t("deck_guest_upsell")}</span>
                 <button class="text-gold-btn" onclick={() => (auth.dialogOpen = true)}>
-                  <Icon name="shield" size={14} /> Autenticar / Criar Conta
+                  <Icon name="shield" size={14} /> {t("deck_guest_btn_auth")}
                 </button>
               </div>
             </div>
@@ -175,14 +159,14 @@
                 <Icon name="swords" size={22} />
               </div>
               <div class="launch-text">
-                <strong>{connecting ? "INICIALIZANDO SALA..." : "CRIAR NOVA SALA DE GUERRA"}</strong>
-                <small>Abrir teatro de operações para até 6 generais humanos ou comandantes de IA</small>
+                <strong>{connecting ? t("deck_btn_creating_room") : t("deck_btn_create_room")}</strong>
+                <small>{t("deck_create_room_sub")}</small>
               </div>
             </button>
           </div>
 
           <div class="tactical-divider">
-            <span>OU INGRESSAR EM OPERAÇÃO EM CURSO</span>
+            <span>{t("deck_or_join")}</span>
           </div>
 
           <!-- Join Existing Room by Code -->
@@ -192,7 +176,7 @@
               <input
                 bind:value={roomCodeInput}
                 maxlength="6"
-                placeholder="CÓDIGO (EX: A1B2C3)"
+                placeholder={t("deck_room_code_placeholder")}
                 onkeydown={(e) => e.key === "Enter" && onJoinRoom()}
               />
             </div>
@@ -201,7 +185,7 @@
               disabled={connecting || !roomCodeInput.trim()}
               onclick={onJoinRoom}
             >
-              <Icon name="compass" size={16} /> Conectar à Sala
+              <Icon name="compass" size={16} /> {t("deck_btn_join")}
             </button>
           </div>
         </section>
@@ -211,40 +195,40 @@
           <!-- Theatre Specifications -->
           <section class="deck-card intel-card">
             <div class="ops-header compact">
-              <span class="eyebrow">PARÂMETROS DO SIMULADOR</span>
-              <h3>Diretrizes de Teatro Global</h3>
+              <span class="eyebrow">{t("deck_params_eyebrow")}</span>
+              <h3>{t("deck_params_title")}</h3>
             </div>
 
             <div class="intel-specs-grid">
               <div class="spec-item">
                 <span class="spec-icon"><Icon name="globe" size={18} /></span>
                 <div>
-                  <strong>44 Territórios Reais</strong>
-                  <small>Geometria vetorial Natural Earth com globo contínuo</small>
+                  <strong>{t("deck_spec_territories_title")}</strong>
+                  <small>{t("deck_spec_territories_desc")}</small>
                 </div>
               </div>
 
               <div class="spec-item">
                 <span class="spec-icon"><Icon name="target" size={18} /></span>
                 <div>
-                  <strong>24 Diretrizes Secretas</strong>
-                  <small>14 Objetivos Clássicos + 10 Ambições Nacionais</small>
+                  <strong>{t("deck_spec_objectives_title")}</strong>
+                  <small>{t("deck_spec_objectives_desc")}</small>
                 </div>
               </div>
 
               <div class="spec-item">
                 <span class="spec-icon"><Icon name="flag" size={18} /></span>
                 <div>
-                  <strong>Ásia Tripartida (+7)</strong>
-                  <small>Indo-Arábia (+2), Estepes (+2) e Leste Asiático (+3)</small>
+                  <strong>{t("deck_spec_asia_title")}</strong>
+                  <small>{t("deck_spec_asia_desc")}</small>
                 </div>
               </div>
 
               <div class="spec-item">
                 <span class="spec-icon"><Icon name="lock" size={18} /></span>
                 <div>
-                  <strong>Auditoria Mulberry32</strong>
-                  <small>Rolagens determinísticas com hash criptográfico</small>
+                  <strong>{t("deck_spec_audit_title")}</strong>
+                  <small>{t("deck_spec_audit_desc")}</small>
                 </div>
               </div>
             </div>
@@ -254,11 +238,11 @@
           <section class="deck-card mini-rank-card">
             <div class="ops-header compact row-spread">
               <div>
-                <span class="eyebrow">QUADRO DE HONRA</span>
-                <h3>Alto Comando — Top 5</h3>
+                <span class="eyebrow">{t("deck_honor_eyebrow")}</span>
+                <h3>{t("deck_honor_title")}</h3>
               </div>
               <button class="text-gold-btn" onclick={() => navigate("/leaderboard")}>
-                Ver Ranking Completo ›
+                {t("deck_btn_full_ranking")}
               </button>
             </div>
 
@@ -273,21 +257,21 @@
                     <Avatar name={cmd.displayName} avatarUrl={cmd.avatarUrl} size="small" />
                     <div class="m-info">
                       <strong>{cmd.displayName}</strong>
-                      <small>{cmd.wins} vitórias • {cmd.matchesPlayed} campanhas</small>
+                      <small>{t("deck_wins_matches", { wins: cmd.wins, matches: cmd.matchesPlayed })}</small>
                     </div>
-                    <strong class="m-score">{cmd.score} PTS</strong>
+                    <strong class="m-score">{t("deck_pts", { score: cmd.score })}</strong>
                   </button>
                 {/each}
               </div>
             {:else}
               <div class="mini-rank-empty">
-                <p>O quadro de honra aguarda as primeiras vitórias ranqueadas da temporada.</p>
+                <p>{t("deck_honor_empty")}</p>
                 <div class="mini-rank-Quicklinks">
                   <button class="outline-button" onclick={() => navigate("/leaderboard")}>
-                    <Icon name="rank" size={14} /> Classificação
+                    <Icon name="rank" size={14} /> {t("nav_leaderboard")}
                   </button>
                   <button class="outline-button" onclick={() => navigate("/friends")}>
-                    <Icon name="users" size={14} /> Rede de Aliados
+                    <Icon name="users" size={14} /> {t("nav_allies")}
                   </button>
                 </div>
               </div>
@@ -311,12 +295,12 @@
           <div class="briefing-title-group">
             <img src="/hegemonia-logo.webp" alt="Hegemonia" class="briefing-mini-logo" />
             <div>
-              <span class="eyebrow">SALA DE BRIEFING ESTRATÉGICO // PRÉ-CAMPANHA</span>
+              <span class="eyebrow">{t("lobby_eyebrow")}</span>
               <div class="op-code-row">
-                <h2>OPERAÇÃO: <span class="op-code-val">{roomCode}</span></h2>
-                <button class="copy-code-btn" onclick={copyRoomCode} title="Copiar Código da Sala">
+                <h2>{t("lobby_op_label")} <span class="op-code-val">{roomCode}</span></h2>
+                <button class="copy-code-btn" onclick={copyRoomCode} title={t("lobby_btn_copy_code")}>
                   <Icon name={copiedCode ? "check" : "copy"} size={14} />
-                  {copiedCode ? "Código Copiado!" : "Copiar Código"}
+                  {copiedCode ? t("lobby_btn_copied_code") : t("lobby_btn_copy_code")}
                 </button>
               </div>
             </div>
@@ -325,10 +309,10 @@
           <div class="briefing-header-right">
             <div class="capacity-pill">
               <Icon name="users" size={15} />
-              <span><strong>{lobbyPlayers.length}</strong> / 6 GENERAIS</span>
+              <span><strong>{lobbyPlayers.length}</strong> / 6 {t("commanders").toUpperCase()}</span>
             </div>
             <button class="leave-room-btn" onclick={onLeaveRoom}>
-              <Icon name="back" size={15} /> Abandonar Sala
+              <Icon name="back" size={15} /> {t("lobby_btn_leave")}
             </button>
           </div>
         </header>
@@ -337,8 +321,8 @@
           <!-- LEFT: 6-SLOT COMMAND ROSTER & FACTION SELECTION -->
           <div class="briefing-main-col">
             <div class="section-subhead">
-              <span>QUADRO DE GENERAIS ALOCADOS</span>
-              <small>Mínimo de 2 comandantes para iniciar o sorteio de territórios e diretrizes</small>
+              <span>{t("lobby_roster_title")}</span>
+              <small>{t("lobby_roster_sub")}</small>
             </div>
 
             <div class="slots-grid">
@@ -355,29 +339,29 @@
                     <div class="slot-name-row">
                       <strong>{p.name}</strong>
                       {#if p.token === myPlayerId}
-                        <span class="me-tag">VOCÊ</span>
+                        <span class="me-tag">{t("you")}</span>
                       {/if}
                     </div>
                     <small>
-                      {FACTION_NAME_PT[p.color]}
+                      {getFactionName(p.color)}
                       {#if p.username} • @{p.username}{/if}
                     </small>
                   </div>
 
                   <div class="slot-badges">
                     {#if p.isHost}
-                      <span class="role-badge host"><Icon name="crown" size={12} /> ANFITRIÃO</span>
+                      <span class="role-badge host"><Icon name="crown" size={12} /> {t("lobby_role_host")}</span>
                     {:else if p.isBot}
-                      <span class="role-badge bot"><Icon name="bot" size={12} /> IA TÁTICA</span>
+                      <span class="role-badge bot"><Icon name="bot" size={12} /> {t("lobby_role_bot")}</span>
                     {:else}
-                      <span class="role-badge human">COMANDANTE</span>
+                      <span class="role-badge human">{t("lobby_role_human")}</span>
                     {/if}
 
                     {#if p.isBot && amIHost}
                       <button
                         class="remove-bot-btn"
                         onclick={() => onRemoveBot(p.token)}
-                        title="Dispensar General IA"
+                        title={t("lobby_btn_remove_bot")}
                       >
                         <Icon name="close" size={14} />
                       </button>
@@ -391,13 +375,13 @@
                   <div class="empty-slot-left">
                     <span class="empty-slot-num">0{lobbyPlayers.length + idx + 1}</span>
                     <div>
-                      <strong>Slot de Comando Disponível</strong>
-                      <small>Aguardando conexão de general ou alocação de IA</small>
+                      <strong>{t("lobby_slot_available")}</strong>
+                      <small>{t("lobby_slot_waiting")}</small>
                     </div>
                   </div>
                   {#if amIHost && idx === 0}
                     <button class="outline-button mini-bot-btn" onclick={onAddBot}>
-                      <Icon name="bot" size={13} /> + Alocar IA
+                      <Icon name="bot" size={13} /> {t("lobby_btn_alloc_ai")}
                     </button>
                   {/if}
                 </div>
@@ -407,8 +391,8 @@
             <!-- Faction Flag & Color Selector -->
             <div class="faction-picker-panel">
               <div class="section-subhead">
-                <span>ESCOLHA SUA FACÇÃO E ESTANDARTE MILITAR</span>
-                <small>Cada exército possui insígnia heráldica única no mapa tático</small>
+                <span>{t("factions_choose_title")}</span>
+                <small>{t("factions_choose_sub")}</small>
               </div>
 
               <div class="faction-cards-grid">
@@ -425,14 +409,14 @@
                   >
                     <FactionFlag color={c} width={34} height={22} />
                     <div class="f-choice-meta">
-                      <strong>{FACTION_NAME_PT[c]}</strong>
+                      <strong>{getFactionName(c)}</strong>
                       <small>
                         {#if isMine}
-                          Sua Facção Atual
+                          {t("factions_your_faction")}
                         {:else if holder}
-                          Ocupado por {holder.name}
+                          {t("factions_occupied_by", { name: holder.name })}
                         {:else}
-                          {FACTION_DOCTRINE_PT[c]}
+                          {getFactionDoctrine(c)}
                         {/if}
                       </small>
                     </div>
@@ -449,11 +433,11 @@
             </div>
 
             <div class="campaign-protocol-box">
-              <h4><Icon name="shield" size={14} /> Protocolo de Operação</h4>
+              <h4><Icon name="shield" size={14} /> {t("lobby_protocol_title")}</h4>
               <ul>
-                <li><strong>Rodada 1 (Tratado Inicial):</strong> Apenas posicionamento de reforços, sem ataques.</li>
-                <li><strong>Tempo de Turno:</strong> 120s por general com execução automática em caso de esgotamento.</li>
-                <li><strong>Troca de Suprimentos:</strong> Escalada progressiva (4, 6, 8, 10, 12, 15...). Obrigatória com 5 cartas.</li>
+                <li><strong>{t("lobby_protocol_r1")}</strong> {t("lobby_protocol_r1_desc")}</li>
+                <li><strong>{t("lobby_protocol_timer")}</strong> {t("lobby_protocol_timer_desc")}</li>
+                <li><strong>{t("lobby_protocol_cards")}</strong> {t("lobby_protocol_cards_desc")}</li>
               </ul>
             </div>
           </aside>
@@ -464,15 +448,15 @@
           <div class="footer-status">
             {#if !amIHost}
               <span class="waiting-host-note">
-                <span class="pulse-dot"></span> Aguardando o anfitrião iniciar a campanha global...
+                <span class="pulse-dot"></span> {t("lobby_waiting_host")}
               </span>
             {:else if lobbyPlayers.length < 2}
               <span class="waiting-host-note">
-                Adicione ao menos 1 General IA ou aguarde outro jogador para iniciar.
+                {t("lobby_need_more_players")}
               </span>
             {:else}
               <span class="ready-note">
-                <Icon name="check" size={15} /> Todos os sistemas prontos para o início das hostilidades.
+                <Icon name="check" size={15} /> {t("lobby_systems_ready")}
               </span>
             {/if}
           </div>
@@ -480,7 +464,7 @@
           <div class="footer-buttons">
             {#if amIHost && lobbyPlayers.length < 6}
               <button class="outline-button" onclick={onAddBot}>
-                <Icon name="bot" size={16} /> + Adicionar General IA
+                <Icon name="bot" size={16} /> {t("lobby_btn_add_ai")}
               </button>
             {/if}
 
@@ -490,7 +474,7 @@
                 disabled={lobbyPlayers.length < 2}
                 onclick={onStartGame}
               >
-                <Icon name="swords" size={18} /> INICIAR CAMPANHA GLOBAL
+                <Icon name="swords" size={18} /> {t("lobby_btn_launch_campaign")}
               </button>
             {/if}
           </div>

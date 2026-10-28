@@ -1,7 +1,9 @@
 <script lang="ts">
   import type { FriendSummary } from "@hegemonia/shared";
   import { api, navigate } from "../lib/api";
+  import { t } from "../i18n/index.svelte";
   import Avatar from "./Avatar.svelte";
+
   let { onchanged }: { onchanged: () => void } = $props();
   let query = $state("");
   let users = $state<FriendSummary[]>([]);
@@ -14,24 +16,57 @@
     loading = true;
     message = "";
     try {
-      const result = await api<{ users: FriendSummary[] }>(`/api/users/search?q=${encodeURIComponent(query)}`);
+      const result = await api<{ users: FriendSummary[] }>(
+        `/api/users/search?q=${encodeURIComponent(query)}`
+      );
       users = result.users;
-      if (!users.length) message = "Nenhum comandante encontrado.";
-    } catch (error) { message = error instanceof Error ? error.message : "Busca indisponível."; }
-    finally { loading = false; }
+      if (!users.length) message = t("friends_search_empty");
+    } catch (error) {
+      message = error instanceof Error ? error.message : t("error_default");
+    } finally {
+      loading = false;
+    }
   }
+
   async function request(userId: string) {
-    try { await api<void>(`/api/friends/${userId}/request`, { method: "POST" }); message = "Solicitação registrada."; onchanged(); }
-    catch (error) { message = error instanceof Error ? error.message : "Não foi possível adicionar."; }
+    try {
+      await api<void>(`/api/friends/${userId}/request`, { method: "POST" });
+      message = t("friends_request_sent");
+      onchanged();
+    } catch (error) {
+      message = error instanceof Error ? error.message : t("error_action_unavailable");
+    }
   }
 </script>
 
 <div class="user-search">
-  <form onsubmit={search}><input bind:value={query} minlength="2" maxlength="64" placeholder="Buscar por usuário ou nome de exibição" aria-label="Buscar comandantes"/><button class="gold-button" disabled={loading}>{loading ? "Buscando..." : "Buscar"}</button></form>
+  <form onsubmit={search}>
+    <input
+      bind:value={query}
+      minlength="2"
+      maxlength="64"
+      placeholder={t("friends_search_placeholder")}
+      aria-label={t("friends_search_aria")}
+    />
+    <button class="gold-button" disabled={loading}>
+      {loading ? t("friends_btn_searching") : t("friends_btn_search")}
+    </button>
+  </form>
   {#if message}<p class="form-message">{message}</p>{/if}
   <div class="search-results">
     {#each users as user}
-      <article class="person-row"><button class="person-link" onclick={() => navigate(`/profile/${user.username}`)}><Avatar name={user.displayName} avatarUrl={user.avatarUrl} size="small"/><span><strong>{user.displayName}</strong><small>@{user.username}</small></span></button><button class="outline-button" onclick={() => request(user.id)}>Adicionar</button></article>
+      <article class="person-row">
+        <button class="person-link" onclick={() => navigate(`/profile/${user.username}`)}>
+          <Avatar name={user.displayName} avatarUrl={user.avatarUrl} size="small" />
+          <span>
+            <strong>{user.displayName}</strong>
+            <small>@{user.username}</small>
+          </span>
+        </button>
+        <button class="outline-button" onclick={() => request(user.id)}>
+          {t("friends_btn_add")}
+        </button>
+      </article>
     {/each}
   </div>
 </div>

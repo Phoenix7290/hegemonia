@@ -2,6 +2,7 @@
   import { tick } from "svelte";
   import { GLOBAL_CHANNEL_ID } from "@hegemonia/shared";
   import type { CommunicationsController } from "../lib/communications.svelte";
+  import { i18n, t } from "../i18n/index.svelte";
   import Avatar from "./Avatar.svelte";
   import CommunicationSettings from "./CommunicationSettings.svelte";
   import FactionFlag from "./FactionFlag.svelte";
@@ -76,10 +77,7 @@
   }
 
   function formatTime(isoDate: string): string {
-    return new Date(isoDate).toLocaleTimeString("pt-BR", {
-      hour: "2-digit",
-      minute: "2-digit",
-    });
+    return i18n.formatTimeShort(isoDate);
   }
 
   function openDirect(playerId: string): void {
@@ -93,10 +91,10 @@
 <section
   class="communications-center size-{controller.settings.chatSize}"
   class:compact={compact && controller.settings.chatSize === "normal"}
-  aria-label="Centro de comunicações"
+  aria-label={t("comms_settings_title")}
 >
   <header class="comms-toolbar">
-    <div class="channel-tabs" role="tablist" aria-label="Frequências abertas">
+    <div class="channel-tabs" role="tablist" aria-label={t("comms_line_tactical_radio")}>
       {#each controller.openTabIds as channelId (channelId)}
         {@const channel = controller.channelById(channelId)}
         {@const other = channel ? controller.otherPlayer(channel) : undefined}
@@ -114,7 +112,7 @@
             {:else}
               <Icon name="lock" size={11} />
             {/if}
-            <span>{controller.channelTitle(channelId)}</span>
+            <span>{channelId === GLOBAL_CHANNEL_ID ? t("comms_channel_global") : controller.channelTitle(channelId)}</span>
             {#if (controller.unreadByChannel[channelId] ?? 0) > 0}
               <strong class="unread-badge">{controller.unreadByChannel[channelId]}</strong>
             {/if}
@@ -123,7 +121,7 @@
             <button
               class="close-tab"
               onclick={() => controller.closeChannel(channelId)}
-              aria-label={`Fechar aba ${controller.channelTitle(channelId)}`}
+              aria-label={t("comms_close_tab", { title: controller.channelTitle(channelId) })}
             >
               <Icon name="close" size={10} />
             </button>
@@ -138,22 +136,22 @@
           class="toolbar-button"
           class:active={newChannelOpen}
           onclick={() => (newChannelOpen = !newChannelOpen)}
-          aria-label="Abrir nova frequência direta"
-          title="Nova frequência direta"
+          aria-label={t("comms_open_direct_tab")}
+          title={t("comms_open_direct_tab")}
         >
           <Icon name="plus" size={14} />
         </button>
         {#if newChannelOpen}
           <div class="player-picker">
-            <div class="picker-title">NOVA FREQUÊNCIA DIRETA</div>
+            <div class="picker-title">{t("comms_open_direct_tab")}</div>
             {#each availablePlayers as player}
               <button onclick={() => openDirect(player.token)}>
                 <Avatar name={player.name} avatarUrl={player.avatarUrl} size="small" />
-                <span><strong>{player.name}</strong><small>Canal privado bilateral</small></span>
+                <span><strong>{player.name}</strong><small>{t("comms_bilateral_channel")}</small></span>
                 <Icon name="radio" size={13} />
               </button>
             {:else}
-              <p>Nenhum outro comandante humano disponível.</p>
+              <p>{t("comms_no_human_players")}</p>
             {/each}
           </div>
         {/if}
@@ -162,16 +160,16 @@
         class="toolbar-button"
         class:active={controller.settings.chatSize !== "normal"}
         onclick={() => controller.cycleChatSize()}
-        aria-label="Alternar tamanho do chat"
-        title={`Tamanho do chat: ${controller.settings.chatSize === "normal" ? "Padrão" : controller.settings.chatSize === "large" ? "Grande" : "Expandido"} (clique para alternar)`}
+        aria-label={t("comms_toggle_chat_size")}
+        title={`${t("comms_chat_size_label")}: ${controller.settings.chatSize === "normal" ? t("comms_size_normal") : controller.settings.chatSize === "large" ? t("comms_size_large") : t("comms_size_expanded")}`}
       >
         <Icon name={controller.settings.chatSize === "expanded" ? "minimize" : "expand"} size={13} />
       </button>
       <button
         class="toolbar-button"
         onclick={() => (settingsOpen = true)}
-        aria-label="Preferências de comunicação"
-        title="Preferências de comunicação"
+        aria-label={t("comms_settings_title")}
+        title={t("comms_settings_title")}
       >
         <Icon name="settings" size={14} />
       </button>
@@ -181,30 +179,30 @@
   <div class="channel-status-line">
     <span class:private={activeChannel?.kind !== "global"}>
       <Icon name={activeChannel?.kind === "global" || !activeChannel ? "globe" : "lock"} size={10} />
-      {activeChannel?.kind === "direct" ? "FREQUÊNCIA DIRETA AUTORIZADA" : "REDE PÚBLICA DA SALA"}
+      {activeChannel?.kind === "direct" ? t("comms_status_direct_auth") : t("comms_status_public_net")}
     </span>
-    <small>{activeChannel?.kind === "direct" ? "Somente os 2 participantes leem" : "Todos os comandantes conectados"}</small>
+    <small>{activeChannel?.kind === "direct" ? t("comms_status_direct_hint") : t("comms_status_public_hint")}</small>
   </div>
 
   <div class="radio-console" class:line-active={isActiveLine}>
     <div class="radio-identity">
       <span class="radio-signal"><Icon name="radio" size={15} /></span>
       <div>
-        <strong>{isActiveLine ? "LINHA ATIVA" : "RÁDIO TÁTICO"}</strong>
+        <strong>{isActiveLine ? t("comms_line_active") : t("comms_line_tactical_radio")}</strong>
         <small>
           {#if controller.radioConnection === "connecting" && isActiveLine}
-            Negociando conexão segura...
+            {t("comms_radio_connecting")}
           {:else if controller.radioConnection === "failed" && isActiveLine}
-            Falha de conexão — tente trocar de linha
+            {t("comms_radio_failed")}
           {:else}
-            {activeVoiceParticipants.length} na frequência • áudio criptografado
+            {t("comms_radio_count_participants", { count: activeVoiceParticipants.length })}
           {/if}
         </small>
       </div>
     </div>
 
     {#if isActiveLine}
-      <div class="voice-participants" aria-label="Participantes da linha">
+      <div class="voice-participants" aria-label={t("comms_line_active")}>
         {#each activeVoiceParticipants as playerId}
           {@const player = controller.playerById(playerId)}
           {#if player}
@@ -218,8 +216,8 @@
         class="radio-control"
         class:muted={controller.radioMuted}
         onclick={() => controller.toggleRadioMute()}
-        title={controller.radioMuted ? "Ativar microfone" : "Silenciar microfone"}
-        aria-label={controller.radioMuted ? "Ativar microfone" : "Silenciar microfone"}
+        title={controller.radioMuted ? t("comms_btn_unmute") : t("comms_btn_mute")}
+        aria-label={controller.radioMuted ? t("comms_btn_unmute") : t("comms_btn_mute")}
       >
         <Icon name={controller.radioMuted ? "mute" : "microphone"} size={14} />
       </button>
@@ -236,20 +234,20 @@
           onpointercancel={() => controller.setTransmitting(false)}
           onpointerleave={() => controller.setTransmitting(false)}
         >
-          <Icon name="microphone" size={13} /> FALAR
+          <Icon name="microphone" size={13} /> {t("comms_btn_ptt")}
         </button>
       {:else}
         <span class="open-mic-label" class:muted={controller.radioMuted}>
-          {controller.radioMuted ? "SILENCIADO" : "MIC ABERTO"}
+          {controller.radioMuted ? t("comms_state_muted") : t("comms_state_open_mic")}
         </span>
       {/if}
-      <button class="radio-control leave-line" onclick={() => controller.leaveVoice()} title="Sair da linha">
+      <button class="radio-control leave-line" onclick={() => controller.leaveVoice()} title={t("comms_btn_leave_line")}>
         <Icon name="close" size={14} />
       </button>
     {:else}
       <button class="join-line-button" onclick={() => void controller.joinVoice(controller.activeChannelId)}>
         <Icon name="microphone" size={13} />
-        {controller.activeVoiceChannelId ? "Trocar para esta linha" : "Entrar na linha"}
+        {controller.activeVoiceChannelId ? t("comms_btn_switch_line") : t("comms_btn_join_line")}
       </button>
     {/if}
   </div>
@@ -257,7 +255,7 @@
   {#if controller.error}
     <div class="comms-error" role="alert">
       <span>{controller.error}</span>
-      <button onclick={() => controller.clearError()} aria-label="Dispensar erro"><Icon name="close" size={12} /></button>
+      <button onclick={() => controller.clearError()} aria-label={t("comms_dismiss_error")}><Icon name="close" size={12} /></button>
     </div>
   {/if}
 
@@ -267,7 +265,7 @@
         <div class="intel-message">
           <span class="intel-icon"><Icon name="radio" size={13} /></span>
           <div>
-            <strong>SINAL DE INTELIGÊNCIA</strong>
+            <strong>{t("comms_intel_banner")}</strong>
             <p>{message.text}</p>
           </div>
           {#if controller.settings.showTimestamps}<time>{formatTime(message.createdAt)}</time>{/if}
@@ -287,7 +285,7 @@
               <span class="sender-name">
                 {#if message.senderColor}<FactionFlag color={message.senderColor} width={14} height={9} />{/if}
                 {message.senderName}
-                {#if message.senderId === controller.myPlayerId}<small>VOCÊ</small>{/if}
+                {#if message.senderId === controller.myPlayerId}<small>{t("comms_msg_you")}</small>{/if}
               </span>
               {#if controller.settings.showTimestamps}<time>{formatTime(message.createdAt)}</time>{/if}
             </header>
@@ -298,11 +296,11 @@
     {:else}
       <div class="empty-channel">
         <Icon name={activeChannel?.kind === "direct" ? "lock" : "radio"} size={22} />
-        <strong>{activeChannel?.kind === "direct" ? "Frequência direta estabelecida" : "Rede de comunicações pronta"}</strong>
+        <strong>{activeChannel?.kind === "direct" ? t("comms_empty_direct_title") : t("comms_empty_global_title")}</strong>
         <p>
           {activeChannel?.kind === "direct"
-            ? "As mensagens deste canal são visíveis somente para você e o outro comandante."
-            : "Transmita ordens, ameaças ou blefes para toda a sala de guerra."}
+            ? t("comms_empty_direct_desc")
+            : t("comms_empty_global_desc")}
         </p>
       </div>
     {/each}
@@ -313,9 +311,9 @@
       rows="1"
       maxlength="240"
       placeholder={activeChannel?.kind === "direct"
-        ? `Mensagem privada para ${controller.channelTitle(controller.activeChannelId)}...`
-        : "Transmitir comunicado global..."}
-      aria-label="Mensagem"
+        ? t("comms_placeholder_direct", { target: controller.channelTitle(controller.activeChannelId) })
+        : t("comms_placeholder_global")}
+      aria-label={t("comms_placeholder_global")}
       value={controller.drafts[controller.activeChannelId] ?? ""}
       oninput={(event) => controller.setDraft(event.currentTarget.value)}
       onkeydown={composerKeydown}
@@ -326,9 +324,9 @@
         class="send-button"
         disabled={!(controller.drafts[controller.activeChannelId] ?? "").trim()}
         onclick={submit}
-        aria-label="Transmitir mensagem"
+        aria-label={t("comms_btn_send")}
       >
-        <Icon name="send" size={14} /> <span>Transmitir</span>
+        <Icon name="send" size={14} /> <span>{t("comms_btn_send")}</span>
       </button>
     </div>
   </div>
