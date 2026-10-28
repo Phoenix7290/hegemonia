@@ -107,8 +107,8 @@
     };
   });
 
-  // Map Rendering Mode: "cartographic" (HOI4 physical satellite relief + borders), "geopolitical" (Crisp War colors), or "regional" (Continents & Sub-Regions)
-  let mapMode = $state<"cartographic" | "geopolitical" | "regional">("cartographic");
+  // Map Rendering Mode: "cartographic" (HOI4 physical satellite relief + borders), "geopolitical" (Crisp War colors), "regional" (Continents & Sub-Regions), or "economic" (Resources & Buildings)
+  let mapMode = $state<"cartographic" | "geopolitical" | "regional" | "economic">("cartographic");
   let cleanMapMode = $state(false);
 
   const REGION_COLOR_HEX: Record<string, string> = {
@@ -531,7 +531,7 @@
   function onKeyDown(e: KeyboardEvent) {
     if (isInputFocused()) return;
     const k = e.key.toLowerCase();
-    if (["w", "a", "s", "d", "arrowup", "arrowdown", "arrowleft", "arrowright", "q", "e"].includes(k)) {
+    if (["w", "a", "s", "d", "arrowup", "arrowdown", "arrowleft", "arrowright", "q"].includes(k)) {
       pressedKeys.add(k);
     } else if (e.key === "F1" || k === "1") {
       e.preventDefault();
@@ -542,6 +542,9 @@
     } else if (e.key === "F3" || k === "3") {
       e.preventDefault();
       mapMode = "regional";
+    } else if (e.key === "F5" || k === "4" || k === "e") {
+      e.preventDefault();
+      mapMode = mapMode === "economic" ? "cartographic" : "economic";
     } else if (k === "h") {
       e.preventDefault();
       toggleImmersiveMode();
@@ -1123,7 +1126,22 @@
                 {@const owner = game.players.find((p) => p.id === tState.ownerId)}
                 {@const ownerColor = owner ? COLOR_HEX[owner.color] : "#334155"}
                 {@const regionColor = getTerritoryRegionColor(t as any)}
-                {@const activeFill = mapMode === "regional" ? regionColor : ownerColor}
+                {@const economicProfileColor =
+                  t.resource === "gold"
+                    ? "#854d0e"
+                    : t.resource === "oil"
+                      ? "#451a03"
+                      : t.resource === "steel"
+                        ? "#1e293b"
+                        : (t.tradeBonus && t.tradeBonus > 0)
+                          ? "#064e3b"
+                          : "#18181b"}
+                {@const activeFill =
+                  mapMode === "regional"
+                    ? regionColor
+                    : mapMode === "economic"
+                      ? economicProfileColor
+                      : ownerColor}
                 {@const isSelected = selectedFromId === t.id || selectedToId === t.id}
                 {@const fromTerrState = selectedFromId ? game.territories[selectedFromId] : null}
                 {@const isAirliftDest =
@@ -1174,7 +1192,9 @@
                           ? "0.42"
                           : mapMode === "regional"
                             ? "0.72"
-                            : "0.84"}
+                            : mapMode === "economic"
+                              ? "0.76"
+                              : "0.84"}
                     stroke={isSelected
                       ? "#ffffff"
                       : isValidTarget
@@ -1183,7 +1203,7 @@
                           ? "#ef4444"
                           : isObjOwned
                             ? "#10b981"
-                            : mapMode === "cartographic"
+                            : mapMode === "cartographic" || mapMode === "economic"
                               ? ownerColor
                               : "rgba(9, 13, 22, 0.9)"}
                     stroke-width={isSelected
@@ -1218,11 +1238,143 @@
                   {/if}
 
                   {#if !cleanMapMode}
-                    <!-- HOI4-STYLE MILITARY DIVISION COUNTER (COMPACT FLAG + TROOP COUNT) -->
-                    <g
-                      transform="translate({t.center[0]}, {t.center[1]}) scale({COMPACT_BADGE_IDS.has(t.id) ? 0.82 : 0.94})"
-                      class="division-counter"
-                    >
+                    {#if mapMode === "economic"}
+                      {@const maxSlots = isCapital ? 3 : 2}
+                      {@const bldgs = tState.buildings ?? []}
+                      <!-- ECONOMIC MAP MODE: RESOURCE PROFILE + BUILDING SLOTS (HEGEM-58) -->
+                      <g
+                        transform="translate({t.center[0]}, {t.center[1]}) scale({COMPACT_BADGE_IDS.has(t.id) ? 0.84 : 0.96})"
+                        class="economic-counter"
+                      >
+                        <!-- Base Frame -->
+                        <rect
+                          x="-22"
+                          y="-9.5"
+                          width="44"
+                          height="19"
+                          rx="2.8"
+                          fill="#090e1a"
+                          stroke={isCapital
+                            ? "#f59e0b"
+                            : isSelected
+                              ? "#ffffff"
+                              : isValidTarget
+                                ? "#facc15"
+                                : ownerColor}
+                          stroke-width={isCapital || isSelected || isValidTarget ? "1.6" : "1.1"}
+                          filter="drop-shadow(0 2px 4px rgba(0,0,0,0.85))"
+                        />
+
+                        <!-- Resource Icon on Left -->
+                        {#if t.resource === "gold"}
+                          <g transform="translate(-14, -0.5)">
+                            <polygon points="-4.5,2.5 -2.5,-3.5 2.5,-3.5 4.5,2.5" fill="#facc15" stroke="#ca8a04" stroke-width="0.6" />
+                            <polygon points="-5,5.5 -4.5,2.5 4.5,2.5 5,5.5" fill="#eab308" />
+                          </g>
+                        {:else if t.resource === "steel"}
+                          <g transform="translate(-14, 0)">
+                            <polygon points="-4.5,3.8 4.5,3.8 3,-3 -3,-3" fill="#94a3b8" stroke="#cbd5e1" stroke-width="0.6" />
+                          </g>
+                        {:else if t.resource === "oil"}
+                          <g transform="translate(-14, -0.5)">
+                            <path d="M0,-4.5 C-3,0 -3,3.5 0,4.5 C3,3.5 3,0 0,-4.5 Z" fill="#f59e0b" stroke="#b45309" stroke-width="0.6" />
+                          </g>
+                        {:else if t.tradeBonus && t.tradeBonus > 0}
+                          <g transform="translate(-14, 0)">
+                            <circle cx="0" cy="0" r="4.2" fill="#065f46" stroke="#10b981" stroke-width="0.8" />
+                            <text x="0" y="0.5" text-anchor="middle" dominant-baseline="central" fill="#ecfdf5" font-size="4.8" font-weight="900">$</text>
+                          </g>
+                        {:else}
+                          <g transform="translate(-14, 0)">
+                            <circle cx="0" cy="0" r="2.8" fill="#1e293b" stroke="rgba(148, 163, 184, 0.4)" stroke-width="0.7" />
+                          </g>
+                        {/if}
+
+                        <!-- Divider Line -->
+                        <line x1="-7.5" y1="-8" x2="-7.5" y2="8" stroke="rgba(148, 163, 184, 0.3)" stroke-width="0.7" />
+
+                        <!-- Building Slots on Right (2 for regular, 3 for active Capital) -->
+                        <g transform="translate(6, 0)">
+                          {#each Array(maxSlots) as _, slotIdx}
+                            {@const b = bldgs[slotIdx]}
+                            {@const slotX = (slotIdx - (maxSlots - 1) / 2) * 8.5}
+                            <g transform="translate({slotX}, 0)">
+                              {#if b}
+                                <rect
+                                  x="-3.5"
+                                  y="-4.5"
+                                  width="7"
+                                  height="9"
+                                  rx="1.2"
+                                  fill={b.type === "market"
+                                    ? "#78350f"
+                                    : b.type === "industry"
+                                      ? "#1e3a8a"
+                                      : b.type === "fortification"
+                                        ? (b.level === 2 ? "#0369a1" : "#334155")
+                                        : b.type === "airfield"
+                                          ? "#4c1d95"
+                                          : "#065f46"}
+                                  stroke={b.type === "fortification" && b.level === 2 ? "#38bdf8" : "rgba(255,255,255,0.3)"}
+                                  stroke-width="0.7"
+                                />
+                                <text
+                                  x="0"
+                                  y="0.3"
+                                  text-anchor="middle"
+                                  dominant-baseline="central"
+                                  fill="#ffffff"
+                                  font-size="4.5"
+                                  font-weight="bold"
+                                >
+                                  {b.type === "market"
+                                    ? "M"
+                                    : b.type === "industry"
+                                      ? "I"
+                                      : b.type === "fortification"
+                                        ? (b.level === 2 ? "F2" : "F1")
+                                        : b.type === "airfield"
+                                          ? "A"
+                                          : "P"}
+                                </text>
+                              {:else}
+                                <rect
+                                  x="-3.5"
+                                  y="-4.5"
+                                  width="7"
+                                  height="9"
+                                  rx="1.2"
+                                  fill="rgba(15, 23, 42, 0.4)"
+                                  stroke="rgba(148, 163, 184, 0.35)"
+                                  stroke-dasharray="1.2, 1"
+                                  stroke-width="0.6"
+                                />
+                              {/if}
+                            </g>
+                          {/each}
+                        </g>
+
+                        <!-- Territory Label Underneath -->
+                        <text
+                          x="0"
+                          y="15.2"
+                          text-anchor="middle"
+                          fill={isCapital ? "#fde047" : "#e2e8f0"}
+                          font-size="6.0"
+                          font-weight="700"
+                          letter-spacing="0.01em"
+                          pointer-events="none"
+                          style="paint-order: stroke; stroke: #050912; stroke-width: 2.2px; stroke-linejoin: round;"
+                        >
+                          {isCapital ? `⭐ ${getTerritoryName(t.id)}` : getTerritoryName(t.id)}
+                        </text>
+                      </g>
+                    {:else}
+                      <!-- HOI4-STYLE MILITARY DIVISION COUNTER (COMPACT FLAG + TROOP COUNT) -->
+                      <g
+                        transform="translate({t.center[0]}, {t.center[1]}) scale({COMPACT_BADGE_IDS.has(t.id) ? 0.82 : 0.94})"
+                        class="division-counter"
+                      >
                       <!-- Capital Crown / Golden Star Crest -->
                       {#if isCapital}
                         <g transform="translate(0, -10.2)">
@@ -1349,6 +1501,7 @@
                         </g>
                       {/if}
                     </g>
+                    {/if}
                   {/if}
                 </g>
               {/each}
@@ -1944,6 +2097,14 @@
               {t("map_mode_regional")}
             </button>
             <button
+              class="mode-btn"
+              class:active={mapMode === "economic"}
+              onclick={() => (mapMode = "economic")}
+              title={t("map_mode_economic_title")}
+            >
+              {t("map_mode_economic")}
+            </button>
+            <button
               class="mode-btn clean-mode-tab"
               class:active={cleanMapMode}
               onclick={() => (cleanMapMode = !cleanMapMode)}
@@ -1954,7 +2115,7 @@
           </div>
 
           <div class="zoom-cluster">
-            <button class="tool-btn" onclick={zoomIn} title="Aproximar (E)">+</button>
+            <button class="tool-btn" onclick={zoomIn} title="Aproximar (+)">+</button>
             <button class="tool-btn" onclick={zoomOut} title="Afastar (Q)">-</button>
             <button class="tool-btn" onclick={resetZoom} title="Centralizar Mapa">RST</button>
           </div>
