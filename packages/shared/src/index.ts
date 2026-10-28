@@ -121,6 +121,27 @@ export interface PlayerState {
   economicPenaltyMultiplier?: number;
   /** Penalty applied to morale or recruitment (-2 armies when capital decapitated) */
   moralePenalty?: number;
+  /** Individual player infamy percentage (0 to 100%) */
+  infamy: number;
+}
+
+export type TreatyType = "nap" | "alliance";
+export type TreatyStatus = "pending" | "active" | "broken";
+
+export interface Treaty {
+  id: string;
+  fromPlayerId: string;
+  toPlayerId: string;
+  type: TreatyType;
+  status: TreatyStatus;
+  createdRound: number;
+}
+
+export interface Coalition {
+  id: string;
+  targetPlayerId: string;
+  memberPlayerIds: string[];
+  createdRound: number;
 }
 
 export interface TerritoryState {
@@ -146,6 +167,9 @@ export interface CombatRollResult {
   attackerLosses: number;
   defenderLosses: number;
   conquered: boolean;
+  attackerModifier?: number;
+  defenderModifier?: number;
+  lastStandBonus?: boolean;
 }
 
 export interface GameState {
@@ -164,6 +188,12 @@ export interface GameState {
   seedCommitHash: string;
   revealedSeed?: string;
   log: string[];
+  /** Global non-decaying World Tension percentage (0 to 100%) */
+  worldTension: number;
+  /** Active and pending bilateral diplomatic treaties */
+  treaties: Treaty[];
+  /** Active coalitions against warmonger/hegemon players */
+  coalitions: Coalition[];
 }
 
 // Client -> Server Action Schemas (Zod)
@@ -210,6 +240,37 @@ export const EndTurnActionSchema = z.object({
   type: z.literal("end_turn"),
 });
 
+export const ProposeTreatyActionSchema = z.object({
+  type: z.literal("propose_treaty"),
+  targetPlayerId: z.string(),
+  treatyType: z.enum(["nap", "alliance"]),
+});
+
+export const AcceptTreatyActionSchema = z.object({
+  type: z.literal("accept_treaty"),
+  treatyId: z.string(),
+});
+
+export const RejectTreatyActionSchema = z.object({
+  type: z.literal("reject_treaty"),
+  treatyId: z.string(),
+});
+
+export const BreakTreatyActionSchema = z.object({
+  type: z.literal("break_treaty"),
+  treatyId: z.string(),
+});
+
+export const FormCoalitionActionSchema = z.object({
+  type: z.literal("form_coalition"),
+  targetPlayerId: z.string(),
+});
+
+export const JoinCoalitionActionSchema = z.object({
+  type: z.literal("join_coalition"),
+  coalitionId: z.string(),
+});
+
 export const GameActionSchema = z.discriminatedUnion("type", [
   SelectCapitalActionSchema,
   DeployActionSchema,
@@ -219,6 +280,12 @@ export const GameActionSchema = z.discriminatedUnion("type", [
   EndAttackPhaseActionSchema,
   ManeuverActionSchema,
   EndTurnActionSchema,
+  ProposeTreatyActionSchema,
+  AcceptTreatyActionSchema,
+  RejectTreatyActionSchema,
+  BreakTreatyActionSchema,
+  FormCoalitionActionSchema,
+  JoinCoalitionActionSchema,
 ]);
 
 export type GameAction = z.infer<typeof GameActionSchema>;
