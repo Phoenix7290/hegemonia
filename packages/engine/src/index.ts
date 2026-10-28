@@ -1,11 +1,16 @@
 import {
+  type BorderTradeDeal,
   type BuildingType,
   type GameAction,
   type GameMapDef,
   type GameState,
+  type InvestmentRoute,
+  type MarketPrices,
+  type MarketResourcePrice,
   type ObjectiveCard,
   type PlayerColor,
   type PlayerState,
+  type ResourceType,
   type TerritoryCard,
   type TerritoryState,
 } from "@hegemonia/shared";
@@ -141,6 +146,35 @@ export const FORTIFICATION_LEVEL_2_COST: BuildingCost = {
   steel: 1,
 };
 
+export interface MarketPriceConfig {
+  baseBuy: number;
+  baseSell: number;
+  step: number;
+  minSell: number;
+  maxBuy: number;
+}
+
+export const DEFAULT_MARKET_CONFIG: Record<ResourceType, MarketPriceConfig> = {
+  steel: { baseBuy: 4, baseSell: 3, step: 1, minSell: 1, maxBuy: 12 },
+  oil: { baseBuy: 5, baseSell: 4, step: 1, minSell: 2, maxBuy: 14 },
+  gold: { baseBuy: 8, baseSell: 6, step: 2, minSell: 4, maxBuy: 18 },
+};
+
+export const INITIAL_MARKET_PRICES: MarketPrices = {
+  steel: { buyPrice: 4, sellPrice: 3 },
+  oil: { buyPrice: 5, sellPrice: 4 },
+  gold: { buyPrice: 8, sellPrice: 6 },
+};
+
+/**
+ * Checks whether a player controls at least 1 territory with a built Market.
+ */
+export function playerHasMarket(state: GameState, playerId: string): boolean {
+  return Object.values(state.territories).some(
+    (t) => t.ownerId === playerId && hasTerritoryBuilding(t, "market")
+  );
+}
+
 /**
  * Returns the maximum number of infrastructure building slots for a territory:
  * - 3 slots if the territory is the owner's active National Capital
@@ -199,6 +233,7 @@ export interface TurnEconomyBreakdown {
   tradeHubMoney: number;
   goldPassiveMoney: number;
   buildingMoney: number;
+  investmentMoney: number;
   grossMoney: number;
   economicPenaltyMultiplier: number;
   netMoney: number;
@@ -208,7 +243,7 @@ export interface TurnEconomyBreakdown {
 }
 
 /**
- * Calculates start-of-turn economic income and strategic resource extraction (HEGEM-18, HEGEM-32):
+ * Calculates start-of-turn economic income and strategic resource extraction (HEGEM-18, HEGEM-32, HEGEM-22):
  * - Capital National Treasury: +3$ if the player has established a capital
  * - Trade Hubs: sum of territory `tradeBonus` across occupied territories (armies >= 1)
  * - Gold Passive Treasury: +2$ per occupied territory with `resource === "gold"`
@@ -216,6 +251,8 @@ export interface TurnEconomyBreakdown {
  *   - +2$ per `market`
  *   - +2$ per `industry` in a territory without a natural resource (`!def.resource`)
  *   - +1$ per `port` built in a Trade Hub (`(def.tradeBonus ?? 0) > 0`)
+ * - Allied Investment Routes:
+ *   - +2$ per active route (rising to +3$ after 3 rounds of peace)
  * - Strategic Extraction: +1 Steel / Oil / Gold per occupied territory with matching `resource`
  *   (doubled to +2/turn if the territory has an `industry` building)
  * - Decapitation Penalty: `netMoney = Math.floor(grossMoney * economicPenaltyMultiplier)`
@@ -236,6 +273,7 @@ export function calculateTurnEconomy(
   let tradeHubMoney = 0;
   let goldPassiveMoney = 0;
   let buildingMoney = 0;
+  let investmentMoney = 0;
   let steel = 0;
   let oil = 0;
   let gold = 0;
@@ -271,7 +309,22 @@ export function calculateTurnEconomy(
     }
   }
 
-  const grossMoney = capitalMoney + tradeHubMoney + goldPassiveMoney + buildingMoney;
+  // Calculate income from active Allied Investment Routes (HEGEM-22)
+  if (state.investmentRoutes && state.investmentRoutes.length > 0) {
+    for (const route of state.investmentRoutes) {
+      if (
+        route.status === "active" &&
+        (route.playerAId === playerId || route.playerBId === playerId) &&
+        playerHasMarket(state, route.playerAId) &&
+        playerHasMarket(state, route.playerBId)
+      ) {
+        investmentMoney += route.roundsActive >= 3 ? 3 : 2;
+      }
+    }
+  }
+
+  const grossMoney =
+    capitalMoney + tradeHubMoney + goldPassiveMoney + buildingMoney + investmentMoney;
   const economicPenaltyMultiplier = player?.isCapitalLost
     ? (player.economicPenaltyMultiplier ?? 0.5)
     : 1.0;
@@ -282,6 +335,7 @@ export function calculateTurnEconomy(
     tradeHubMoney,
     goldPassiveMoney,
     buildingMoney,
+    investmentMoney,
     grossMoney,
     economicPenaltyMultiplier,
     netMoney,
@@ -444,6 +498,9 @@ export function createGame(opts: CreateGameOptions): GameState {
     worldTension: 0,
     treaties: [],
     coalitions: [],
+    marketPrices: structuredClone(INITIAL_MARKET_PRICES),
+    investmentRoutes: [],
+    borderTrades: [],
   };
 
   // Give first player their initial turn reinforcements and war economy extraction
@@ -675,7 +732,13 @@ export function applyAction(
     action.type === "reject_treaty" ||
     action.type === "break_treaty" ||
     action.type === "form_coalition" ||
-    action.type === "join_coalition";
+    action.type === "join_coalition" ||
+    action.type === "propose_investment" ||
+    action.type === "accept_investment" ||
+    action.type === "reject_investment" ||
+    action.type === "propose_border_trade" ||
+    action.type === "accept_border_trade" ||
+    action.type === "reject_border_trade";
 
   if (!isOutOfTurnAction && (!currentPlayer || currentPlayer.id !== playerId)) {
     throw new Error("Não é o seu turno.");
@@ -685,6 +748,9 @@ export function applyAction(
   if (currentPlayer) {
     currentPlayer.resources = currentPlayer.resources ?? { money: 0, steel: 0, oil: 0, gold: 0 };
   }
+  state.marketPrices = state.marketPrices ?? structuredClone(INITIAL_MARKET_PRICES);
+  state.investmentRoutes = state.investmentRoutes ?? [];
+  state.borderTrades = state.borderTrades ?? [];
 
   const mapById = new Map(map.territories.map((t) => [t.id, t]));
 
@@ -861,6 +927,78 @@ export function applyAction(
       state.log.push(
         `🏗️ ${currentPlayer.name} construiu ${buildingNamesPt[action.buildingType]} em ${def.namePt} (${costSummary}).`
       );
+      break;
+    }
+
+    case "market_trade": {
+      if (state.pendingConquest) {
+        throw new Error("Conclua a ocupação do território conquistado antes de negociar no mercado.");
+      }
+      if (!playerHasMarket(state, playerId)) {
+        throw new Error(
+          "É necessário controlar pelo menos um território com Mercado construído para acessar o mercado global."
+        );
+      }
+      const cfg = DEFAULT_MARKET_CONFIG[action.resource];
+      const marketPrice = state.marketPrices[action.resource];
+      const resourceLabels: Record<ResourceType, string> = {
+        steel: "Aço",
+        oil: "Petróleo",
+        gold: "Ouro",
+      };
+      const resName = resourceLabels[action.resource] ?? action.resource;
+
+      if (action.operation === "buy") {
+        let totalCost = 0;
+        let tempBuy = marketPrice.buyPrice;
+        let tempSell = marketPrice.sellPrice;
+        for (let i = 0; i < action.quantity; i++) {
+          totalCost += tempBuy;
+          tempBuy = Math.min(cfg.maxBuy, tempBuy + cfg.step);
+          tempSell = Math.min(
+            cfg.maxBuy - (action.resource === "gold" ? 2 : 1),
+            tempSell + cfg.step
+          );
+        }
+        if (currentPlayer.resources.money < totalCost) {
+          throw new Error(
+            `Dinheiro insuficiente para comprar ${action.quantity}x ${resName}. Necessários $${totalCost}, você possui $${currentPlayer.resources.money}.`
+          );
+        }
+        currentPlayer.resources.money -= totalCost;
+        currentPlayer.resources[action.resource] += action.quantity;
+        marketPrice.buyPrice = tempBuy;
+        marketPrice.sellPrice = tempSell;
+
+        state.log.push(
+          `📈 MERCADO GLOBAL: ${currentPlayer.name} comprou ${action.quantity}x ${resName} por $${totalCost}. (Novo Preço: Compra $${tempBuy} / Venda $${tempSell})`
+        );
+      } else {
+        if (currentPlayer.resources[action.resource] < action.quantity) {
+          throw new Error(
+            `Estoque insuficiente de ${resName}. Você possui ${currentPlayer.resources[action.resource]}, tentativa de vender ${action.quantity}.`
+          );
+        }
+        let totalRevenue = 0;
+        let tempBuy = marketPrice.buyPrice;
+        let tempSell = marketPrice.sellPrice;
+        for (let i = 0; i < action.quantity; i++) {
+          totalRevenue += tempSell;
+          tempSell = Math.max(cfg.minSell, tempSell - cfg.step);
+          tempBuy = Math.max(
+            cfg.minSell + (action.resource === "gold" ? 2 : 1),
+            tempBuy - cfg.step
+          );
+        }
+        currentPlayer.resources[action.resource] -= action.quantity;
+        currentPlayer.resources.money += totalRevenue;
+        marketPrice.buyPrice = tempBuy;
+        marketPrice.sellPrice = tempSell;
+
+        state.log.push(
+          `📉 MERCADO GLOBAL: ${currentPlayer.name} vendeu ${action.quantity}x ${resName} por $${totalRevenue}. (Novo Preço: Compra $${tempBuy} / Venda $${tempSell})`
+        );
+      }
       break;
     }
 
@@ -1387,6 +1525,27 @@ export function applyAction(
       treaty.status = "broken";
       state.treaties = state.treaties.filter((t) => t.id !== treaty.id);
 
+      // Confiscate/dissolve any investment routes between the signatories (HEGEM-22)
+      if (state.investmentRoutes) {
+        const removed = state.investmentRoutes.filter(
+          (r) =>
+            (r.playerAId === playerId && r.playerBId === otherId) ||
+            (r.playerAId === otherId && r.playerBId === playerId)
+        );
+        if (removed.length > 0) {
+          state.investmentRoutes = state.investmentRoutes.filter(
+            (r) =>
+              !(
+                (r.playerAId === playerId && r.playerBId === otherId) ||
+                (r.playerAId === otherId && r.playerBId === playerId)
+              )
+          );
+          state.log.push(
+            `📉 ROTAS COMERCIAIS DISSOLVIDAS: Todas as rotas de investimento mútuo entre ${actingPlayer.name} e ${otherP?.name ?? "aliado"} foram confiscadas e desfeitas!`
+          );
+        }
+      }
+
       actingPlayer.infamy = Math.min(100, (actingPlayer.infamy ?? 0) + 35);
       state.worldTension = Math.min(100, (state.worldTension ?? 0) + 15);
 
@@ -1394,6 +1553,251 @@ export function applyAction(
       state.log.push(
         `💥 TRAIÇÃO DIPLOMÁTICA! ${actingPlayer.name} rompeu unilateralmente o ${label} com ${otherP?.name}! (+35% de Infâmia, +15% de Tensão Mundial)`
       );
+      break;
+    }
+
+    case "propose_investment": {
+      if (action.targetPlayerId === playerId) {
+        throw new Error("Você não pode abrir uma rota de investimento consigo mesmo.");
+      }
+      const target = state.players.find((p) => p.id === action.targetPlayerId);
+      if (!target || target.eliminated) {
+        throw new Error("Parceiro comercial inválido ou eliminado.");
+      }
+      if (!playerHasMarket(state, playerId)) {
+        throw new Error(
+          "Você precisa controlar ao menos um Mercado construído para propor rotas comerciais."
+        );
+      }
+      if (!playerHasMarket(state, action.targetPlayerId)) {
+        throw new Error(`${target.name} não possui um Mercado construído em seus territórios.`);
+      }
+      const activeTreaty = (state.treaties ?? []).find(
+        (t) =>
+          t.status === "active" &&
+          ((t.fromPlayerId === playerId && t.toPlayerId === action.targetPlayerId) ||
+            (t.fromPlayerId === action.targetPlayerId && t.toPlayerId === playerId))
+      );
+      if (!activeTreaty) {
+        throw new Error(
+          "Rotas de investimento exigem um tratado ativo prévio (Pacto de Não-Agressão ou Aliança Militar)."
+        );
+      }
+      state.investmentRoutes = state.investmentRoutes ?? [];
+      const existing = state.investmentRoutes.find(
+        (r) =>
+          ((r.playerAId === playerId && r.playerBId === action.targetPlayerId) ||
+            (r.playerAId === action.targetPlayerId && r.playerBId === playerId)) &&
+          (r.status === "active" || r.status === "pending")
+      );
+      if (existing) {
+        throw new Error(
+          existing.status === "active"
+            ? "Já existe uma rota de investimento ativa com este aliado."
+            : "Já existe uma proposta de rota pendente com este general."
+        );
+      }
+      if (actingPlayer.resources.money < 3) {
+        throw new Error("Recursos insuficientes: você precisa de $3 para o aporte inicial da rota.");
+      }
+
+      const routeId = `route_${Date.now()}_${rng.nextInt(100, 999)}`;
+      state.investmentRoutes.push({
+        id: routeId,
+        playerAId: playerId,
+        playerBId: action.targetPlayerId,
+        treatyId: activeTreaty.id,
+        status: "pending",
+        roundsActive: 0,
+        createdRound: state.round,
+      });
+
+      state.log.push(
+        `💼 PROPOSTA COMERCIAL: ${actingPlayer.name} propôs uma Rota de Investimento Aliado para ${target.name}.`
+      );
+      break;
+    }
+
+    case "accept_investment": {
+      state.investmentRoutes = state.investmentRoutes ?? [];
+      const route = state.investmentRoutes.find((r) => r.id === action.routeId);
+      if (!route || route.status !== "pending") {
+        throw new Error("Proposta de rota de investimento não encontrada ou expirada.");
+      }
+      if (route.playerBId !== playerId) {
+        throw new Error("Você não é o destinatário desta proposta de investimento.");
+      }
+      const playerA = state.players.find((p) => p.id === route.playerAId);
+      if (!playerA || playerA.eliminated) {
+        throw new Error("O proponente da rota não está mais na partida.");
+      }
+      if (!playerHasMarket(state, playerA.id) || !playerHasMarket(state, playerId)) {
+        throw new Error("Ambos os generais precisam controlar ao menos um Mercado ativo.");
+      }
+      const hasTreaty = (state.treaties ?? []).some(
+        (t) =>
+          t.status === "active" &&
+          ((t.fromPlayerId === playerA.id && t.toPlayerId === playerId) ||
+            (t.fromPlayerId === playerId && t.toPlayerId === playerA.id))
+      );
+      if (!hasTreaty) {
+        throw new Error("O tratado diplomático entre as partes não está mais ativo.");
+      }
+      if (playerA.resources.money < 3) {
+        throw new Error(
+          `O proponente ${playerA.name} não possui mais os $3 necessários para a abertura.`
+        );
+      }
+      if (actingPlayer.resources.money < 3) {
+        throw new Error(
+          `Dinheiro insuficiente: necessários $3 de capital, você possui $${actingPlayer.resources.money}.`
+        );
+      }
+
+      playerA.resources.money -= 3;
+      actingPlayer.resources.money -= 3;
+      route.status = "active";
+      route.roundsActive = 0;
+
+      state.log.push(
+        `🤝 ROTA DE INVESTIMENTO CONSOLIDADA: ${playerA.name} e ${actingPlayer.name} cofinanciaram uma rota comercial bilateral (+ $2/turno para ambos).`
+      );
+      break;
+    }
+
+    case "reject_investment": {
+      state.investmentRoutes = state.investmentRoutes ?? [];
+      const routeIdx = state.investmentRoutes.findIndex((r) => r.id === action.routeId);
+      if (routeIdx === -1) {
+        throw new Error("Proposta de rota não encontrada.");
+      }
+      const route = state.investmentRoutes[routeIdx];
+      if (route.playerAId !== playerId && route.playerBId !== playerId) {
+        throw new Error("Você não tem autorização para interagir com esta proposta.");
+      }
+      state.investmentRoutes.splice(routeIdx, 1);
+      const otherId = route.playerAId === playerId ? route.playerBId : route.playerAId;
+      const other = state.players.find((p) => p.id === otherId);
+      state.log.push(
+        `❌ A proposta de Rota de Investimento entre ${actingPlayer.name} e ${other?.name ?? "aliado"} foi cancelada.`
+      );
+      break;
+    }
+
+    case "propose_border_trade": {
+      if (action.targetPlayerId === playerId) {
+        throw new Error("Você não pode negociar consigo mesmo.");
+      }
+      const target = state.players.find((p) => p.id === action.targetPlayerId);
+      if (!target || target.eliminated) {
+        throw new Error("Parceiro de comércio de fronteira inválido ou eliminado.");
+      }
+      const fromTerr = state.territories[action.fromTerritoryId];
+      const toTerr = state.territories[action.toTerritoryId];
+      if (!fromTerr || fromTerr.ownerId !== playerId) {
+        throw new Error("O território de origem do carregamento deve pertencer a você.");
+      }
+      if (!toTerr || toTerr.ownerId !== action.targetPlayerId) {
+        throw new Error("O território de destino deve pertencer ao parceiro comercial.");
+      }
+      const fromDef = mapById.get(action.fromTerritoryId);
+      if (!fromDef || !fromDef.neighbors.includes(action.toTerritoryId)) {
+        throw new Error("O comércio de fronteira exige que os territórios compartilhem uma fronteira direta.");
+      }
+      if (actingPlayer.resources[action.resource] < 1) {
+        throw new Error(`Você não possui 1 unidade de ${action.resource} disponível em seu estoque nacional.`);
+      }
+      if (action.price < 1) {
+        throw new Error("O valor da transação deve ser de no mínimo $1.");
+      }
+
+      state.borderTrades = state.borderTrades ?? [];
+      const dealId = `btrade_${Date.now()}_${rng.nextInt(100, 999)}`;
+      state.borderTrades.push({
+        id: dealId,
+        fromPlayerId: playerId,
+        toPlayerId: action.targetPlayerId,
+        fromTerritoryId: action.fromTerritoryId,
+        toTerritoryId: action.toTerritoryId,
+        resource: action.resource,
+        price: action.price,
+        status: "pending",
+        createdRound: state.round,
+      });
+
+      const resourceLabels: Record<ResourceType, string> = {
+        steel: "Aço",
+        oil: "Petróleo",
+        gold: "Ouro",
+      };
+      const resName = resourceLabels[action.resource] ?? action.resource;
+      const toDef = mapById.get(action.toTerritoryId)!;
+      state.log.push(
+        `🚚 OFERTA DE FRONTEIRA: ${actingPlayer.name} ofereceu 1x ${resName} de ${fromDef.namePt} para ${toDef.namePt} (${target.name}) por $${action.price}.`
+      );
+      break;
+    }
+
+    case "accept_border_trade": {
+      state.borderTrades = state.borderTrades ?? [];
+      const deal = state.borderTrades.find((d) => d.id === action.dealId);
+      if (!deal || deal.status !== "pending") {
+        throw new Error("Oferta de fronteira não encontrada ou já expirada.");
+      }
+      if (deal.toPlayerId !== playerId) {
+        throw new Error("Você não é o destinatário desta oferta de fronteira.");
+      }
+      const seller = state.players.find((p) => p.id === deal.fromPlayerId);
+      if (!seller || seller.eliminated) {
+        throw new Error("O fornecedor não está mais ativo na partida.");
+      }
+      if (actingPlayer.resources.money < deal.price) {
+        throw new Error(
+          `Dinheiro insuficiente: necessários $${deal.price}, você possui $${actingPlayer.resources.money}.`
+        );
+      }
+      if (seller.resources[deal.resource] < 1) {
+        throw new Error(`O fornecedor ${seller.name} não possui mais 1 unidade de ${deal.resource} em estoque.`);
+      }
+      const fromTerr = state.territories[deal.fromTerritoryId];
+      const toTerr = state.territories[deal.toTerritoryId];
+      if (!fromTerr || fromTerr.ownerId !== seller.id || !toTerr || toTerr.ownerId !== playerId) {
+        throw new Error("O controle territorial das fronteiras foi alterado após o envio da proposta.");
+      }
+
+      actingPlayer.resources.money -= deal.price;
+      actingPlayer.resources[deal.resource] += 1;
+      seller.resources.money += deal.price;
+      seller.resources[deal.resource] -= 1;
+      deal.status = "active";
+
+      const resourceLabels: Record<ResourceType, string> = {
+        steel: "Aço",
+        oil: "Petróleo",
+        gold: "Ouro",
+      };
+      const resName = resourceLabels[deal.resource] ?? deal.resource;
+      const fromDef = mapById.get(deal.fromTerritoryId)!;
+      const toDef = mapById.get(deal.toTerritoryId)!;
+
+      state.log.push(
+        `📦 CARGA RECEBIDA: ${actingPlayer.name} comprou 1x ${resName} de ${seller.name} via fronteira (${fromDef.namePt} ➔ ${toDef.namePt}) por $${deal.price}.`
+      );
+      break;
+    }
+
+    case "reject_border_trade": {
+      state.borderTrades = state.borderTrades ?? [];
+      const dealIdx = state.borderTrades.findIndex((d) => d.id === action.dealId);
+      if (dealIdx === -1) {
+        throw new Error("Oferta de fronteira não encontrada.");
+      }
+      const deal = state.borderTrades[dealIdx];
+      if (deal.fromPlayerId !== playerId && deal.toPlayerId !== playerId) {
+        throw new Error("Você não tem autorização para cancelar esta oferta.");
+      }
+      state.borderTrades.splice(dealIdx, 1);
+      state.log.push(`❌ Oferta de comércio de fronteira cancelada.`);
       break;
     }
 
@@ -1519,6 +1923,14 @@ function advanceTurn(state: GameState, rng: SeededRng, map: GameMapDef): void {
       state.round += 1;
       roundAdvanced = true;
       state.worldTension = Math.min(100, Number(((state.worldTension ?? 0) + 0.5).toFixed(1)));
+
+      if (state.investmentRoutes) {
+        for (const route of state.investmentRoutes) {
+          if (route.status === "active") {
+            route.roundsActive += 1;
+          }
+        }
+      }
 
       const totalTerritories = Object.keys(state.territories).length;
       if (totalTerritories > 0) {

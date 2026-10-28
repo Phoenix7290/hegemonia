@@ -245,6 +245,38 @@ export const enGame: TranslationCatalog = {
   building_built_tag: "Active",
   building_coastal_only: "Coastal Only",
   airlift_btn_label: "Strategic Airlift (Airfield)",
+
+  // Global Dynamic Market & Trade (HEGEM-22)
+  market_modal_title: "Global Commodity Market",
+  market_modal_sub: "Dynamic AoE2-style pricing. Trade surpluses and purchase vital raw materials.",
+  market_locked_notice: "Access Blocked: Construct at least one Market in your territory to trade on the global exchange.",
+  market_has_access: "Access Granted: Commodity Exchange Active",
+  market_price_buy: "Buy",
+  market_price_sell: "Sell",
+  market_btn_buy: "Buy",
+  market_btn_sell: "Sell",
+  market_btn_open: "Market",
+  market_batch_qty: "Batch: {qty}x",
+  market_est_cost: "Est. Cost",
+  market_est_revenue: "Est. Revenue",
+
+  // Allied Investment Routes (HEGEM-22)
+  investment_routes_title: "Allied Investment Routes",
+  investment_routes_sub: "Initial co-funding of $3 per signatory. Generates +$2/turn (+ $3/turn after 3 active rounds).",
+  investment_btn_propose: "Propose Route ($3)",
+  investment_btn_accept: "Accept Route ($3)",
+  investment_btn_reject: "Decline",
+  investment_status_active: "Active (+${income}/turn · {rounds} rounds)",
+  investment_status_pending: "Awaiting partner co-funding",
+  investment_no_allies: "No treatied allies with active Markets available.",
+
+  // Border Trade (HEGEM-22)
+  border_trade_title: "Border Trade",
+  border_trade_sub: "Direct barter between adjacent territories without global fees or market inflation.",
+  border_trade_propose_btn: "Offer Shipment",
+  border_trade_accept_btn: "Buy Cargo (${price})",
+  border_trade_reject_btn: "Decline Offer",
+  border_trade_pending_desc: "Offer from {from} to {to}: 1x {resource} for ${price}",
 };
 
 export const game = enGame;

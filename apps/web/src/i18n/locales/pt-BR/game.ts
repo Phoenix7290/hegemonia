@@ -245,6 +245,38 @@ export const ptBRGame: TranslationCatalog = {
   building_built_tag: "Ativo",
   building_coastal_only: "Apenas Costeiro",
   airlift_btn_label: "Ponte Aérea (Aeródromo)",
+
+  // Global Dynamic Market & Trade (HEGEM-22)
+  market_modal_title: "Mercado Global de Commodities",
+  market_modal_sub: "Cotações dinâmicas estilo AoE2. Negocie excedentes e compre matérias-primas vitais.",
+  market_locked_notice: "Acesso Bloqueado: Construa ao menos um Mercado em seu território para negociar no mercado global.",
+  market_has_access: "Acesso Concedido: Bolsa de Mercadorias Ativa",
+  market_price_buy: "Compra",
+  market_price_sell: "Venda",
+  market_btn_buy: "Comprar",
+  market_btn_sell: "Vender",
+  market_btn_open: "Mercado",
+  market_batch_qty: "Lote: {qty}x",
+  market_est_cost: "Custo Estimado",
+  market_est_revenue: "Receita Estimada",
+
+  // Allied Investment Routes (HEGEM-22)
+  investment_routes_title: "Rotas de Investimento Aliado",
+  investment_routes_sub: "Aporte inicial de $3 por signatário. Gera +$2/turno (+ $3/turno após 3 rodadas ativas).",
+  investment_btn_propose: "Propor Rota ($3)",
+  investment_btn_accept: "Aceitar Aporte ($3)",
+  investment_btn_reject: "Recusar",
+  investment_status_active: "Ativa (+${income}/turno · {rounds} rodadas)",
+  investment_status_pending: "Aguardando confirmação de aporte",
+  investment_no_allies: "Nenhum aliado com tratado ativo e Mercado disponível.",
+
+  // Border Trade (HEGEM-22)
+  border_trade_title: "Comércio de Fronteira",
+  border_trade_sub: "Troca direta entre territórios vizinhos sem pagar taxas globais nem inflacionar o mercado.",
+  border_trade_propose_btn: "Oferecer Carga",
+  border_trade_accept_btn: "Comprar Carga (${price})",
+  border_trade_reject_btn: "Recusar Oferta",
+  border_trade_pending_desc: "Oferta de {from} para {to}: 1x {resource} por ${price}",
 };
 
 export const game = ptBRGame;

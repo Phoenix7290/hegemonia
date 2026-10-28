@@ -39,6 +39,39 @@ export type TurnPhase = z.infer<typeof TurnPhaseSchema>;
 export const ResourceTypeSchema = z.enum(["steel", "oil", "gold"]);
 export type ResourceType = z.infer<typeof ResourceTypeSchema>;
 
+export interface MarketResourcePrice {
+  buyPrice: number;
+  sellPrice: number;
+}
+
+export interface MarketPrices {
+  steel: MarketResourcePrice;
+  oil: MarketResourcePrice;
+  gold: MarketResourcePrice;
+}
+
+export interface InvestmentRoute {
+  id: string;
+  playerAId: string;
+  playerBId: string;
+  treatyId: string;
+  status: "pending" | "active";
+  roundsActive: number;
+  createdRound: number;
+}
+
+export interface BorderTradeDeal {
+  id: string;
+  fromPlayerId: string;
+  toPlayerId: string;
+  fromTerritoryId: string;
+  toTerritoryId: string;
+  resource: ResourceType;
+  price: number;
+  status: "pending" | "active";
+  createdRound: number;
+}
+
 export const BuildingTypeSchema = z.enum([
   "market",
   "industry",
@@ -233,6 +266,12 @@ export interface GameState {
   treaties: Treaty[];
   /** Active coalitions against warmonger/hegemon players */
   coalitions: Coalition[];
+  /** Dynamic Age of Empires 2-style global market prices */
+  marketPrices: MarketPrices;
+  /** Active bilateral commercial investment routes between allied markets */
+  investmentRoutes: InvestmentRoute[];
+  /** Active and pending border trade resource extraction contracts */
+  borderTrades: BorderTradeDeal[];
 }
 
 // Client -> Server Action Schemas (Zod)
@@ -268,6 +307,47 @@ export const AirliftActionSchema = z.object({
   fromTerritoryId: z.string(),
   toTerritoryId: z.string(),
   armies: z.number().int().min(1),
+});
+
+export const MarketTradeActionSchema = z.object({
+  type: z.literal("market_trade"),
+  operation: z.enum(["buy", "sell"]),
+  resource: ResourceTypeSchema,
+  quantity: z.number().int().min(1).default(1),
+});
+
+export const ProposeInvestmentActionSchema = z.object({
+  type: z.literal("propose_investment"),
+  targetPlayerId: z.string(),
+});
+
+export const AcceptInvestmentActionSchema = z.object({
+  type: z.literal("accept_investment"),
+  routeId: z.string(),
+});
+
+export const RejectInvestmentActionSchema = z.object({
+  type: z.literal("reject_investment"),
+  routeId: z.string(),
+});
+
+export const ProposeBorderTradeActionSchema = z.object({
+  type: z.literal("propose_border_trade"),
+  targetPlayerId: z.string(),
+  fromTerritoryId: z.string(),
+  toTerritoryId: z.string(),
+  resource: ResourceTypeSchema,
+  price: z.number().int().min(1),
+});
+
+export const AcceptBorderTradeActionSchema = z.object({
+  type: z.literal("accept_border_trade"),
+  dealId: z.string(),
+});
+
+export const RejectBorderTradeActionSchema = z.object({
+  type: z.literal("reject_border_trade"),
+  dealId: z.string(),
 });
 
 export const AttackActionSchema = z.object({
@@ -335,6 +415,13 @@ export const GameActionSchema = z.discriminatedUnion("type", [
   BuyCardWithGoldActionSchema,
   BuildStructureActionSchema,
   AirliftActionSchema,
+  MarketTradeActionSchema,
+  ProposeInvestmentActionSchema,
+  AcceptInvestmentActionSchema,
+  RejectInvestmentActionSchema,
+  ProposeBorderTradeActionSchema,
+  AcceptBorderTradeActionSchema,
+  RejectBorderTradeActionSchema,
   AttackActionSchema,
   OccupyActionSchema,
   EndAttackPhaseActionSchema,
