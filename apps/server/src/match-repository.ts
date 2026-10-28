@@ -1,5 +1,6 @@
 import type { PoolClient } from "pg";
 import type { GameAction, GameState, PlayerColor } from "@hegemonia/shared";
+import { calculateObjectiveProgress } from "@hegemonia/engine";
 import { query, withTransaction } from "./connection.js";
 import { awardMatchBadges } from "./badge-service.js";
 
@@ -266,6 +267,24 @@ async function finalizeMatch(
   );
   const placements = calculatePlacements(state, participants.rows);
 
+  const ratings = new Map<string, number>();
+  for (const p of participants.rows) {
+    if (p.user_id && match.season_id) {
+      const ratingRes = await client.query<{ score: number }>(
+        `SELECT score FROM player_ratings WHERE user_id = $1 AND season_id = $2`,
+        [p.user_id, match.season_id]
+      );
+      ratings.set(p.engine_player_id, ratingRes.rows[0]?.score ?? 1000);
+    } else {
+      ratings.set(p.engine_player_id, 1000);
+    }
+  }
+
+  const totalEloExponent = Array.from(ratings.values()).reduce(
+    (sum, r) => sum + Math.pow(10, r / 400),
+    0
+  );
+
   for (const participant of participants.rows) {
     const player = state.players.find((candidate) => candidate.id === participant.engine_player_id);
     if (!player) throw new Error("Participante ausente no estado final.");
@@ -278,10 +297,34 @@ async function finalizeMatch(
       ? participants.rows.find((candidate) => candidate.engine_player_id === player.eliminatedBy)?.id ?? null
       : null;
 
+    const rating = ratings.get(player.id) ?? 1000;
+    const expectedWinRate =
+      totalEloExponent > 0
+        ? Math.pow(10, rating / 400) / totalEloExponent
+        : 1 / Math.max(1, participants.rows.length);
+    const observedWin = won ? 1.0 : 0.0;
+    const eloResidual = observedWin - expectedWinRate;
+    const progress = calculateObjectiveProgress(state, player.id);
+
+    const statsJson = {
+      objectiveId: player.objective?.id ?? null,
+      objectiveType: player.objective?.rule?.type ?? null,
+      objectiveDescription: player.objective?.descriptionPt ?? null,
+      completionPct: progress.completionPct,
+      heldUnits: progress.held,
+      totalUnits: progress.total,
+      expectedWinRate: Number(expectedWinRate.toFixed(4)),
+      observedWin,
+      eloResidual: Number(eloResidual.toFixed(4)),
+      winVelocityRounds: state.round,
+      worldTensionFinal: state.worldTension ?? 0,
+      infamyFinal: player.infamy ?? 0,
+    };
+
     await client.query(
       `UPDATE match_participants
        SET result = $3, placement = $4, final_territories = $5, final_armies = $6,
-           eliminated_by_participant_id = $7, updated_at = now()
+           eliminated_by_participant_id = $7, stats_json = $8, updated_at = now()
        WHERE id = $1 AND match_id = $2`,
       [
         participant.id,
@@ -291,6 +334,7 @@ async function finalizeMatch(
         territories.length,
         territories.reduce((total, territory) => total + territory.armies, 0),
         eliminatedBy,
+        statsJson,
       ]
     );
   }
