@@ -160,9 +160,61 @@
   let activeRightDrawer = $state<"cards" | "objective" | "audio" | null>(null);
   let showContinents = $state(false);
 
+  // Session Resilience & Reconnection State
+  let isReconnecting = $state(false);
+  let reconnectAttempts = $state(0);
+  let reconnectTimeout: number | null = null;
+
+  // Objective Map Visualizer State
+  let highlightObjectiveTerritories = $state(false);
+
+  // Modular HUD Dock Visibility State (Customizer)
+  let showHudManager = $state(false);
+  let isImmersiveMode = $state(false);
+  let hudVisibility = $state({
+    topBanner: true,
+    warJournal: true,
+    bottomDock: true,
+    continents: true,
+    mapControls: true,
+    recon: true,
+  });
+
+  if (typeof window !== "undefined") {
+    try {
+      const savedHud = localStorage.getItem("hegemonia_hud_visibility");
+      if (savedHud) {
+        Object.assign(hudVisibility, JSON.parse(savedHud));
+      }
+    } catch {
+      // ignore JSON parse error
+    }
+  }
+
+  function toggleHudElement(key: keyof typeof hudVisibility) {
+    sound.playClick();
+    hudVisibility[key] = !hudVisibility[key];
+    if (typeof window !== "undefined") {
+      try {
+        localStorage.setItem("hegemonia_hud_visibility", JSON.stringify(hudVisibility));
+      } catch {
+        // ignore storage error
+      }
+    }
+  }
+
+  function toggleImmersiveMode() {
+    sound.playClick();
+    isImmersiveMode = !isImmersiveMode;
+  }
+
   function toggleRightDrawer(drawer: "cards" | "objective" | "audio") {
     sound.playClick();
+    showHudManager = false;
     activeRightDrawer = activeRightDrawer === drawer ? null : drawer;
+    if (activeRightDrawer === "objective") {
+      highlightObjectiveTerritories = true;
+    }
   }
 
   // Derived calculations
@@ -185,8 +237,8 @@
     { id: "teufelslied.mp3", label: "Histórico — Teufelslied" },
   ];
 
-  let objectiveProgress = $derived.by(() => {
-    if (!myPlayerState || !game) return null;
+  let objectiveTargetTerritoryIds = $derived.by(() => {
+    if (!myPlayerState || !game) return new Set<string>();
     const rule = myPlayerState.objective.rule;
     const targetIds = new Set<string>();
     if (rule.type === "specific_territories") {
@@ -200,7 +252,22 @@
       for (const t of CLASSIC_MAP.territories) {
         if (rule.continents.includes(t.continent)) targetIds.add(t.id);
       }
+    } else if (rule.type === "territory_count") {
+      for (const t of CLASSIC_MAP.territories) {
+        if (game.territories[t.id]?.ownerId !== myPlayerId) targetIds.add(t.id);
+      }
+    } else if (rule.type === "eliminate_color") {
+      for (const t of CLASSIC_MAP.territories) {
+        const owner = game.players.find((p) => p.id === game.territories[t.id]?.ownerId);
+        if (owner && owner.color === rule.targetColor) targetIds.add(t.id);
+      }
     }
+    return targetIds;
+  });
+
+  let objectiveProgress = $derived.by(() => {
+    if (!myPlayerState || !game) return null;
+    const targetIds = objectiveTargetTerritoryIds;
     if (targetIds.size === 0) return null;
     let owned = 0;
     for (const tid of targetIds) {
@@ -376,13 +443,17 @@
     } else if (e.key === "F3" || k === "3") {
       e.preventDefault();
       mapMode = "regional";
-    } else if (k === "h" || e.key === "F4") {
+    } else if (k === "h") {
+      e.preventDefault();
+      toggleImmersiveMode();
+    } else if (e.key === "F4") {
       e.preventDefault();
       cleanMapMode = !cleanMapMode;
     } else if (e.key === "Escape") {
       selectedFromId = null;
       selectedToId = null;
       activeRightDrawer = null;
+      showHudManager = false;
     }
   }
 
@@ -400,7 +471,7 @@
     return `${proto}//${window.location.host}`;
   }
 
-  async function joinOrCreateRoom(createNew: boolean) {
+  async function joinOrCreateRoom(createNew: boolean, forcedCode?: string) {
     errorBanner = "";
     sound.playClick();
     const cleanName = (auth.user?.displayName || playerName).trim() || "General";
@@ -411,7 +482,7 @@
     connecting = true;
 
     try {
-      const code = createNew ? undefined : roomCodeInput.trim().toUpperCase();
+      const code = createNew ? undefined : (forcedCode || roomCodeInput).trim().toUpperCase();
       const room = await client.joinOrCreate("hegemonia", {
         name: cleanName,
         token,
@@ -420,6 +491,40 @@
 
       connectedRoom = room;
       lobbyMessages = [];
+      isReconnecting = false;
+      reconnectAttempts = 0;
+      if (reconnectTimeout) {
+        clearTimeout(reconnectTimeout);
+        reconnectTimeout = null;
+      }
+
+      // Persist active room for F5 resilience and bookmark sharing
+      try {
+        sessionStorage.setItem("hegemonia_active_room", room.id);
+        const url = new URL(window.location.href);
+        url.searchParams.set("room", room.id);
+        window.history.replaceState({}, "", url.toString());
+      } catch {
+        // ignore storage error
+      }
+
+      room.onLeave((code) => {
+        if (roomStatus === "disconnected") return;
+        if (code !== 1000) {
+          isReconnecting = true;
+          reconnectAttempts++;
+          if (reconnectAttempts <= 8) {
+            reconnectTimeout = window.setTimeout(() => {
+              if (roomStatus !== "disconnected") {
+                joinOrCreateRoom(false, room.id);
+              }
+            }, 2000);
+          } else {
+            isReconnecting = false;
+            errorBanner = "Conexão perdida com o quartel general. Tente reconectar.";
+          }
+        }
+      });
 
       room.onMessage("room_state", (payload) => {
         const prevLastCombat = game?.lastCombat;
@@ -468,8 +573,35 @@
     }
   }
 
+  // Auto-reconnect to previous session on page refresh (F5) or direct room link
+  $effect(() => {
+    if (typeof window === "undefined") return;
+    const urlParams = new URLSearchParams(window.location.search);
+    const roomFromUrl = urlParams.get("room");
+    const roomFromStorage = sessionStorage.getItem("hegemonia_active_room");
+    const targetRoom = roomFromUrl || roomFromStorage;
+
+    if (targetRoom && roomStatus === "disconnected" && !connecting && !connectedRoom) {
+      roomCodeInput = targetRoom.toUpperCase();
+      joinOrCreateRoom(false, targetRoom.toUpperCase());
+    }
+  });
+
   function leaveCurrentRoom() {
     sound.playClick();
+    try {
+      sessionStorage.removeItem("hegemonia_active_room");
+      const url = new URL(window.location.href);
+      url.searchParams.delete("room");
+      window.history.replaceState({}, "", url.toString());
+    } catch {
+      // ignore
+    }
+    isReconnecting = false;
+    if (reconnectTimeout) {
+      clearTimeout(reconnectTimeout);
+      reconnectTimeout = null;
+    }
     try {
       connectedRoom?.leave();
     } catch {
@@ -484,6 +616,7 @@
     selectedFromId = null;
     selectedToId = null;
     activeRightDrawer = null;
+    showHudManager = false;
   }
 
   function sendAction(action: unknown) {
@@ -666,7 +799,8 @@
     <div class="map-viewport" onwheel={onWheel} onmousedown={onMouseDown}>
       {#if cleanMapMode}
         <div class="clean-map-indicator">
-          <span>🗺️ Visão Limpa Ativa — Pressione <strong>H</strong> ou <strong>F4</strong> para restaurar marcadores</span>
+          <Icon name="eye" size={13} />
+          <span>Visão Limpa Ativa — Pressione <strong>F4</strong> para restaurar marcadores</span>
         </div>
       {/if}
       <svg
@@ -688,6 +822,14 @@
           <!-- Selection & Target Glow -->
           <filter id="glow-gold" x="-20%" y="-20%" width="140%" height="140%">
             <feDropShadow dx="0" dy="0" stdDeviation="3.5" flood-color="#facc15" flood-opacity="0.95" />
+          </filter>
+
+          <!-- Secret Objective Highlights -->
+          <filter id="glow-green" x="-25%" y="-25%" width="150%" height="150%">
+            <feDropShadow dx="0" dy="0" stdDeviation="4.0" flood-color="#10b981" flood-opacity="1" />
+          </filter>
+          <filter id="glow-red" x="-25%" y="-25%" width="150%" height="150%">
+            <feDropShadow dx="0" dy="0" stdDeviation="4.5" flood-color="#ef4444" flood-opacity="1" />
           </filter>
         </defs>
 
@@ -792,6 +934,10 @@
                   territoryById.get(selectedFromId)?.neighbors.includes(t.id) &&
                   ((game.phase === "attack" && tState.ownerId !== myPlayerId) ||
                     (game.phase === "maneuver" && tState.ownerId === myPlayerId))}
+                {@const isObjTarget = highlightObjectiveTerritories && objectiveTargetTerritoryIds.has(t.id)}
+                {@const isObjOwned = isObjTarget && tState.ownerId === myPlayerId}
+                {@const isObjPending = isObjTarget && tState.ownerId !== myPlayerId}
+                {@const isObjDimmed = highlightObjectiveTerritories && objectiveTargetTerritoryIds.size > 0 && !isObjTarget}
                 {@const isCapital = owner?.capitalTerritoryId === t.id}
                 {@const originalCapitalOwner = game.players.find((p) => p.capitalTerritoryId === t.id)}
                 {@const isFallenCapital = originalCapitalOwner && originalCapitalOwner.id !== tState.ownerId}
@@ -809,30 +955,45 @@
                   <!-- Political or Regional Fill + Frontier Border -->
                   <path
                     d={t.svgPath}
-                    fill={activeFill}
-                    fill-opacity={isSelected
-                      ? "0.88"
-                      : mapMode === "cartographic"
-                        ? "0.42"
-                        : mapMode === "regional"
-                          ? "0.72"
-                          : "0.84"}
+                    fill={isObjOwned ? "#059669" : isObjPending ? "#dc2626" : activeFill}
+                    fill-opacity={isObjTarget
+                      ? "0.85"
+                      : isSelected
+                        ? "0.88"
+                        : mapMode === "cartographic"
+                          ? "0.42"
+                          : mapMode === "regional"
+                            ? "0.72"
+                            : "0.84"}
                     stroke={isSelected
                       ? "#ffffff"
                       : isValidTarget
                         ? "#facc15"
-                        : mapMode === "cartographic"
-                          ? ownerColor
-                          : "rgba(9, 13, 22, 0.9)"}
+                        : isObjPending
+                          ? "#ef4444"
+                          : isObjOwned
+                            ? "#10b981"
+                            : mapMode === "cartographic"
+                              ? ownerColor
+                              : "rgba(9, 13, 22, 0.9)"}
                     stroke-width={isSelected
                       ? "2.6"
-                      : isValidTarget
-                        ? "2.2"
-                        : mapMode === "cartographic"
-                          ? "1.6"
-                          : "1.0"}
+                      : isValidTarget || isObjPending
+                        ? "2.4"
+                        : isObjOwned
+                          ? "2.0"
+                          : mapMode === "cartographic"
+                            ? "1.6"
+                            : "1.0"}
                     stroke-linejoin="round"
-                    filter={isSelected || isValidTarget ? "url(#glow-gold)" : undefined}
+                    filter={isSelected || isValidTarget
+                      ? "url(#glow-gold)"
+                      : isObjPending
+                        ? "url(#glow-red)"
+                        : isObjOwned
+                          ? "url(#glow-green)"
+                          : undefined}
+                    style={isObjDimmed ? "opacity: 0.28; transition: opacity 0.25s ease;" : "transition: opacity 0.25s ease;"}
                   />
 
                   {#if mapMode === "cartographic"}
@@ -881,8 +1042,12 @@
                               ? "#ffffff"
                               : isValidTarget
                                 ? "#facc15"
-                                : ownerColor}
-                        stroke-width={isCapital || isFallenCapital ? "1.6" : isSelected || isValidTarget ? "1.6" : "1.1"}
+                                : isObjPending
+                                  ? "#ef4444"
+                                  : isObjOwned
+                                    ? "#10b981"
+                                    : ownerColor}
+                        stroke-width={isCapital || isFallenCapital || isSelected || isValidTarget || isObjTarget ? "1.6" : "1.1"}
                         filter="drop-shadow(0 1.5px 3px rgba(0,0,0,0.85))"
                       />
                       <!-- Mini Faction Flag inside Left Half of Counter -->
@@ -995,7 +1160,8 @@
     <!-- FLOATING SUPREME COMMAND HUD LAYER -->
     <div class="hud-layer">
       <!-- ↖ TOP-LEFT: HEGEMONIA BRANDING, BALANCE OF POWER & CONTINENT/ASIA SUB-REGIONS -->
-      <aside class="hud-panel top-left-panel">
+      {#if !isImmersiveMode && hudVisibility.continents}
+        <aside class="hud-panel top-left-panel">
         <div class="panel-header">
           <div class="brand-row">
             <img src="/hegemonia-logo.webp" alt="Hegemonia" class="hud-mini-logo" />
@@ -1109,8 +1275,10 @@
           </div>
         {/if}
       </aside>
+      {/if}
 
       <!-- ⬆ TOP-CENTER: ACTIVE COMMANDER BANNER & OPERATIONAL DIRECTIVE -->
+      {#if !isImmersiveMode && hudVisibility.topBanner}
       <div class="top-center-banner" class:my-turn-banner={isMyTurn}>
         {#if currentTurnPlayer}
           <div class="tc-main-row">
@@ -1146,8 +1314,10 @@
           </div>
         {/if}
       </div>
+      {/if}
 
       <!-- ↗ TOP-RIGHT: PLAYER HEADQUARTERS, MAP MODE SWITCHER, CARDS, OBJECTIVE & EQUALIZER -->
+      {#if !isImmersiveMode}
       <aside class="hud-panel top-right-panel">
         <div class="my-hq-row">
           {#if myPlayerState}
@@ -1195,6 +1365,19 @@
             </button>
 
             <button
+              class="hud-btn"
+              class:active={showHudManager}
+              onclick={() => {
+                sound.playClick();
+                showHudManager = !showHudManager;
+                if (showHudManager) activeRightDrawer = null;
+              }}
+              title="Personalizar HUD & Visibilidade (Tecla H para Modo Imersivo)"
+            >
+              <Icon name="eye" size={14} /> HUD
+            </button>
+
+            <button
               class="hud-btn btn-exit-room"
               onclick={leaveCurrentRoom}
               title="Retornar ao Quartel-General (Sair da Sala)"
@@ -1205,6 +1388,7 @@
         </div>
 
         <!-- Map Mode Switcher (Cartographic HOI4 vs Geopolitical Clean vs Regional Theatres) + Camera Controls -->
+        {#if hudVisibility.mapControls}
         <div class="map-mode-bar">
           <div class="mode-tabs">
             <button
@@ -1235,9 +1419,9 @@
               class="mode-btn clean-mode-tab"
               class:active={cleanMapMode}
               onclick={() => (cleanMapMode = !cleanMapMode)}
-              title="Alternar Visão Limpa do Mapa (Ocultar Tropas e Rótulos - Tecla H / F4)"
+              title="Alternar Visão Limpa do Mapa (Ocultar Tropas e Rótulos - Tecla F4)"
             >
-              {cleanMapMode ? "👁️ Visão Limpa [H]" : "👁️ Modo Limpo [H]"}
+              <Icon name="eye" size={12} /> {cleanMapMode ? "Visão Limpa" : "Modo Limpo"}
             </button>
           </div>
 
@@ -1247,6 +1431,7 @@
             <button class="tool-btn" onclick={resetZoom} title="Centralizar Mapa">RST</button>
           </div>
         </div>
+        {/if}
 
         <!-- Audio Equalizer Drawer (HEGEM-10: Independent Music + SFX Sliders + Master Mute) -->
         {#if activeRightDrawer === "audio"}
@@ -1337,9 +1522,105 @@
                 </div>
               </div>
             {/if}
+
+            <div class="objective-toggle-box">
+              <button
+                class="highlight-toggle-btn"
+                class:active={highlightObjectiveTerritories}
+                onclick={() => {
+                  sound.playClick();
+                  highlightObjectiveTerritories = !highlightObjectiveTerritories;
+                }}
+              >
+                <Icon name={highlightObjectiveTerritories ? "eye" : "eye-off"} size={13} />
+                {highlightObjectiveTerritories ? "Ocultar Alvos no Mapa" : "Destacar Alvos no Mapa (Verde / Vermelho)"}
+              </button>
+            </div>
+
             <small class="objective-note">
               Documento confidencial mascarado no servidor. O cumprimento garante vitória imediata.
             </small>
+          </div>
+        {/if}
+
+        <!-- Modular HUD Visibility & Customizer Drawer -->
+        {#if showHudManager}
+          <div class="floating-drawer hud-drawer">
+            <div class="drawer-header">
+              <h4><Icon name="eye" size={15} /> Personalização da Interface (HUD)</h4>
+              <button class="btn-close" onclick={() => (showHudManager = false)}>✕</button>
+            </div>
+
+            <div class="hud-immersive-box">
+              <button
+                class="btn full-width"
+                class:primary-gold={isImmersiveMode}
+                class:secondary={!isImmersiveMode}
+                onclick={toggleImmersiveMode}
+              >
+                <Icon name={isImmersiveMode ? "eye" : "eye-off"} size={14} />
+                {isImmersiveMode ? "Desativar Modo Imersivo" : "Modo Imersivo (Ocultar Tudo - Tecla H)"}
+              </button>
+              <small>Dica: Pressione <strong>H</strong> a qualquer momento para alternar o modo 100% mapa limpo.</small>
+            </div>
+
+            <div class="hud-toggle-list">
+              <span class="hud-section-label">Painéis e Docks Visíveis:</span>
+
+              <label class="hud-toggle-row">
+                <span><Icon name="clock" size={13} /> Barra de Comando & Timer (Topo)</span>
+                <input
+                  type="checkbox"
+                  checked={hudVisibility.topBanner}
+                  onchange={() => toggleHudElement("topBanner")}
+                />
+              </label>
+
+              <label class="hud-toggle-row">
+                <span><Icon name="crown" size={13} /> Generais & Teatros (Esquerda)</span>
+                <input
+                  type="checkbox"
+                  checked={hudVisibility.continents}
+                  onchange={() => toggleHudElement("continents")}
+                />
+              </label>
+
+              <label class="hud-toggle-row">
+                <span><Icon name="shield" size={13} /> Console de Ordens & Fases (Inferior)</span>
+                <input
+                  type="checkbox"
+                  checked={hudVisibility.bottomDock}
+                  onchange={() => toggleHudElement("bottomDock")}
+                />
+              </label>
+
+              <label class="hud-toggle-row">
+                <span><Icon name="radio" size={13} /> Diário de Guerra & Chat (Direita)</span>
+                <input
+                  type="checkbox"
+                  checked={hudVisibility.warJournal}
+                  onchange={() => toggleHudElement("warJournal")}
+                />
+              </label>
+
+              <label class="hud-toggle-row">
+                <span><Icon name="globe" size={13} /> Modos de Mapa & Zoom (Superior)</span>
+                <input
+                  type="checkbox"
+                  checked={hudVisibility.mapControls}
+                  onchange={() => toggleHudElement("mapControls")}
+                />
+              </label>
+
+              <label class="hud-toggle-row">
+                <span><Icon name="target" size={13} /> Reconhecimento & Dicas (Inferior)</span>
+                <input
+                  type="checkbox"
+                  checked={hudVisibility.recon}
+                  onchange={() => toggleHudElement("recon")}
+                />
+              </label>
+            </div>
           </div>
         {/if}
 
@@ -1391,8 +1672,10 @@
           </div>
         {/if}
       </aside>
+      {/if}
 
       <!-- ↙ BOTTOM-LEFT: LIVE TERRITORY RECON INSPECTOR & CONTROLS HINT -->
+      {#if !isImmersiveMode && hudVisibility.recon}
       <div class="bottom-left-stack">
         {#if inspectedTerritory}
           <div class="recon-inspector-card">
@@ -1428,11 +1711,15 @@
           <span>•</span>
           <span>Q / E / Scroll: Zoom</span>
           <span>•</span>
-          <span>F1-F3: Modos • H: Mapa Limpo</span>
+          <span>F1-F3: Modos de Mapa</span>
+          <span>•</span>
+          <span>H: HUD Imersiva</span>
         </div>
       </div>
+      {/if}
 
       <!-- ⬇ BOTTOM-CENTER: TACTICAL ORDER CONSOLE & 1-2-3 PHASE STEPPER -->
+      {#if !isImmersiveMode && hudVisibility.bottomDock}
       <footer class="hud-panel bottom-center-dock">
         {#if isMyTurn && !game.winnerId}
           {#if game.pendingConquest}
@@ -1651,14 +1938,36 @@
           {/if}
         </div>
       </footer>
+      {/if}
 
       <!-- ↘ BOTTOM-RIGHT: WAR JOURNAL, DICE COMBAT TELEMETRY & COMMS (HEGEM-12) -->
+      {#if !isImmersiveMode && hudVisibility.warJournal}
       <WarJournal
         logs={game.log}
         lastCombat={game.lastCombat}
         players={game.players}
         onSendChat={sendChatText}
       />
+      {/if}
+
+      <!-- Immersive Mode Exit Control -->
+      {#if isImmersiveMode}
+        <button
+          class="immersive-exit-pill"
+          onclick={toggleImmersiveMode}
+          title="Clique ou pressione 'H' para restaurar a interface"
+        >
+          <Icon name="eye" size={13} /> MODO IMERSIVO (PRESSIONE 'H' PARA SAIR)
+        </button>
+      {/if}
+
+      <!-- Reconnection Floating Toast -->
+      {#if isReconnecting}
+        <div class="reconnecting-toast">
+          <div class="reconnecting-spinner"></div>
+          <span>Reconectando ao Quartel-General... ({reconnectAttempts}/8)</span>
+        </div>
+      {/if}
     </div>
   {/if}
 </main>
@@ -2002,10 +2311,10 @@
   }
   .my-hq-row {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     justify-content: space-between;
     gap: 0.35rem;
-    flex-wrap: wrap;
   }
   .hq-general {
     display: flex;
@@ -2028,25 +2337,31 @@
     display: inline-flex;
     align-items: center;
     gap: 0.25rem;
+    margin-left: auto;
   }
   .hq-buttons {
     display: flex;
     align-items: center;
     gap: 0.28rem;
-    margin-left: auto;
+    flex-wrap: wrap;
+    width: 100%;
+    margin-top: 0.15rem;
   }
   .hud-btn {
+    flex: 1 1 auto;
     background: rgba(15, 23, 42, 0.85);
     border: 1px solid rgba(148, 163, 184, 0.28);
     color: #e2e8f0;
-    padding: 0.28rem 0.5rem;
+    padding: 0.28rem 0.45rem;
     border-radius: 4px;
     font-family: var(--font-tactical);
-    font-size: 0.74rem;
+    font-size: 0.73rem;
     font-weight: 700;
     display: inline-flex;
     align-items: center;
+    justify-content: center;
     gap: 0.28rem;
+    white-space: nowrap;
   }
   .hud-btn:hover,
   .hud-btn.active {
@@ -2065,41 +2380,86 @@
     color: #fecaca;
   }
   .btn-exit-room {
-    padding: 0.28rem 0.42rem;
+    flex: 0 0 auto;
+    padding: 0.28rem 0.45rem;
     color: #fca5a5;
     border-color: rgba(239, 68, 68, 0.35);
   }
 
   .map-mode-bar {
     display: flex;
-    align-items: center;
+    align-items: stretch;
     justify-content: space-between;
     gap: 0.35rem;
-    padding-top: 0.32rem;
+    padding-top: 0.35rem;
     border-top: 1px solid rgba(148, 163, 184, 0.16);
   }
   .mode-tabs {
-    display: flex;
-    gap: 0.2rem;
+    flex: 1;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.22rem;
     background: rgba(5, 9, 18, 0.85);
-    padding: 0.16rem;
+    padding: 0.2rem;
     border-radius: 4px;
     border: 1px solid rgba(148, 163, 184, 0.18);
   }
   .mode-btn {
     background: transparent;
-    border: none;
+    border: 1px solid transparent;
     color: #94a3b8;
-    padding: 0.22rem 0.5rem;
+    padding: 0.24rem 0.35rem;
     border-radius: 3px;
     font-family: var(--font-tactical);
-    font-size: 0.72rem;
+    font-size: 0.69rem;
     font-weight: 700;
     text-transform: uppercase;
+    text-align: center;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.25rem;
+    white-space: nowrap;
+    transition: all 0.15s ease;
+  }
+  .mode-btn:hover {
+    color: #e2e8f0;
+    background: rgba(148, 163, 184, 0.12);
   }
   .mode-btn.active {
     background: linear-gradient(135deg, #ca8a04, #a16207);
     color: #ffffff;
+    border-color: rgba(250, 204, 21, 0.4);
+  }
+  .mode-btn.clean-mode-tab {
+    color: #38bdf8;
+    border: 1px solid rgba(56, 189, 248, 0.25);
+  }
+  .mode-btn.clean-mode-tab.active {
+    background: linear-gradient(135deg, #0284c7, #0369a1);
+    color: #ffffff;
+    border-color: #38bdf8;
+  }
+  .clean-map-indicator {
+    position: absolute;
+    top: 4.8rem;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(6, 11, 21, 0.9);
+    border: 1px solid rgba(56, 189, 248, 0.5);
+    color: #e0f2fe;
+    padding: 0.35rem 0.9rem;
+    border-radius: 20px;
+    font-size: 0.72rem;
+    font-weight: 600;
+    pointer-events: none;
+    z-index: 10;
+    box-shadow: 0 4px 18px rgba(0, 0, 0, 0.65);
+    letter-spacing: 0.02em;
+    backdrop-filter: blur(4px);
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
   }
   .mode-btn.clean-mode-tab {
     border-left: 1px solid rgba(148, 163, 184, 0.25);
@@ -2131,19 +2491,28 @@
   }
   .zoom-cluster {
     display: flex;
+    flex-direction: column;
     gap: 0.2rem;
+    justify-content: center;
   }
   .tool-btn {
     background: rgba(5, 9, 18, 0.85);
     border: 1px solid rgba(148, 163, 184, 0.25);
     color: #cbd5e1;
     min-width: 25px;
-    height: 23px;
+    height: 18px;
     padding: 0 0.32rem;
     border-radius: 3px;
     font-family: var(--font-mono);
-    font-size: 0.68rem;
+    font-size: 0.65rem;
     font-weight: 700;
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+  .tool-btn:hover {
+    background: rgba(202, 138, 4, 0.25);
+    border-color: #eab308;
+    color: #fef08a;
   }
 
   /* Floating Drawers */
@@ -2630,6 +2999,167 @@
     align-items: center;
     gap: 0.5rem;
     box-shadow: 0 12px 32px rgba(0, 0, 0, 0.8);
+  }
+
+  /* Objective Map Highlight Toggle */
+  .objective-toggle-box {
+    margin: 0.2rem 0;
+  }
+  .highlight-toggle-btn {
+    width: 100%;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.4rem;
+    padding: 0.35rem 0.6rem;
+    border-radius: 4px;
+    font-family: var(--font-tactical);
+    font-size: 0.74rem;
+    font-weight: 700;
+    cursor: pointer;
+    background: rgba(15, 23, 42, 0.85);
+    border: 1px solid rgba(148, 163, 184, 0.3);
+    color: #cbd5e1;
+    transition: all 0.2s ease;
+  }
+  .highlight-toggle-btn:hover {
+    background: rgba(16, 185, 129, 0.2);
+    border-color: #10b981;
+    color: #a7f3d0;
+  }
+  .highlight-toggle-btn.active {
+    background: rgba(16, 185, 129, 0.28);
+    border-color: #10b981;
+    color: #ecfdf5;
+    box-shadow: 0 0 10px rgba(16, 185, 129, 0.3);
+  }
+
+  /* Modular HUD Customizer Drawer */
+  .hud-drawer {
+    min-width: 260px;
+  }
+  .hud-immersive-box {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    padding-bottom: 0.4rem;
+    border-bottom: 1px solid rgba(148, 163, 184, 0.15);
+  }
+  .hud-immersive-box small {
+    font-size: 0.66rem;
+    color: #94a3b8;
+  }
+  .hud-toggle-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+  }
+  .hud-section-label {
+    font-family: var(--font-tactical);
+    font-size: 0.68rem;
+    font-weight: 700;
+    color: #94a3b8;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  .hud-toggle-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    padding: 0.28rem 0.45rem;
+    border-radius: 4px;
+    background: rgba(5, 9, 18, 0.6);
+    border: 1px solid rgba(148, 163, 184, 0.15);
+    cursor: pointer;
+    font-size: 0.72rem;
+    color: #e2e8f0;
+    transition: background 0.15s;
+  }
+  .hud-toggle-row:hover {
+    background: rgba(15, 23, 42, 0.85);
+    border-color: rgba(234, 179, 8, 0.3);
+  }
+  .hud-toggle-row span {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+  }
+  .hud-toggle-row input[type="checkbox"] {
+    accent-color: #eab308;
+    cursor: pointer;
+    width: 14px;
+    height: 14px;
+  }
+
+  /* Immersive Mode Exit Pill */
+  .immersive-exit-pill {
+    position: fixed;
+    top: 1rem;
+    right: 1.5rem;
+    z-index: 999;
+    background: rgba(15, 23, 42, 0.92);
+    border: 1px solid #eab308;
+    color: #fef08a;
+    padding: 0.4rem 0.9rem;
+    border-radius: 999px;
+    font-family: var(--font-tactical);
+    font-size: 0.72rem;
+    font-weight: 800;
+    letter-spacing: 0.06em;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    box-shadow: 0 4px 18px rgba(0, 0, 0, 0.75), 0 0 12px rgba(234, 179, 8, 0.35);
+    transition: all 0.2s ease;
+  }
+  .immersive-exit-pill:hover {
+    transform: translateY(-1px);
+    background: rgba(202, 138, 4, 0.3);
+  }
+
+  /* Reconnecting Toast & Spinner */
+  .reconnecting-toast {
+    position: fixed;
+    bottom: 1.5rem;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 1000;
+    background: rgba(15, 23, 42, 0.94);
+    border: 1px solid #f59e0b;
+    color: #fef3c7;
+    padding: 0.45rem 1rem;
+    border-radius: 8px;
+    font-family: var(--font-tactical);
+    font-size: 0.78rem;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.85), 0 0 15px rgba(245, 158, 11, 0.4);
+    animation: pulseToast 2s infinite ease-in-out;
+  }
+  .reconnecting-spinner {
+    width: 13px;
+    height: 13px;
+    border: 2px solid rgba(245, 158, 11, 0.3);
+    border-top-color: #f59e0b;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+  @keyframes spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+  @keyframes pulseToast {
+    0%, 100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.75;
+    }
   }
 
   /* Responsive Widescreen & Laptop Adaptations (1366x768 -> 21:9) */
