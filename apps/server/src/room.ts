@@ -49,8 +49,11 @@ export class HegemoniaRoom extends Room {
   private turnTimerSeconds = Number(process.env.TURN_TIMER_DEFAULT ?? 120);
   private turnDeadline = 0;
   private timerInterval: NodeJS.Timeout | null = null;
+  private disconnectTimeouts = new Map<string, NodeJS.Timeout>();
+  private disposeTimeout: NodeJS.Timeout | null = null;
 
   onCreate(options: { roomCode?: string; name?: string; token?: string }) {
+    this.autoDispose = false;
     this.roomCode = (
       options.roomCode?.toUpperCase() ||
       randomBytes(3).toString("hex").toUpperCase()
@@ -232,6 +235,15 @@ export class HegemoniaRoom extends Room {
     const name = authUser?.displayName ?? (String(options?.name || "General").trim().slice(0, 24) || "General");
 
     if (existing) {
+      const pendingTimer = this.disconnectTimeouts.get(existing.token);
+      if (pendingTimer) {
+        clearTimeout(pendingTimer);
+        this.disconnectTimeouts.delete(existing.token);
+      }
+      if (this.disposeTimeout) {
+        clearTimeout(this.disposeTimeout);
+        this.disposeTimeout = null;
+      }
       existing.sessionId = client.sessionId;
       existing.connected = true;
       existing.name = name;
@@ -279,26 +291,77 @@ export class HegemoniaRoom extends Room {
     this.broadcastRoomState();
   }
 
-  onLeave(client: Client) {
+  onLeave(client: Client, consented?: boolean) {
     const player = this.lobbyPlayers.find((p) => p.sessionId === client.sessionId);
     if (!player) return;
 
+    if (consented) {
+      this.purgePlayer(player);
+    } else {
+      player.connected = false;
+      if (this.gameState) {
+        const gp = this.gameState.players.find((p) => p.id === player.token);
+        if (gp) gp.connected = false;
+      }
+
+      const existingTimer = this.disconnectTimeouts.get(player.token);
+      if (existingTimer) clearTimeout(existingTimer);
+
+      const timer = setTimeout(() => {
+        this.disconnectTimeouts.delete(player.token);
+        if (!player.connected) {
+          this.purgePlayer(player);
+        }
+      }, 60000);
+      this.disconnectTimeouts.set(player.token, timer);
+    }
+
+    this.checkAutoDispose();
+    this.broadcastRoomState();
+  }
+
+  private purgePlayer(player: LobbyPlayer) {
     if (!this.gameState) {
       this.lobbyPlayers = this.lobbyPlayers.filter((p) => p.token !== player.token);
       if (player.isHost && this.lobbyPlayers.length > 0) {
         const nextHuman = this.lobbyPlayers.find((p) => !p.isBot) ?? this.lobbyPlayers[0];
-        nextHuman.isHost = true;
+        if (nextHuman) nextHuman.isHost = true;
       }
     } else {
       player.connected = false;
       const gp = this.gameState.players.find((p) => p.id === player.token);
       if (gp) gp.connected = false;
     }
+    this.checkAutoDispose();
     this.broadcastRoomState();
+  }
+
+  private checkAutoDispose() {
+    const hasActivePlayers = this.lobbyPlayers.some((p) => p.connected && !p.isBot);
+    const hasPendingReconnects = this.disconnectTimeouts.size > 0;
+
+    if (!hasActivePlayers && !hasPendingReconnects) {
+      if (!this.disposeTimeout) {
+        this.disposeTimeout = setTimeout(() => {
+          const stillEmpty =
+            !this.lobbyPlayers.some((p) => p.connected && !p.isBot) &&
+            this.disconnectTimeouts.size === 0;
+          if (stillEmpty) {
+            this.disconnect();
+          }
+        }, 15000);
+      }
+    } else if (this.disposeTimeout) {
+      clearTimeout(this.disposeTimeout);
+      this.disposeTimeout = null;
+    }
   }
 
   async onDispose() {
     if (this.timerInterval) clearInterval(this.timerInterval);
+    if (this.disposeTimeout) clearTimeout(this.disposeTimeout);
+    for (const t of this.disconnectTimeouts.values()) clearTimeout(t);
+    this.disconnectTimeouts.clear();
     await this.actionQueue;
   }
 
