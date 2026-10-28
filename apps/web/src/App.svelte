@@ -149,6 +149,42 @@
   let musicVolume = $state(sound.getVolume());
   let selectedTrack = $state(sound.getCurrentTrack());
 
+  // Victory & Lobby Controls
+  let showVictoryModal = $state(true);
+  let lastAnnouncedWinner = $state<string | null>(null);
+  let amIHost = $derived(
+    lobbyPlayers.find((p) => p.token === myPlayerId)?.isHost ?? false
+  );
+
+  $effect(() => {
+    if (game?.winnerId && game.winnerId !== lastAnnouncedWinner) {
+      lastAnnouncedWinner = game.winnerId;
+      showVictoryModal = true;
+      sound.playConquest();
+    }
+    if (!game?.winnerId) {
+      lastAnnouncedWinner = null;
+    }
+  });
+
+  function returnRoomToLobby() {
+    sound.playClick();
+    connectedRoom?.send("return_to_lobby");
+  }
+
+  function leaveToMainMenu() {
+    sound.playClick();
+    if (connectedRoom) {
+      connectedRoom.leave();
+      connectedRoom = null;
+    }
+    game = null;
+    roomStatus = "disconnected";
+    selectedFromId = null;
+    selectedToId = null;
+    showVictoryModal = false;
+  }
+
   // Derived calculations
   let currentTurnPlayer = $derived(game ? game.players[game.turnIndex] : null);
   let isMyTurn = $derived(Boolean(game && currentTurnPlayer && currentTurnPlayer.id === myPlayerId));
@@ -1277,6 +1313,19 @@
           <div class="action-popup victory-popup">
             <h3>HEGEMONIA ALCANÇADA POR {winner?.name?.toUpperCase()}</h3>
             <p>{winner?.objective.descriptionPt}</p>
+            <div class="victory-dock-buttons">
+              <button class="btn primary-gold" onclick={() => (showVictoryModal = true)}>
+                📊 Ver Relatório da Partida
+              </button>
+              {#if amIHost}
+                <button class="btn gold-outline" onclick={returnRoomToLobby}>
+                  🔄 Voltar ao Lobby
+                </button>
+              {/if}
+              <button class="btn secondary" onclick={leaveToMainMenu}>
+                🚪 Sair da Sala
+              </button>
+            </div>
             <small>Verificação Criptográfica (Seed): {game.revealedSeed}</small>
           </div>
 
@@ -1441,6 +1490,87 @@
           {/if}
         {/if}
       </aside>
+
+      <!-- 🏆 VICTORY & SUMMARY MODAL -->
+      {#if game.winnerId && showVictoryModal}
+        {@const winner = game.players.find((p) => p.id === game!.winnerId)}
+        <div
+          class="modal-backdrop victory-modal-backdrop"
+          role="presentation"
+          onclick={(e) => { if (e.target === e.currentTarget) showVictoryModal = false; }}
+          onkeydown={(e) => { if (e.key === "Escape") showVictoryModal = false; }}
+        >
+          <div class="victory-modal-card" role="dialog" aria-modal="true">
+            <div class="victory-modal-header">
+              <span class="victory-laurel">★ ★ ★</span>
+              <h2>HEGEMONIA CONQUISTADA</h2>
+              <span class="victory-sub">O DESTINO DO MUNDO FOI DECIDIDO</span>
+            </div>
+
+            <div class="winner-hero" style="border-color: {COLOR_HEX[winner?.color ?? 'blue']};">
+              <div class="winner-avatar" style="background-color: {COLOR_HEX[winner?.color ?? 'blue']};">
+                {winner?.name.slice(0, 2).toUpperCase()}
+              </div>
+              <div class="winner-details">
+                <h3>{winner?.name}</h3>
+                <span class="winner-faction" style="color: {COLOR_HEX[winner?.color ?? 'blue']};">
+                  {FACTION_NAME_PT[winner?.color ?? 'blue']}
+                </span>
+              </div>
+            </div>
+
+            <div class="victory-objective-box">
+              <h4>Objetivo Secreto Cumprido</h4>
+              <p class="obj-text">{winner?.objective.descriptionPt}</p>
+              <div class="crypto-seed-row">
+                <span>Semente Criptográfica:</span>
+                <code>{game.revealedSeed}</code>
+              </div>
+            </div>
+
+            <div class="victory-stats-summary">
+              <h4>Relatório do Estado-Maior (Rodada {game.round})</h4>
+              <div class="stats-table">
+                {#each game.players as p}
+                  {@const count = Object.values(game.territories).filter((t) => t.ownerId === p.id).length}
+                  {@const armiesCount = Object.values(game.territories).filter((t) => t.ownerId === p.id).reduce((acc, t) => acc + t.armies, 0)}
+                  <div class="stat-player-row {p.id === game.winnerId ? 'is-winner' : ''}">
+                    <div class="stat-player-name">
+                      <span class="color-dot" style="background-color: {COLOR_HEX[p.color]};"></span>
+                      <span>{p.name} {p.id === game.winnerId ? '(VENCEDOR)' : ''}</span>
+                    </div>
+                    <div class="stat-metrics">
+                      <span>{count} Territórios</span>
+                      <span class="sep">•</span>
+                      <span>{armiesCount} Divisões</span>
+                    </div>
+                  </div>
+                {/each}
+              </div>
+            </div>
+
+            <div class="victory-actions">
+              {#if amIHost}
+                <button class="btn primary-gold btn-lg" onclick={returnRoomToLobby}>
+                  🔄 Retornar a Sala para o Lobby
+                </button>
+              {:else}
+                <div class="waiting-host-notice">
+                  Aguardando o comandante da sala retornar ao lobby...
+                </div>
+              {/if}
+              <div class="secondary-actions-row">
+                <button class="btn secondary" onclick={() => (showVictoryModal = false)}>
+                  🗺️ Inspecionar Mapa Final
+                </button>
+                <button class="btn danger" onclick={leaveToMainMenu}>
+                  🚪 Sair para o Menu Principal
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      {/if}
     </div>
   {/if}
 </main>
@@ -2378,5 +2508,207 @@
     z-index: 100;
     font-weight: 700;
     box-shadow: 0 8px 25px rgba(0, 0, 0, 0.6);
+  }
+
+  /* Victory Modal & Post-Game UX */
+  .victory-dock-buttons {
+    display: flex;
+    gap: 0.5rem;
+    justify-content: center;
+    margin: 0.4rem 0;
+    flex-wrap: wrap;
+  }
+  .victory-modal-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(3, 7, 18, 0.88);
+    backdrop-filter: blur(8px);
+    z-index: 999;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1.5rem;
+  }
+  .victory-modal-card {
+    background: linear-gradient(180deg, #0f172a 0%, #070d1a 100%);
+    border: 2px solid #eab308;
+    box-shadow: 0 0 50px rgba(234, 179, 8, 0.35), 0 25px 60px rgba(0, 0, 0, 0.9);
+    border-radius: 12px;
+    width: 100%;
+    max-width: 580px;
+    padding: 2rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1.25rem;
+    color: #f8fafc;
+    animation: modalPop 0.25s ease-out;
+  }
+  @keyframes modalPop {
+    from {
+      opacity: 0;
+      transform: scale(0.95);
+    }
+    to {
+      opacity: 1;
+      transform: scale(1);
+    }
+  }
+  .victory-modal-header {
+    text-align: center;
+  }
+  .victory-laurel {
+    color: #facc15;
+    font-size: 1.4rem;
+    letter-spacing: 0.3em;
+  }
+  .victory-modal-header h2 {
+    color: #facc15;
+    font-size: 1.6rem;
+    letter-spacing: 0.1em;
+    font-weight: 800;
+    margin: 0.25rem 0;
+  }
+  .victory-sub {
+    font-size: 0.75rem;
+    letter-spacing: 0.15em;
+    color: #94a3b8;
+    text-transform: uppercase;
+  }
+  .winner-hero {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    background: rgba(15, 23, 42, 0.7);
+    border: 2px solid;
+    padding: 1rem;
+    border-radius: 8px;
+  }
+  .winner-avatar {
+    width: 52px;
+    height: 52px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.3rem;
+    font-weight: 800;
+    color: white;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.5);
+  }
+  .winner-details h3 {
+    font-size: 1.25rem;
+    font-weight: 700;
+  }
+  .winner-faction {
+    font-size: 0.85rem;
+    font-weight: 600;
+  }
+  .victory-objective-box {
+    background: rgba(30, 41, 59, 0.55);
+    border: 1px solid rgba(148, 163, 184, 0.25);
+    border-radius: 8px;
+    padding: 0.85rem;
+  }
+  .victory-objective-box h4 {
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    color: #fbbf24;
+    letter-spacing: 0.05em;
+    margin-bottom: 0.35rem;
+  }
+  .obj-text {
+    font-size: 0.9rem;
+    line-height: 1.4;
+    color: #e2e8f0;
+  }
+  .crypto-seed-row {
+    margin-top: 0.5rem;
+    font-size: 0.72rem;
+    color: #64748b;
+    display: flex;
+    gap: 0.4rem;
+    align-items: center;
+  }
+  .crypto-seed-row code {
+    background: #020617;
+    color: #38bdf8;
+    padding: 0.15rem 0.35rem;
+    border-radius: 4px;
+    font-family: monospace;
+  }
+  .victory-stats-summary h4 {
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    color: #94a3b8;
+    letter-spacing: 0.05em;
+    margin-bottom: 0.5rem;
+  }
+  .stats-table {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+  }
+  .stat-player-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: rgba(15, 23, 42, 0.6);
+    border: 1px solid rgba(51, 65, 85, 0.4);
+    padding: 0.45rem 0.75rem;
+    border-radius: 6px;
+    font-size: 0.82rem;
+  }
+  .stat-player-row.is-winner {
+    border-color: rgba(234, 179, 8, 0.6);
+    background: rgba(234, 179, 8, 0.1);
+    font-weight: 700;
+  }
+  .stat-player-name {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+  .stat-metrics {
+    color: #94a3b8;
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+  }
+  .stat-metrics .sep {
+    opacity: 0.5;
+  }
+  .victory-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    margin-top: 0.5rem;
+  }
+  .btn-lg {
+    padding: 0.75rem 1.25rem;
+    font-size: 0.95rem;
+    font-weight: 700;
+    width: 100%;
+  }
+  .secondary-actions-row {
+    display: flex;
+    gap: 0.5rem;
+  }
+  .secondary-actions-row .btn {
+    flex: 1;
+  }
+  .waiting-host-notice {
+    font-size: 0.82rem;
+    text-align: center;
+    color: #94a3b8;
+    font-style: italic;
+    padding: 0.5rem;
+  }
+  .gold-outline {
+    background: transparent;
+    border: 1px solid #facc15;
+    color: #facc15;
+  }
+  .gold-outline:hover {
+    background: rgba(250, 204, 21, 0.15);
   }
 </style>
