@@ -122,6 +122,107 @@ export function calculateTurnReinforcements(
   };
 }
 
+export interface TurnEconomyBreakdown {
+  capitalMoney: number;
+  tradeHubMoney: number;
+  goldPassiveMoney: number;
+  grossMoney: number;
+  economicPenaltyMultiplier: number;
+  netMoney: number;
+  steel: number;
+  oil: number;
+  gold: number;
+}
+
+/**
+ * Calculates start-of-turn economic income and strategic resource extraction (HEGEM-18):
+ * - Capital National Treasury: +3$ if the player has established a capital
+ * - Trade Hubs: sum of territory `tradeBonus` across occupied territories (armies >= 1)
+ * - Gold Passive Treasury: +2$ per occupied territory with `resource === "gold"`
+ * - Strategic Extraction: +1 Steel / Oil / Gold per occupied territory with matching `resource`
+ * - Decapitation Penalty: `netMoney = Math.floor(grossMoney * economicPenaltyMultiplier)`
+ */
+export function calculateTurnEconomy(
+  state: GameState,
+  playerId: string,
+  map: GameMapDef = CLASSIC_MAP
+): TurnEconomyBreakdown {
+  const player = state.players.find((p) => p.id === playerId);
+  const mapById = new Map(map.territories.map((t) => [t.id, t]));
+
+  const occupiedTerritories = Object.values(state.territories).filter(
+    (t) => t.ownerId === playerId && t.armies >= 1
+  );
+
+  const capitalMoney = player?.capitalTerritoryId ? 3 : 0;
+  let tradeHubMoney = 0;
+  let goldPassiveMoney = 0;
+  let steel = 0;
+  let oil = 0;
+  let gold = 0;
+
+  for (const terr of occupiedTerritories) {
+    const def = mapById.get(terr.id);
+    if (!def) continue;
+    if (def.tradeBonus && def.tradeBonus > 0) {
+      tradeHubMoney += def.tradeBonus;
+    }
+    if (def.resource === "steel") {
+      steel += 1;
+    } else if (def.resource === "oil") {
+      oil += 1;
+    } else if (def.resource === "gold") {
+      gold += 1;
+      goldPassiveMoney += 2;
+    }
+  }
+
+  const grossMoney = capitalMoney + tradeHubMoney + goldPassiveMoney;
+  const economicPenaltyMultiplier = player?.isCapitalLost
+    ? (player.economicPenaltyMultiplier ?? 0.5)
+    : 1.0;
+  const netMoney = Math.floor(grossMoney * economicPenaltyMultiplier);
+
+  return {
+    capitalMoney,
+    tradeHubMoney,
+    goldPassiveMoney,
+    grossMoney,
+    economicPenaltyMultiplier,
+    netMoney,
+    steel,
+    oil,
+    gold,
+  };
+}
+
+function collectTurnEconomy(
+  state: GameState,
+  playerId: string,
+  map: GameMapDef = CLASSIC_MAP
+): TurnEconomyBreakdown {
+  const player = state.players.find((p) => p.id === playerId);
+  const econ = calculateTurnEconomy(state, playerId, map);
+  if (!player) return econ;
+
+  player.resources = player.resources ?? { money: 0, steel: 0, oil: 0, gold: 0 };
+  player.resources.money += econ.netMoney;
+  player.resources.steel += econ.steel;
+  player.resources.oil += econ.oil;
+  player.resources.gold += econ.gold;
+
+  const parts: string[] = [];
+  if (econ.netMoney > 0) parts.push(`+$${econ.netMoney}`);
+  if (econ.steel > 0) parts.push(`+${econ.steel} Aço`);
+  if (econ.oil > 0) parts.push(`+${econ.oil} Petróleo`);
+  if (econ.gold > 0) parts.push(`+${econ.gold} Ouro`);
+
+  if (parts.length > 0) {
+    state.log.push(`Economia de ${player.name}: ${parts.join(", ")}.`);
+  }
+  return econ;
+}
+
 /**
  * Initializes a new authoritative game state.
  */
@@ -211,6 +312,8 @@ export function createGame(opts: CreateGameOptions): GameState {
       economicPenaltyMultiplier: 1.0,
       moralePenalty: 0,
       infamy: 0,
+      resources: { money: 0, steel: 0, oil: 0, gold: 0 },
+      boughtCardWithGoldThisTurn: false,
     };
   });
 
@@ -246,11 +349,12 @@ export function createGame(opts: CreateGameOptions): GameState {
     coalitions: [],
   };
 
-  // Give first player their initial turn reinforcements
+  // Give first player their initial turn reinforcements and war economy extraction
   const firstPlayer = state.players[0];
   const reinf = calculateTurnReinforcements(state, firstPlayer.id, map);
   firstPlayer.unplacedArmies = reinf.total;
   state.log.push(`${firstPlayer.name} recebe ${reinf.total} exércitos para posicionar.`);
+  collectTurnEconomy(state, firstPlayer.id, map);
 
   return state;
 }
@@ -480,6 +584,11 @@ export function applyAction(
     throw new Error("Não é o seu turno.");
   }
 
+  actingPlayer.resources = actingPlayer.resources ?? { money: 0, steel: 0, oil: 0, gold: 0 };
+  if (currentPlayer) {
+    currentPlayer.resources = currentPlayer.resources ?? { money: 0, steel: 0, oil: 0, gold: 0 };
+  }
+
   const mapById = new Map(map.territories.map((t) => [t.id, t]));
 
   switch (action.type) {
@@ -527,6 +636,52 @@ export function applyAction(
       break;
     }
 
+    case "buy_card_with_gold": {
+      if (state.phase !== "deploy") {
+        throw new Error("A compra de cartas com Ouro só é permitida na fase de posicionamento.");
+      }
+      if (currentPlayer.cards.length >= 5) {
+        throw new Error("Você já possui 5 cartas e precisa realizar uma troca obrigatória antes.");
+      }
+      if (currentPlayer.boughtCardWithGoldThisTurn) {
+        throw new Error("Só é permitido comprar 1 carta de suprimento com Ouro por turno.");
+      }
+
+      const mode =
+        action.paymentMode ??
+        (currentPlayer.resources.gold >= 2 ? "gold_only" : "gold_and_money");
+
+      if (mode === "gold_only") {
+        if (currentPlayer.resources.gold < 2) {
+          throw new Error("Ouro insuficiente: são necessários 2 de Ouro para esta modalidade.");
+        }
+        currentPlayer.resources.gold -= 2;
+      } else {
+        if (currentPlayer.resources.gold < 1 || currentPlayer.resources.money < 4) {
+          throw new Error("Recursos insuficientes: são necessários 1 de Ouro e $4 de Dinheiro.");
+        }
+        currentPlayer.resources.gold -= 1;
+        currentPlayer.resources.money -= 4;
+      }
+
+      if (state.deck.length === 0 && state.discardPile.length > 0) {
+        state.deck = rng.shuffle(state.discardPile);
+        state.discardPile = [];
+      }
+      const drawnCard = state.deck.pop();
+      if (!drawnCard) {
+        throw new Error("Não há cartas disponíveis no baralho de suprimentos.");
+      }
+
+      currentPlayer.cards.push(drawnCard);
+      currentPlayer.boughtCardWithGoldThisTurn = true;
+      const costTag = mode === "gold_only" ? "2 Ouro" : "1 Ouro + $4";
+      state.log.push(
+        `${currentPlayer.name} adquiriu 1 carta de suprimento estratégica (${costTag}).`
+      );
+      break;
+    }
+
     case "select_capital": {
       if (state.phase !== "deploy") {
         throw new Error("A capital só pode ser selecionada durante a fase de posicionamento.");
@@ -535,8 +690,12 @@ export function applyAction(
       if (!terr || terr.ownerId !== playerId) {
         throw new Error("Você só pode estabelecer a capital em um território sob seu controle.");
       }
+      const hadCapitalBefore = Boolean(currentPlayer.capitalTerritoryId);
       currentPlayer.capitalTerritoryId = action.territoryId;
       currentPlayer.isCapitalLost = false;
+      if (!hadCapitalBefore) {
+        currentPlayer.resources.money += 3;
+      }
       const tName = mapById.get(terr.id)?.namePt ?? terr.id;
       state.log.push(`⭐ ${currentPlayer.name} estabeleceu ${tName} como sua Capital Nacional!`);
       break;
@@ -561,6 +720,7 @@ export function applyAction(
       if (!currentPlayer.capitalTerritoryId) {
         currentPlayer.capitalTerritoryId = terr.id;
         currentPlayer.isCapitalLost = false;
+        currentPlayer.resources.money += 3;
         const capName = mapById.get(terr.id)?.namePt ?? terr.id;
         state.log.push(`⭐ ${currentPlayer.name} estabeleceu ${capName} como sua Capital Nacional!`);
       }
@@ -1089,6 +1249,7 @@ function advanceTurn(state: GameState, rng: SeededRng, map: GameMapDef): void {
     }
   }
   endingPlayer.conqueredThisTurn = false;
+  endingPlayer.boughtCardWithGoldThisTurn = false;
 
   for (const t of Object.values(state.territories)) {
     t.movedInArmies = 0;
@@ -1145,6 +1306,7 @@ function advanceTurn(state: GameState, rng: SeededRng, map: GameMapDef): void {
 
       const reinf = calculateTurnReinforcements(state, candidate.id, map);
       candidate.unplacedArmies = reinf.total;
+      candidate.boughtCardWithGoldThisTurn = false;
       if (candidate.moralePenalty && candidate.moralePenalty > 0) {
         // One-turn penalty applied; clear penalty for subsequent turns
         candidate.moralePenalty = 0;
@@ -1154,6 +1316,7 @@ function advanceTurn(state: GameState, rng: SeededRng, map: GameMapDef): void {
       state.log.push(
         `Turno de ${candidate.name} (Rodada ${state.round}): +${reinf.total} exércitos${capTag}${penTag}.`
       );
+      collectTurnEconomy(state, candidate.id, map);
       break;
     }
   }

@@ -142,6 +142,24 @@
     <path d="m2 14 3.3 3.3a1 1 0 0 0 1.4 0l4.3-4.3" />
     <path d="m7 9 4.3 4.3" />
     <path d="m15 5-8.3 8.3a1 1 0 0 0 0 1.4l2.6 2.6a1 1 0 0 0 1.4 0L19 9" />
+  {:else if name === "coins"}
+    <circle cx="9" cy="9" r="6" />
+    <path d="M14.5 9.5a6 6 0 1 1-5 5" />
+    <path d="M9 6v6M7 8h4" />
+  {:else if name === "steel"}
+    <path d="M4 17h16l-2-6H6l-2 6Z" />
+    <path d="M7 11l1.5-4h7L17 11" />
+    <line x1="2" y1="20" x2="22" y2="20" />
+  {:else if name === "oil"}
+    <path d="M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z" />
+  {:else if name === "gold"}
+    <polygon points="6 14 9 8 15 8 18 14 6 14" />
+    <polygon points="3 20 6 14 12 14 15 20 3 20" />
+    <polygon points="12 14 18 14 21 20 15 20 12 14" />
+  {:else if name === "anchor"}
+    <circle cx="12" cy="5" r="3" />
+    <line x1="12" y1="22" x2="12" y2="8" />
+    <path d="M5 12H2a10 10 0 0 0 20 0h-3" />
   {:else}
     <circle cx="12" cy="12" r="9" />
   {/if}

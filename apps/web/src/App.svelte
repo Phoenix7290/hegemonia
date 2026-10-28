@@ -7,7 +7,11 @@
     MAP_HEIGHT,
     MAP_WIDTH,
   } from "@hegemonia/maps";
-  import { findValidTradeTriplet, getTradeBonusArmies } from "@hegemonia/engine";
+  import {
+    calculateTurnEconomy,
+    findValidTradeTriplet,
+    getTradeBonusArmies,
+  } from "@hegemonia/engine";
   import type { GameState, PlayerColor } from "@hegemonia/shared";
   import { sound } from "./audio.js";
   import { estimateAttackWinOdds } from "./odds.js";
@@ -258,6 +262,10 @@
   let activeCoalitionAgainstTarget = $derived(
     game?.coalitions?.find((c) => c.targetPlayerId === activeDiplomacyTargetId) ?? null
   );
+  let myEconomyIncome = $derived.by(() => {
+    if (!game || !myPlayerId) return null;
+    return calculateTurnEconomy(game, myPlayerId);
+  });
 
   const SOUNDTRACKS = [
     { id: "ambient_procedural", label: "Marcha Tática (Sintetizador Web Audio)" },
@@ -1691,6 +1699,40 @@
           </div>
         </div>
 
+        {#if myPlayerState}
+          {@const res = myPlayerState.resources ?? { money: 0, steel: 0, oil: 0, gold: 0 }}
+          <div class="hq-economy-bar">
+            <div class="econ-pill money" title={t("res_money")}>
+              <Icon name="coins" size={13} />
+              <span class="econ-val">${res.money}</span>
+              {#if myEconomyIncome && myEconomyIncome.netMoney > 0}
+                <span class="econ-delta">+{myEconomyIncome.netMoney}</span>
+              {/if}
+            </div>
+            <div class="econ-pill steel" title={t("res_steel")}>
+              <Icon name="steel" size={13} />
+              <span class="econ-val">{res.steel}</span>
+              {#if myEconomyIncome && myEconomyIncome.steel > 0}
+                <span class="econ-delta">+{myEconomyIncome.steel}</span>
+              {/if}
+            </div>
+            <div class="econ-pill oil" title={t("res_oil")}>
+              <Icon name="oil" size={13} />
+              <span class="econ-val">{res.oil}</span>
+              {#if myEconomyIncome && myEconomyIncome.oil > 0}
+                <span class="econ-delta">+{myEconomyIncome.oil}</span>
+              {/if}
+            </div>
+            <div class="econ-pill gold" title={t("res_gold")}>
+              <Icon name="gold" size={13} />
+              <span class="econ-val">{res.gold}</span>
+              {#if myEconomyIncome && myEconomyIncome.gold > 0}
+                <span class="econ-delta">+{myEconomyIncome.gold}</span>
+              {/if}
+            </div>
+          </div>
+        {/if}
+
         <!-- Map Mode Switcher (Cartographic HOI4 vs Geopolitical Clean vs Regional Theatres) + Camera Controls -->
         {#if hudVisibility.mapControls}
         <div class="map-mode-bar">
@@ -1973,6 +2015,41 @@
                 <Icon name="shield" size={15} /> {t("cards_exchange_btn", { armies: nextTradeBonus })}
               </button>
             {/if}
+
+            {#if isMyTurn && game.phase === "deploy" && myPlayerState.cards.length < 5}
+              {@const res = myPlayerState.resources ?? { money: 0, steel: 0, oil: 0, gold: 0 }}
+              {@const canBuyGoldOnly = !myPlayerState.boughtCardWithGoldThisTurn && res.gold >= 2}
+              {@const canBuyGoldMoney = !myPlayerState.boughtCardWithGoldThisTurn && res.gold >= 1 && res.money >= 4}
+              <div class="gold-card-purchase-box">
+                <div class="gold-card-purchase-head">
+                  <Icon name="gold" size={13} />
+                  <span>{t("cards_buy_gold_title")}</span>
+                </div>
+                <p class="gold-card-purchase-sub">{t("cards_buy_gold_sub")}</p>
+                {#if myPlayerState.boughtCardWithGoldThisTurn}
+                  <div class="gold-card-bought-tag">
+                    <Icon name="check" size={12} /> {t("cards_buy_gold_done")}
+                  </div>
+                {:else}
+                  <div class="gold-card-btn-row">
+                    <button
+                      class="hud-btn gold-buy-btn"
+                      disabled={!canBuyGoldOnly}
+                      onclick={() => sendAction({ type: "buy_card_with_gold", paymentMode: "gold_only" })}
+                    >
+                      <Icon name="gold" size={12} /> {t("cards_buy_gold_only_btn")}
+                    </button>
+                    <button
+                      class="hud-btn gold-buy-btn"
+                      disabled={!canBuyGoldMoney}
+                      onclick={() => sendAction({ type: "buy_card_with_gold", paymentMode: "gold_and_money" })}
+                    >
+                      <Icon name="coins" size={12} /> {t("cards_buy_gold_money_btn")}
+                    </button>
+                  </div>
+                {/if}
+              </div>
+            {/if}
           </div>
         {/if}
       </aside>
@@ -2006,6 +2083,33 @@
               <span>{t("recon_occupant", { name: inspectedTerritory.owner?.name ?? t("recon_neutral") })}</span>
               <span>•</span>
               <span>{t("recon_borders", { count: inspectedTerritory.def.neighbors.length })}</span>
+            </div>
+            <div class="recon-economy-row">
+              {#if inspectedTerritory.def.resource === "steel"}
+                <span class="recon-res-badge steel">
+                  <Icon name="steel" size={11} /> {t("res_steel")} (+1)
+                </span>
+              {:else if inspectedTerritory.def.resource === "oil"}
+                <span class="recon-res-badge oil">
+                  <Icon name="oil" size={11} /> {t("res_oil")} (+1)
+                </span>
+              {:else if inspectedTerritory.def.resource === "gold"}
+                <span class="recon-res-badge gold">
+                  <Icon name="gold" size={11} /> {t("res_gold")} (+1 / +$2)
+                </span>
+              {/if}
+              {#if inspectedTerritory.def.tradeBonus && inspectedTerritory.def.tradeBonus > 0}
+                <span class="recon-res-badge money">
+                  <Icon name="coins" size={11} /> {t("res_trade_hub", { bonus: inspectedTerritory.def.tradeBonus })}
+                </span>
+              {/if}
+              <span class="recon-res-badge geo">
+                {#if inspectedTerritory.def.isCoastal !== false}
+                  <Icon name="anchor" size={11} /> {t("res_coastal")}
+                {:else}
+                  <Icon name="shield" size={11} /> {t("res_landlocked")}
+                {/if}
+              </span>
             </div>
           </div>
         {/if}
@@ -4039,5 +4143,135 @@
     .top-center-banner {
       max-width: 460px;
     }
+  }
+
+  /* War Economy Bar & Recon Resource Badges (HEGEM-18 & HEGEM-56) */
+  .hq-economy-bar {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 0.35rem;
+    padding-top: 0.25rem;
+    border-top: 1px solid rgba(148, 163, 184, 0.14);
+  }
+  .econ-pill {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.28rem;
+    padding: 0.24rem 0.38rem;
+    border-radius: 6px;
+    background: rgba(15, 23, 42, 0.72);
+    border: 1px solid rgba(148, 163, 184, 0.18);
+    font-size: 0.74rem;
+    font-weight: 700;
+    color: #e2e8f0;
+  }
+  .econ-pill.money {
+    color: #34d399;
+    border-color: rgba(52, 211, 153, 0.28);
+  }
+  .econ-pill.steel {
+    color: #94a3b8;
+    border-color: rgba(148, 163, 184, 0.3);
+  }
+  .econ-pill.oil {
+    color: #fb923c;
+    border-color: rgba(251, 146, 60, 0.28);
+  }
+  .econ-pill.gold {
+    color: #fbbf24;
+    border-color: rgba(251, 191, 36, 0.32);
+  }
+  .econ-val {
+    color: #f8fafc;
+    font-variant-numeric: tabular-nums;
+  }
+  .econ-delta {
+    font-size: 0.65rem;
+    font-weight: 600;
+    opacity: 0.88;
+  }
+  .gold-card-purchase-box {
+    margin-top: 0.45rem;
+    padding: 0.5rem 0.6rem;
+    border-radius: 8px;
+    background: rgba(251, 191, 36, 0.07);
+    border: 1px solid rgba(251, 191, 36, 0.25);
+    display: flex;
+    flex-direction: column;
+    gap: 0.32rem;
+  }
+  .gold-card-purchase-head {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    font-size: 0.74rem;
+    font-weight: 700;
+    color: #fbbf24;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  .gold-card-purchase-sub {
+    margin: 0;
+    font-size: 0.68rem;
+    color: #94a3b8;
+  }
+  .gold-card-btn-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.35rem;
+  }
+  .gold-buy-btn {
+    justify-content: center;
+    font-size: 0.7rem;
+    padding: 0.32rem 0.45rem;
+    border-color: rgba(251, 191, 36, 0.35);
+    color: #fde68a;
+  }
+  .gold-buy-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+  .gold-card-bought-tag {
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+    font-size: 0.7rem;
+    color: #34d399;
+    font-weight: 600;
+  }
+  .recon-economy-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.3rem;
+    margin-top: 0.28rem;
+  }
+  .recon-res-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.24rem;
+    padding: 0.14rem 0.42rem;
+    border-radius: 4px;
+    font-size: 0.67rem;
+    font-weight: 600;
+    background: rgba(15, 23, 42, 0.75);
+    border: 1px solid rgba(148, 163, 184, 0.22);
+    color: #cbd5e1;
+  }
+  .recon-res-badge.steel {
+    color: #cbd5e1;
+    border-color: rgba(148, 163, 184, 0.35);
+  }
+  .recon-res-badge.oil {
+    color: #fdba74;
+    border-color: rgba(251, 146, 60, 0.35);
+  }
+  .recon-res-badge.gold {
+    color: #fde047;
+    border-color: rgba(250, 204, 21, 0.4);
+  }
+  .recon-res-badge.money {
+    color: #6ee7b7;
+    border-color: rgba(52, 211, 153, 0.35);
   }
 </style>
