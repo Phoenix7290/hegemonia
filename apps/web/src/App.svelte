@@ -42,7 +42,7 @@
   function getOrCreateToken(): string {
     const saved = localStorage.getItem("hegemonia_token");
     if (saved) return saved;
-    const fresh = "plr_" + Math.random().toString(36).slice(2, 10);
+    const fresh = "plr_" + crypto.randomUUID();
     localStorage.setItem("hegemonia_token", fresh);
     return fresh;
   }

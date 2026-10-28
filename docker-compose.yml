@@ -35,6 +35,13 @@ services:
       HOST: "::"
       DATABASE_URL: "postgresql://${POSTGRES_USER:-hegemonia}:${POSTGRES_PASSWORD:-hegemonia}@postgres:5432/${POSTGRES_DB:-hegemonia}"
       PUBLIC_DIR: "/app/apps/web/dist"
+      WEB_ORIGIN: "${WEB_ORIGIN:-http://localhost:2567}"
+      COOKIE_SECURE: "${COOKIE_SECURE:-false}"
+      SESSION_TTL_DAYS: "${SESSION_TTL_DAYS:-30}"
+      AVATAR_DIR: "/app/data/avatars"
+    volumes:
+      - avatar_data:/app/data/avatars
 
 volumes:
   postgres_data:
+  avatar_data:

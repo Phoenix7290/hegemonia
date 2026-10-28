@@ -88,6 +88,12 @@ database("persistência PostgreSQL", () => {
     expect(winnerStats.byColor[0]).toMatchObject({ color: "blue", wins: 1 });
     expect(winnerStats.byObjective[0]).toMatchObject({ wins: 1 });
     expect(winnerStats.byMap[0]).toMatchObject({ mapId: "classic", wins: 1 });
+    const badges = await connection.query<{ slug: string }>(
+      `SELECT b.slug FROM user_badges ub JOIN badges b ON b.id = ub.badge_id
+       WHERE ub.user_id = $1 AND ub.source_match_id = $2`,
+      [winnerId, matchId]
+    );
+    expect(badges.rows.map((badge) => badge.slug)).toEqual(["first-victory"]);
 
     const leaderboard = await stats.getLeaderboard({});
     expect(leaderboard.rows).toHaveLength(2);

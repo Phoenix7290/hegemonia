@@ -6,7 +6,10 @@ import {
   type GameAction,
   type GameState,
   type PlayerColor,
+  type AuthUser,
 } from "@hegemonia/shared";
+import { authenticateToken } from "./auth-service.js";
+import { sessionTokenFromHeaders } from "./http.js";
 import { CLASSIC_MAP } from "@hegemonia/maps";
 import {
   applyAction,
@@ -27,6 +30,8 @@ interface LobbyPlayer {
   isBot: boolean;
   connected: boolean;
   userId?: string;
+  username?: string;
+  avatarUrl?: string | null;
 }
 
 const ALL_COLORS: PlayerColor[] = ["blue", "red", "green", "yellow", "black", "white"];
@@ -230,16 +235,36 @@ export class HegemoniaRoom extends Room {
     }, 1000);
   }
 
-  onJoin(client: Client, options: { name?: string; token?: string }) {
-    const token = String(options?.token || client.sessionId);
-    const name = String(options?.name || "General").trim().slice(0, 24) || "General";
+  async onAuth(_client: Client, _options: unknown, context: { headers?: { cookie?: string } }) {
+    const identity = await authenticateToken(sessionTokenFromHeaders(context.headers ?? {}));
+    return { user: identity?.user ?? null };
+  }
 
-    // Check if returning player by session token
-    const existing = this.lobbyPlayers.find((p) => p.token === token);
+  onJoin(
+    client: Client,
+    options: { name?: string; token?: string },
+    auth: { user?: AuthUser | null } | AuthUser | null
+  ) {
+    const authUser = auth && typeof auth === "object" && "user" in auth ? auth.user ?? null : (auth as AuthUser | null);
+    const requestedToken = String(options?.token || client.sessionId);
+    const existing = authUser
+      ? this.lobbyPlayers.find((p) => p.userId === authUser.id)
+      : this.lobbyPlayers.find((p) => p.token === requestedToken && !p.userId);
+    if (!authUser && this.lobbyPlayers.some((p) => p.token === requestedToken && p.userId)) {
+      throw new Error("Esta identidade de jogador pertence a uma conta autenticada.");
+    }
+    const token = existing?.token ?? requestedToken;
+    const name = authUser?.displayName ?? (String(options?.name || "General").trim().slice(0, 24) || "General");
+
     if (existing) {
       existing.sessionId = client.sessionId;
       existing.connected = true;
       existing.name = name;
+      if (authUser) {
+        existing.userId = authUser.id;
+        existing.username = authUser.username;
+        existing.avatarUrl = authUser.avatarUrl;
+      }
       if (this.gameState) {
         const gp = this.gameState.players.find((p) => p.id === token);
         if (gp) gp.connected = true;
@@ -249,18 +274,15 @@ export class HegemoniaRoom extends Room {
     }
 
     if (this.gameState) {
-      // Join as spectator
       this.sendStateToClient(client, null);
       return;
     }
 
     if (this.lobbyPlayers.length >= 6) {
-      client.send("error_msg", { message: "Sala cheia (máx 6 jogadores)." });
-      return;
+      throw new Error("Sala cheia (máx 6 jogadores).");
     }
 
-    const freeColor =
-      ALL_COLORS.find((c) => !this.lobbyPlayers.some((p) => p.color === c)) ?? "blue";
+    const freeColor = ALL_COLORS.find((c) => !this.lobbyPlayers.some((p) => p.color === c)) ?? "blue";
     this.lobbyPlayers.push({
       token,
       sessionId: client.sessionId,
@@ -269,6 +291,9 @@ export class HegemoniaRoom extends Room {
       isHost: this.lobbyPlayers.length === 0,
       isBot: false,
       connected: true,
+      userId: authUser?.id,
+      username: authUser?.username,
+      avatarUrl: authUser?.avatarUrl,
     });
 
     this.setMetadata({
@@ -499,6 +524,9 @@ export class HegemoniaRoom extends Room {
         isHost: p.isHost,
         isBot: p.isBot,
         connected: p.connected,
+        userId: p.userId ?? null,
+        username: p.username ?? null,
+        avatarUrl: p.avatarUrl ?? null,
       })),
       game: this.gameState ? createPlayerView(this.gameState, viewerToken) : null,
     });

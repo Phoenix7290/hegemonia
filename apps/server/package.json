@@ -9,7 +9,8 @@
     "start": "tsx src/index.ts",
     "db:migrate": "tsx src/migrate.ts",
     "db:rollback": "tsx src/migrate.ts down",
-    "test:db": "vitest run src/db.test.ts"
+    "test:db": "vitest run src/db.test.ts",
+    "test:identity": "vitest run src/identity.test.ts"
   },
   "dependencies": {
     "@colyseus/core": "^0.16.4",
@@ -17,10 +18,13 @@
     "@hegemonia/engine": "workspace:*",
     "@hegemonia/maps": "workspace:*",
     "@hegemonia/shared": "workspace:*",
+    "argon2": "^0.45.1",
     "cors": "^2.8.5",
     "express": "^4.21.2",
     "node-pg-migrate": "^9.0.0",
-    "pg": "^8.23.1"
+    "pg": "^8.23.1",
+    "sharp": "^0.35.5",
+    "zod": "^3.25.76"
   },
   "devDependencies": {
     "@types/cors": "^2.8.17",
