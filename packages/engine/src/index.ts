@@ -1,4 +1,5 @@
 import {
+  type BuildingType,
   type GameAction,
   type GameMapDef,
   type GameState,
@@ -122,10 +123,82 @@ export function calculateTurnReinforcements(
   };
 }
 
+export interface BuildingCost {
+  money: number;
+  steel: number;
+}
+
+export const BUILDING_COSTS: Record<BuildingType, BuildingCost> = {
+  market: { money: 5, steel: 0 },
+  industry: { money: 6, steel: 1 },
+  fortification: { money: 4, steel: 0 }, // Level 1 Casamata
+  airfield: { money: 5, steel: 1 },
+  port: { money: 5, steel: 0 },
+};
+
+export const FORTIFICATION_LEVEL_2_COST: BuildingCost = {
+  money: 4,
+  steel: 1,
+};
+
+/**
+ * Returns the maximum number of infrastructure building slots for a territory:
+ * - 3 slots if the territory is the owner's active National Capital
+ * - 2 slots for all regular territories
+ */
+export function getTerritoryMaxBuildingSlots(
+  state: GameState,
+  territoryId: string
+): number {
+  const terr = state.territories[territoryId];
+  if (!terr) return 2;
+  const owner = state.players.find((p) => p.id === terr.ownerId);
+  if (owner && owner.capitalTerritoryId === territoryId && !owner.isCapitalLost) {
+    return 3;
+  }
+  return 2;
+}
+
+export function getTerritoryBuildingLevel(
+  terr: TerritoryState | undefined,
+  buildingType: BuildingType
+): number {
+  if (!terr?.buildings) return 0;
+  const found = terr.buildings.find((b) => b.type === buildingType);
+  return found ? found.level : 0;
+}
+
+export function hasTerritoryBuilding(
+  terr: TerritoryState | undefined,
+  buildingType: BuildingType
+): boolean {
+  return getTerritoryBuildingLevel(terr, buildingType) >= 1;
+}
+
+/**
+ * Applies 1 impact of siege/bombardment damage to a territory's fortification:
+ * - Level 2 (Fortaleza) degrades to Level 1 (Casamata)
+ * - Level 1 (Casamata) is destroyed
+ */
+export function damageTerritoryFortification(
+  terr: TerritoryState
+): "degraded_to_1" | "destroyed" | "none" {
+  if (!terr.buildings) return "none";
+  const idx = terr.buildings.findIndex((b) => b.type === "fortification");
+  if (idx === -1) return "none";
+  if (terr.buildings[idx].level >= 2) {
+    terr.buildings[idx].level = 1;
+    return "degraded_to_1";
+  }
+  terr.buildings.splice(idx, 1);
+  return "destroyed";
+}
+
 export interface TurnEconomyBreakdown {
   capitalMoney: number;
   tradeHubMoney: number;
   goldPassiveMoney: number;
+  buildingMoney: number;
   grossMoney: number;
   economicPenaltyMultiplier: number;
   netMoney: number;
@@ -135,11 +208,16 @@ export interface TurnEconomyBreakdown {
 }
 
 /**
- * Calculates start-of-turn economic income and strategic resource extraction (HEGEM-18):
+ * Calculates start-of-turn economic income and strategic resource extraction (HEGEM-18, HEGEM-32):
  * - Capital National Treasury: +3$ if the player has established a capital
  * - Trade Hubs: sum of territory `tradeBonus` across occupied territories (armies >= 1)
  * - Gold Passive Treasury: +2$ per occupied territory with `resource === "gold"`
+ * - Building Income:
+ *   - +2$ per `market`
+ *   - +2$ per `industry` in a territory without a natural resource (`!def.resource`)
+ *   - +1$ per `port` built in a Trade Hub (`(def.tradeBonus ?? 0) > 0`)
  * - Strategic Extraction: +1 Steel / Oil / Gold per occupied territory with matching `resource`
+ *   (doubled to +2/turn if the territory has an `industry` building)
  * - Decapitation Penalty: `netMoney = Math.floor(grossMoney * economicPenaltyMultiplier)`
  */
 export function calculateTurnEconomy(
@@ -157,6 +235,7 @@ export function calculateTurnEconomy(
   const capitalMoney = player?.capitalTerritoryId ? 3 : 0;
   let tradeHubMoney = 0;
   let goldPassiveMoney = 0;
+  let buildingMoney = 0;
   let steel = 0;
   let oil = 0;
   let gold = 0;
@@ -164,20 +243,35 @@ export function calculateTurnEconomy(
   for (const terr of occupiedTerritories) {
     const def = mapById.get(terr.id);
     if (!def) continue;
+    const hasMarket = hasTerritoryBuilding(terr, "market");
+    const hasIndustry = hasTerritoryBuilding(terr, "industry");
+    const hasPort = hasTerritoryBuilding(terr, "port");
+
     if (def.tradeBonus && def.tradeBonus > 0) {
       tradeHubMoney += def.tradeBonus;
+      if (hasPort) {
+        buildingMoney += 1;
+      }
     }
+    if (hasMarket) {
+      buildingMoney += 2;
+    }
+    if (hasIndustry && !def.resource) {
+      buildingMoney += 2;
+    }
+
+    const resourceYield = hasIndustry ? 2 : 1;
     if (def.resource === "steel") {
-      steel += 1;
+      steel += resourceYield;
     } else if (def.resource === "oil") {
-      oil += 1;
+      oil += resourceYield;
     } else if (def.resource === "gold") {
-      gold += 1;
+      gold += resourceYield;
       goldPassiveMoney += 2;
     }
   }
 
-  const grossMoney = capitalMoney + tradeHubMoney + goldPassiveMoney;
+  const grossMoney = capitalMoney + tradeHubMoney + goldPassiveMoney + buildingMoney;
   const economicPenaltyMultiplier = player?.isCapitalLost
     ? (player.economicPenaltyMultiplier ?? 0.5)
     : 1.0;
@@ -187,6 +281,7 @@ export function calculateTurnEconomy(
     capitalMoney,
     tradeHubMoney,
     goldPassiveMoney,
+    buildingMoney,
     grossMoney,
     economicPenaltyMultiplier,
     netMoney,
@@ -250,6 +345,8 @@ export function createGame(opts: CreateGameOptions): GameState {
       ownerId: owner.id,
       armies: 1,
       movedInArmies: 0,
+      buildings: [],
+      airliftedThisTurn: false,
     };
     playerOwnedTerritoryIds[owner.id].push(t.id);
   });
@@ -682,6 +779,91 @@ export function applyAction(
       break;
     }
 
+    case "build_structure": {
+      if (state.pendingConquest) {
+        throw new Error("Conclua a ocupação do território conquistado antes de construir.");
+      }
+      const terr = state.territories[action.territoryId];
+      if (!terr || terr.ownerId !== playerId) {
+        throw new Error("Você só pode construir estruturas em territórios sob seu controle.");
+      }
+      const def = mapById.get(terr.id);
+      if (!def) {
+        throw new Error("Território inválido.");
+      }
+
+      terr.buildings = terr.buildings ?? [];
+      const existing = terr.buildings.find((b) => b.type === action.buildingType);
+
+      if (existing) {
+        if (action.buildingType === "fortification") {
+          if (existing.level >= 2) {
+            throw new Error(
+              "A fortificação neste território já está no nível máximo (Fortaleza Nv. 2)."
+            );
+          }
+          const upgradeCost = FORTIFICATION_LEVEL_2_COST;
+          if (
+            currentPlayer.resources.money < upgradeCost.money ||
+            currentPlayer.resources.steel < upgradeCost.steel
+          ) {
+            throw new Error(
+              `Recursos insuficientes para evoluir Fortaleza Nv. 2 (custo: $${upgradeCost.money} e ${upgradeCost.steel} Aço).`
+            );
+          }
+          currentPlayer.resources.money -= upgradeCost.money;
+          currentPlayer.resources.steel -= upgradeCost.steel;
+          existing.level = 2;
+          state.log.push(
+            `🏰 ${currentPlayer.name} evoluiu a Casamata em ${def.namePt} para Fortaleza Nv. 2 (-$${upgradeCost.money}, -${upgradeCost.steel} Aço).`
+          );
+          break;
+        }
+        throw new Error("Este território já possui esta estrutura construída.");
+      }
+
+      if (action.buildingType === "port" && def.isCoastal === false) {
+        throw new Error(
+          "Portos Navais só podem ser construídos em territórios costeiros ou insulares."
+        );
+      }
+
+      const maxSlots = getTerritoryMaxBuildingSlots(state, terr.id);
+      if (terr.buildings.length >= maxSlots) {
+        throw new Error(
+          `Limite máximo de ${maxSlots} construções atingido em ${def.namePt}.`
+        );
+      }
+
+      const cost = BUILDING_COSTS[action.buildingType];
+      if (
+        currentPlayer.resources.money < cost.money ||
+        currentPlayer.resources.steel < cost.steel
+      ) {
+        const costText =
+          cost.steel > 0 ? `$${cost.money} e ${cost.steel} Aço` : `$${cost.money}`;
+        throw new Error(`Recursos insuficientes para construir (custo: ${costText}).`);
+      }
+
+      currentPlayer.resources.money -= cost.money;
+      currentPlayer.resources.steel -= cost.steel;
+      terr.buildings.push({ type: action.buildingType, level: 1 });
+
+      const buildingNamesPt: Record<BuildingType, string> = {
+        market: "Mercado",
+        industry: "Indústria",
+        fortification: "Casamata (Fortificação Nv. 1)",
+        airfield: "Aeródromo",
+        port: "Porto Naval",
+      };
+      const costSummary =
+        cost.steel > 0 ? `-$${cost.money}, -${cost.steel} Aço` : `-$${cost.money}`;
+      state.log.push(
+        `🏗️ ${currentPlayer.name} construiu ${buildingNamesPt[action.buildingType]} em ${def.namePt} (${costSummary}).`
+      );
+      break;
+    }
+
     case "select_capital": {
       if (state.phase !== "deploy") {
         throw new Error("A capital só pode ser selecionada durante a fase de posicionamento.");
@@ -849,6 +1031,17 @@ export function applyAction(
         defenderDice[0] += defenderModifier;
       }
 
+      // HEGEM-32: Territorial Fortification combat modifiers
+      // Level 1 (Casamata): +1 to highest defense die
+      // Level 2 (Fortaleza): +1 to highest defense die AND -1 to highest enemy attack die
+      const fortLevel = getTerritoryBuildingLevel(toTerr, "fortification");
+      if (fortLevel >= 1 && defenderDice.length > 0) {
+        defenderDice[0] += 1;
+      }
+      if (fortLevel >= 2 && attackerDice.length > 0) {
+        attackerDice[0] = Math.max(1, attackerDice[0] - 1);
+      }
+
       let attackerLosses = 0;
       let defenderLosses = 0;
       const comparisons = Math.min(attackerDice.length, defenderDice.length);
@@ -883,6 +1076,7 @@ export function applyAction(
         attackerModifier,
         defenderModifier,
         lastStandBonus,
+        fortificationLevel: fortLevel > 0 ? fortLevel : undefined,
       };
 
       const fromName = fromDef.namePt;
@@ -890,17 +1084,32 @@ export function applyAction(
       const capitalCombatTag = isDefendingCapital
         ? ` [⭐ Capital Fortificada${capitalTiesDefended > 0 ? ` (+${capitalTiesDefended} empates resistidos)` : ""}]`
         : "";
+      const fortCombatTag =
+        fortLevel >= 2
+          ? " [🏰 Fortaleza Nv.2 (+1 DEF, -1 ATQ)]"
+          : fortLevel === 1
+            ? " [🛡️ Casamata Nv.1 (+1 DEF)]"
+            : "";
       const lastStandTag = lastStandBonus
         ? ` [⭐ Mobilização Total +${attackerModifier || defenderModifier}]`
         : "";
       state.log.push(
-        `Combate ${fromName} [${attackerDice.join(",")}] vs ${toName}${capitalCombatTag}${lastStandTag} [${defenderDice.join(",")}] → baixas ATQ:${attackerLosses} DEF:${defenderLosses}`
+        `Combate ${fromName} [${attackerDice.join(",")}] vs ${toName}${capitalCombatTag}${fortCombatTag}${lastStandTag} [${defenderDice.join(",")}] → baixas ATQ:${attackerLosses} DEF:${defenderLosses}`
       );
 
       if (conquered) {
         toTerr.ownerId = playerId;
         currentPlayer.conqueredThisTurn = true;
         state.worldTension = Math.min(100, (state.worldTension ?? 0) + 0.5);
+
+        // HEGEM-32: If conquered territory had a Level 2 Fortress, it degrades to Level 1 Casamata
+        const fortBuilding = toTerr.buildings?.find((b) => b.type === "fortification");
+        if (fortBuilding && fortBuilding.level >= 2) {
+          fortBuilding.level = 1;
+          state.log.push(
+            `🏰 A Fortaleza em ${toName} sofreu danos estruturais na captura e degradou para Casamata Nv. 1.`
+          );
+        }
 
         // Check if player recaptured their own previously lost capital
         if (currentPlayer.capitalTerritoryId === toTerr.id && currentPlayer.isCapitalLost) {
@@ -1010,7 +1219,49 @@ export function applyAction(
       state.phase = "maneuver";
       for (const t of Object.values(state.territories)) {
         t.movedInArmies = 0;
+        t.airliftedThisTurn = false;
       }
+      break;
+    }
+
+    case "airlift": {
+      if (state.phase !== "maneuver") {
+        throw new Error("Ponte Aérea só é permitida na fase de movimentação.");
+      }
+      const fromTerr = state.territories[action.fromTerritoryId];
+      const toTerr = state.territories[action.toTerritoryId];
+      if (!fromTerr || !toTerr) throw new Error("Território inválido.");
+      if (fromTerr.id === toTerr.id) {
+        throw new Error("Selecione um território de destino diferente da origem.");
+      }
+      if (fromTerr.ownerId !== playerId || toTerr.ownerId !== playerId) {
+        throw new Error("Ambos os territórios devem pertencer a você.");
+      }
+      if (!hasTerritoryBuilding(fromTerr, "airfield") || !hasTerritoryBuilding(toTerr, "airfield")) {
+        throw new Error(
+          "Ponte Aérea exige um Aeródromo construído tanto no território de origem quanto no de destino."
+        );
+      }
+      if (fromTerr.airliftedThisTurn) {
+        throw new Error("Este Aeródromo já realizou uma operação de Ponte Aérea neste turno.");
+      }
+      const movableArmies = Math.max(0, fromTerr.armies - fromTerr.movedInArmies - 1);
+      if (action.armies > movableArmies) {
+        throw new Error(
+          `Apenas ${movableArmies} divisão(ões) podem ser transportadas deste território neste turno.`
+        );
+      }
+
+      fromTerr.armies -= action.armies;
+      toTerr.armies += action.armies;
+      toTerr.movedInArmies += action.armies;
+      fromTerr.airliftedThisTurn = true;
+
+      const fromDef = mapById.get(fromTerr.id)!;
+      const toDef = mapById.get(toTerr.id)!;
+      state.log.push(
+        `✈️ PONTE AÉREA: ${currentPlayer.name} transportou ${action.armies} divisão(ões) de ${fromDef.namePt} para ${toDef.namePt}.`
+      );
       break;
     }
 
@@ -1253,6 +1504,7 @@ function advanceTurn(state: GameState, rng: SeededRng, map: GameMapDef): void {
 
   for (const t of Object.values(state.territories)) {
     t.movedInArmies = 0;
+    t.airliftedThisTurn = false;
   }
 
   // Advance to next non-eliminated player

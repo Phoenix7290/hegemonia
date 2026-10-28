@@ -8,6 +8,9 @@ import {
   createGame,
   createPlayerView,
   createSeededRng,
+  damageTerritoryFortification,
+  getTerritoryBuildingLevel,
+  getTerritoryMaxBuildingSlots,
   getTradeBonusArmies,
   isValidCardSet,
 } from "./index.js";
@@ -805,5 +808,282 @@ describe("HEGEM-18: Core War Economy (Money, Steel, Oil, Scarce Gold)", () => {
     expect(afterSecondBuy.cards.length).toBe(2);
     expect(afterSecondBuy.resources.gold).toBe(0);
     expect(afterSecondBuy.resources.money).toBe(6);
+  });
+});
+
+describe("Territorial Infrastructure & Building System (HEGEM-32)", () => {
+  it("enforces slot limits (2 regular, 3 in active Capital), costs in $ and Steel, and coastal restriction for Ports", () => {
+    const rng = createSeededRng("hegem-32-slots");
+    let state = createGame({
+      id: "g_buildings_slots",
+      seed: "hegem-32-slots",
+      players: [
+        { id: "p1", name: "Alice", color: "blue" },
+        { id: "p2", name: "Bob", color: "red" },
+      ],
+    });
+
+    const activeId = state.players[state.turnIndex].id;
+    const activePlayer = state.players.find((p) => p.id === activeId)!;
+
+    // Assign Brasil (coastal, steel) and Moscou (inland, steel) to activeId
+    state.territories["brasil"].ownerId = activeId;
+    state.territories["moscou"].ownerId = activeId;
+    activePlayer.capitalTerritoryId = "brasil";
+    activePlayer.isCapitalLost = false;
+    activePlayer.resources = { money: 40, steel: 10, oil: 5, gold: 2 };
+
+    expect(getTerritoryMaxBuildingSlots(state, "brasil")).toBe(3);
+    expect(getTerritoryMaxBuildingSlots(state, "moscou")).toBe(2);
+
+    // 1. Inland territory (Moscou) cannot build a Naval Port
+    expect(() =>
+      applyAction(
+        state,
+        activeId,
+        { type: "build_structure", territoryId: "moscou", buildingType: "port" },
+        rng
+      )
+    ).toThrow(/costeiros/i);
+
+    // 2. Build Market ($5) and Industry ($6 + 1 Steel) in Moscou (reaches 2/2 slots)
+    state = applyAction(
+      state,
+      activeId,
+      { type: "build_structure", territoryId: "moscou", buildingType: "market" },
+      rng
+    );
+    state = applyAction(
+      state,
+      activeId,
+      { type: "build_structure", territoryId: "moscou", buildingType: "industry" },
+      rng
+    );
+
+    expect(state.territories["moscou"].buildings?.length).toBe(2);
+    // Duplicate building type rejected
+    expect(() =>
+      applyAction(
+        state,
+        activeId,
+        { type: "build_structure", territoryId: "moscou", buildingType: "market" },
+        rng
+      )
+    ).toThrow(/já possui/i);
+    // 3rd building on regular territory rejected (max 2 slots)
+    expect(() =>
+      applyAction(
+        state,
+        activeId,
+        { type: "build_structure", territoryId: "moscou", buildingType: "airfield" },
+        rng
+      )
+    ).toThrow(/Limite máximo de 2/i);
+
+    // 3. Active Capital (Brasil) supports 3 building slots (Port + Industry + Airfield)
+    state = applyAction(
+      state,
+      activeId,
+      { type: "build_structure", territoryId: "brasil", buildingType: "port" },
+      rng
+    );
+    state = applyAction(
+      state,
+      activeId,
+      { type: "build_structure", territoryId: "brasil", buildingType: "industry" },
+      rng
+    );
+    state = applyAction(
+      state,
+      activeId,
+      { type: "build_structure", territoryId: "brasil", buildingType: "airfield" },
+      rng
+    );
+    expect(state.territories["brasil"].buildings?.length).toBe(3);
+
+    // 4th building on Capital rejected (max 3 slots)
+    expect(() =>
+      applyAction(
+        state,
+        activeId,
+        { type: "build_structure", territoryId: "brasil", buildingType: "market" },
+        rng
+      )
+    ).toThrow(/Limite máximo de 3/i);
+  });
+
+  it("calculates economic income and resource doubling from Market, Industry, and Port", () => {
+    const state = createGame({
+      id: "g_buildings_econ",
+      seed: "hegem-32-econ",
+      players: [
+        { id: "p1", name: "Alice", color: "blue" },
+        { id: "p2", name: "Bob", color: "red" },
+      ],
+    });
+
+    for (const t of Object.values(state.territories)) {
+      t.ownerId = "p2";
+      t.buildings = [];
+    }
+
+    // Give p1:
+    // - brasil (Steel, coastal, no tradeBonus): Industry -> +2 Steel
+    // - argentina (No natural resource, coastal, tradeBonus +1$): Industry (+2$) + Market (+2$) + Port (+1$ trade hub bonus)
+    // - venezuela (Oil): Industry -> +2 Oil
+    state.territories["brasil"].ownerId = "p1";
+    state.territories["brasil"].armies = 2;
+    state.territories["brasil"].buildings = [{ type: "industry", level: 1 }];
+
+    state.territories["argentina"].ownerId = "p1";
+    state.territories["argentina"].armies = 2;
+    state.territories["argentina"].buildings = [
+      { type: "industry", level: 1 },
+      { type: "market", level: 1 },
+      { type: "port", level: 1 },
+    ];
+
+    state.territories["venezuela"].ownerId = "p1";
+    state.territories["venezuela"].armies = 2;
+    state.territories["venezuela"].buildings = [{ type: "industry", level: 1 }];
+
+    const p1 = state.players.find((p) => p.id === "p1")!;
+    p1.capitalTerritoryId = "argentina";
+    p1.isCapitalLost = false;
+
+    const econ = calculateTurnEconomy(state, "p1");
+    expect(econ.capitalMoney).toBe(3);
+    expect(econ.tradeHubMoney).toBe(1); // Argentina tradeBonus
+    expect(econ.buildingMoney).toBe(5); // Market (+2$) + Non-resource Industry (+2$) + Port in Trade Hub (+1$)
+    expect(econ.grossMoney).toBe(9);
+    expect(econ.netMoney).toBe(9);
+    expect(econ.steel).toBe(2); // Brasil with Industry -> +2 Steel
+    expect(econ.oil).toBe(2); // Venezuela with Industry -> +2 Oil
+  });
+
+  it("applies Fortification Level 1 & Level 2 combat modifiers, preserves captured structures, and degrades Level 2 Fortress on conquest", () => {
+    const rng = createSeededRng("hegem-32-fort");
+    let state = createGame({
+      id: "g_fort_combat",
+      seed: "hegem-32-fort",
+      players: [
+        { id: "p1", name: "Alice", color: "blue" },
+        { id: "p2", name: "Bob", color: "red" },
+      ],
+    });
+
+    state.round = 2;
+    state.phase = "attack";
+    const activeId = state.players[state.turnIndex].id;
+    const defenderId = state.players.find((p) => p.id !== activeId)!.id;
+    const activePlayer = state.players.find((p) => p.id === activeId)!;
+    activePlayer.resources = { money: 20, steel: 5, oil: 0, gold: 0 };
+
+    // Build Level 1 Casamata ($4) and upgrade to Level 2 Fortaleza ($4 + 1 Steel) on owned territory first
+    state.territories["brasil"].ownerId = activeId;
+    state = applyAction(
+      state,
+      activeId,
+      { type: "build_structure", territoryId: "brasil", buildingType: "fortification" },
+      rng
+    );
+    expect(getTerritoryBuildingLevel(state.territories["brasil"], "fortification")).toBe(1);
+
+    state = applyAction(
+      state,
+      activeId,
+      { type: "build_structure", territoryId: "brasil", buildingType: "fortification" },
+      rng
+    );
+    expect(getTerritoryBuildingLevel(state.territories["brasil"], "fortification")).toBe(2);
+    expect(state.territories["brasil"].buildings?.length).toBe(1); // Upgrade reuses the same slot!
+
+    // Set up Argentina as defender territory with Level 2 Fortress + Market and 1 army
+    state.territories["brasil"].armies = 20;
+    state.territories["argentina"].ownerId = defenderId;
+    state.territories["argentina"].armies = 1;
+    state.territories["argentina"].buildings = [
+      { type: "fortification", level: 2 },
+      { type: "market", level: 1 },
+    ];
+
+    // Attack Argentina until conquered
+    for (let i = 0; i < 20 && state.territories["argentina"].ownerId !== activeId; i++) {
+      state.territories["brasil"].armies = 10;
+      state = applyAction(
+        state,
+        activeId,
+        { type: "attack", fromTerritoryId: "brasil", toTerritoryId: "argentina" },
+        rng
+      );
+      expect(state.lastCombat?.fortificationLevel).toBe(2);
+    }
+
+    expect(state.territories["argentina"].ownerId).toBe(activeId);
+    // Market is captured intact, while Level 2 Fortress degraded to Level 1 Casamata
+    expect(getTerritoryBuildingLevel(state.territories["argentina"], "market")).toBe(1);
+    expect(getTerritoryBuildingLevel(state.territories["argentina"], "fortification")).toBe(1);
+
+    // Bombardment damage helper degrades L1 -> destroyed
+    expect(damageTerritoryFortification(state.territories["argentina"])).toBe("destroyed");
+    expect(getTerritoryBuildingLevel(state.territories["argentina"], "fortification")).toBe(0);
+  });
+
+  it("enables Strategic Airlift (airlift) between two allied Airfields during maneuver phase", () => {
+    const rng = createSeededRng("hegem-32-airlift");
+    let state = createGame({
+      id: "g_airlift",
+      seed: "hegem-32-airlift",
+      players: [
+        { id: "p1", name: "Alice", color: "blue" },
+        { id: "p2", name: "Bob", color: "red" },
+      ],
+    });
+
+    state.round = 2;
+    state.phase = "maneuver";
+    const activeId = state.players[state.turnIndex].id;
+
+    // Give active player Brasil (South America) and Japão (East Asia) - non-adjacent continents
+    state.territories["brasil"].ownerId = activeId;
+    state.territories["brasil"].armies = 5;
+    state.territories["brasil"].buildings = [{ type: "airfield", level: 1 }];
+
+    state.territories["japao"].ownerId = activeId;
+    state.territories["japao"].armies = 1;
+    state.territories["japao"].buildings = [];
+
+    // Cannot airlift if destination lacks an Airfield
+    expect(() =>
+      applyAction(
+        state,
+        activeId,
+        { type: "airlift", fromTerritoryId: "brasil", toTerritoryId: "japao", armies: 2 },
+        rng
+      )
+    ).toThrow(/Aeródromo/i);
+
+    // Add Airfield to Japão and perform airlift
+    state.territories["japao"].buildings = [{ type: "airfield", level: 1 }];
+    state = applyAction(
+      state,
+      activeId,
+      { type: "airlift", fromTerritoryId: "brasil", toTerritoryId: "japao", armies: 2 },
+      rng
+    );
+
+    expect(state.territories["brasil"].armies).toBe(3);
+    expect(state.territories["japao"].armies).toBe(3);
+    expect(state.territories["brasil"].airliftedThisTurn).toBe(true);
+
+    // Cannot airlift a second time from the same Airfield in the same turn
+    expect(() =>
+      applyAction(
+        state,
+        activeId,
+        { type: "airlift", fromTerritoryId: "brasil", toTerritoryId: "japao", armies: 1 },
+        rng
+      )
+    ).toThrow(/já realizou/i);
   });
 });

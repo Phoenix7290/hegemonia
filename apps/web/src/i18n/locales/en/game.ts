@@ -224,6 +224,27 @@ export const enGame: TranslationCatalog = {
   cards_buy_gold_only_btn: "Buy (2 Gold)",
   cards_buy_gold_money_btn: "Buy (1 Gold + $4)",
   cards_buy_gold_done: "Strategic card already purchased this turn",
+
+  // Territorial Infrastructure & Buildings (HEGEM-32)
+  building_section_title: "Territorial Infrastructure",
+  building_slots_count: "Slots ({used}/{max})",
+  building_market: "Market",
+  building_market_desc: "+$2/turn · Unlocks Global Market & Investment",
+  building_industry: "Industry",
+  building_industry_desc: "Doubles extraction (+2) or +$2/turn · Produces Armor/Artillery",
+  building_fortification_l1: "Bunker Lv. 1",
+  building_fortification_l2: "Fortress Lv. 2",
+  building_fortification_l1_desc: "+1 to highest defense die in territory",
+  building_fortification_l2_desc: "+1 defense die and -1 to highest enemy attack die",
+  building_airfield: "Airfield",
+  building_airfield_desc: "Bases Air Force · Enables Strategic Airlift",
+  building_port: "Naval Port",
+  building_port_desc: "Anchors Navy · +$1/turn in Trade Hub",
+  building_btn_construct: "Build",
+  building_btn_upgrade_l2: "Upgrade Lv. 2",
+  building_built_tag: "Active",
+  building_coastal_only: "Coastal Only",
+  airlift_btn_label: "Strategic Airlift (Airfield)",
 };
 
 export const game = enGame;

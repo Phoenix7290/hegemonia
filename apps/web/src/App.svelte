@@ -8,11 +8,16 @@
     MAP_WIDTH,
   } from "@hegemonia/maps";
   import {
+    BUILDING_COSTS,
+    FORTIFICATION_LEVEL_2_COST,
     calculateTurnEconomy,
     findValidTradeTriplet,
+    getTerritoryBuildingLevel,
+    getTerritoryMaxBuildingSlots,
     getTradeBonusArmies,
+    hasTerritoryBuilding,
   } from "@hegemonia/engine";
-  import type { GameState, PlayerColor } from "@hegemonia/shared";
+  import type { BuildingType, GameState, PlayerColor } from "@hegemonia/shared";
   import { sound } from "./audio.js";
   import { estimateAttackWinOdds } from "./odds.js";
   import { auth } from "./lib/auth.svelte";
@@ -701,6 +706,14 @@
     });
   }
 
+  function handleBuildStructure(territoryId: string, buildingType: BuildingType) {
+    sendAction({
+      type: "build_structure",
+      territoryId,
+      buildingType,
+    });
+  }
+
   function onTerritoryClick(terrId: string) {
     if (!game || !isMyTurn || game.pendingConquest) return;
     sound.playClick();
@@ -708,21 +721,24 @@
     const tDef = territoryById.get(terrId)!;
 
     if (game.phase === "deploy") {
-      if (tState.ownerId === myPlayerId && (myPlayerState?.unplacedArmies ?? 0) > 0) {
+      if (tState.ownerId === myPlayerId) {
         selectedFromId = terrId;
-        sliderArmies = myPlayerState!.unplacedArmies;
+        if ((myPlayerState?.unplacedArmies ?? 0) > 0) {
+          sliderArmies = myPlayerState!.unplacedArmies;
+        }
       }
       return;
     }
 
     if (game.phase === "attack") {
-      if (tState.ownerId === myPlayerId && tState.armies >= 2) {
+      if (tState.ownerId === myPlayerId) {
         selectedFromId = terrId;
         selectedToId = null;
         selectedAttackDice = null;
       } else if (
         selectedFromId &&
         tState.ownerId !== myPlayerId &&
+        (game.territories[selectedFromId]?.armies ?? 0) >= 2 &&
         territoryById.get(selectedFromId)!.neighbors.includes(terrId)
       ) {
         selectedToId = terrId;
@@ -731,21 +747,26 @@
     }
 
     if (game.phase === "maneuver") {
-      if (!selectedFromId && tState.ownerId === myPlayerId && tState.armies - tState.movedInArmies >= 2) {
-        selectedFromId = terrId;
-        selectedToId = null;
-        sliderArmies = tState.armies - tState.movedInArmies - 1;
-      } else if (
+      const fromT = selectedFromId ? game.territories[selectedFromId] : null;
+      const isAirliftTarget =
+        Boolean(selectedFromId) &&
+        terrId !== selectedFromId &&
+        tState.ownerId === myPlayerId &&
+        Boolean(fromT && hasTerritoryBuilding(fromT, "airfield")) &&
+        hasTerritoryBuilding(tState, "airfield") &&
+        !fromT?.airliftedThisTurn;
+
+      if (
         selectedFromId &&
         terrId !== selectedFromId &&
         tState.ownerId === myPlayerId &&
-        tDef.neighbors.includes(selectedFromId)
+        (tDef.neighbors.includes(selectedFromId) || isAirliftTarget)
       ) {
         selectedToId = terrId;
-      } else if (tState.ownerId === myPlayerId && tState.armies - tState.movedInArmies >= 2) {
+      } else if (tState.ownerId === myPlayerId) {
         selectedFromId = terrId;
         selectedToId = null;
-        sliderArmies = tState.armies - tState.movedInArmies - 1;
+        sliderArmies = Math.max(1, tState.armies - tState.movedInArmies - 1);
       }
     }
   }
@@ -776,12 +797,22 @@
 
   function confirmManeuver() {
     if (!selectedFromId || !selectedToId) return;
-    sendAction({
-      type: "maneuver",
-      fromTerritoryId: selectedFromId,
-      toTerritoryId: selectedToId,
-      armies: sliderArmies,
-    });
+    const isAdjacent = territoryById.get(selectedFromId)?.neighbors.includes(selectedToId);
+    if (isAdjacent) {
+      sendAction({
+        type: "maneuver",
+        fromTerritoryId: selectedFromId,
+        toTerritoryId: selectedToId,
+        armies: sliderArmies,
+      });
+    } else {
+      sendAction({
+        type: "airlift",
+        fromTerritoryId: selectedFromId,
+        toTerritoryId: selectedToId,
+        armies: sliderArmies,
+      });
+    }
     selectedFromId = null;
     selectedToId = null;
   }
@@ -1000,11 +1031,24 @@
                 {@const regionColor = getTerritoryRegionColor(t as any)}
                 {@const activeFill = mapMode === "regional" ? regionColor : ownerColor}
                 {@const isSelected = selectedFromId === t.id || selectedToId === t.id}
+                {@const fromTerrState = selectedFromId ? game.territories[selectedFromId] : null}
+                {@const isAirliftDest =
+                  Boolean(selectedFromId) &&
+                  t.id !== selectedFromId &&
+                  game.phase === "maneuver" &&
+                  tState.ownerId === myPlayerId &&
+                  Boolean(fromTerrState && hasTerritoryBuilding(fromTerrState, "airfield")) &&
+                  hasTerritoryBuilding(tState, "airfield") &&
+                  !fromTerrState?.airliftedThisTurn}
                 {@const isValidTarget =
                   selectedFromId &&
-                  territoryById.get(selectedFromId)?.neighbors.includes(t.id) &&
-                  ((game.phase === "attack" && tState.ownerId !== myPlayerId) ||
-                    (game.phase === "maneuver" && tState.ownerId === myPlayerId))}
+                  ((game.phase === "attack" &&
+                    tState.ownerId !== myPlayerId &&
+                    (fromTerrState?.armies ?? 0) >= 2 &&
+                    territoryById.get(selectedFromId)?.neighbors.includes(t.id)) ||
+                   (game.phase === "maneuver" &&
+                    tState.ownerId === myPlayerId &&
+                    (territoryById.get(selectedFromId)?.neighbors.includes(t.id) || isAirliftDest)))}
                 {@const isObjTarget = highlightObjectiveTerritories && objectiveTargetTerritoryIds.has(t.id)}
                 {@const isObjOwned = isObjTarget && tState.ownerId === myPlayerId}
                 {@const isObjPending = isObjTarget && tState.ownerId !== myPlayerId}
@@ -1012,6 +1056,7 @@
                 {@const isCapital = owner?.capitalTerritoryId === t.id}
                 {@const originalCapitalOwner = game.players.find((p) => p.capitalTerritoryId === t.id)}
                 {@const isFallenCapital = originalCapitalOwner && originalCapitalOwner.id !== tState.ownerId}
+                {@const fortLevel = getTerritoryBuildingLevel(tState, "fortification")}
 
                 <!-- svelte-ignore a11y_click_events_have_key_events -->
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -1162,6 +1207,14 @@
                         {tState.armies}
                       </text>
 
+                      <!-- Fortification Crest -->
+                      {#if fortLevel > 0}
+                        <g transform="translate(13.5, -4.5)">
+                          <circle cx="0" cy="0" r="3.4" fill="#090e1a" stroke={fortLevel === 2 ? "#38bdf8" : "#94a3b8"} stroke-width="1.1" />
+                          <polygon points="0,-1.8 1.4,-0.8 1.4,1 0,1.8 -1.4,1 -1.4,-0.8" fill={fortLevel === 2 ? "#38bdf8" : "#cbd5e1"} />
+                        </g>
+                      {/if}
+
                       <!-- Territory Label Underneath Counter -->
                       <text
                         x="0"
@@ -1176,6 +1229,31 @@
                       >
                         {isCapital ? `⭐ ${getTerritoryName(t.id)}` : getTerritoryName(t.id)}
                       </text>
+
+                      <!-- Structural Indicators (Dots for constructed infrastructure) -->
+                      {#if tState.buildings && tState.buildings.length > 0}
+                        <g transform="translate(0, 16.5)" pointer-events="none">
+                          {#each tState.buildings as b, bIdx}
+                            {@const xOffset = (bIdx - (tState.buildings.length - 1) / 2) * 5.2}
+                            <circle
+                              cx={xOffset}
+                              cy="0"
+                              r="1.7"
+                              fill={b.type === "fortification"
+                                ? (b.level === 2 ? "#38bdf8" : "#94a3b8")
+                                : b.type === "market"
+                                  ? "#f59e0b"
+                                  : b.type === "industry"
+                                    ? "#fb923c"
+                                    : b.type === "airfield"
+                                      ? "#60a5fa"
+                                      : "#2dd4bf"}
+                              stroke="#090e1a"
+                              stroke-width="0.6"
+                            />
+                          {/each}
+                        </g>
+                      {/if}
                     </g>
                   {/if}
                 </g>
@@ -2059,6 +2137,11 @@
       {#if !isImmersiveMode && hudVisibility.recon}
       <div class="bottom-left-stack">
         {#if inspectedTerritory}
+          {@const bldgs = inspectedTerritory.state.buildings ?? []}
+          {@const maxSlots = getTerritoryMaxBuildingSlots(game, inspectedTerritory.def.id)}
+          {@const isOwnedByMe = inspectedTerritory.state.ownerId === myPlayerId}
+          {@const inspectedFortLevel = getTerritoryBuildingLevel(inspectedTerritory.state, "fortification")}
+          {@const myRes = myPlayerState?.resources ?? { money: 0, steel: 0, oil: 0, gold: 0 }}
           <div class="recon-inspector-card">
             <div class="recon-head">
               {#if inspectedTerritory.owner}
@@ -2111,6 +2194,118 @@
                 {/if}
               </span>
             </div>
+
+            <!-- Territorial Infrastructure Section (HEGEM-32) -->
+            <div class="recon-infra-header">
+              <span class="infra-title"><Icon name="industry" size={11} /> {t("building_section_title")}</span>
+              <span class="infra-slots">{t("building_slots_count", { used: bldgs.length, max: maxSlots })}</span>
+            </div>
+
+            {#if bldgs.length > 0}
+              <div class="recon-active-bldgs">
+                {#each bldgs as b}
+                  <span class="recon-bldg-chip {b.type}">
+                    <Icon name={b.type === "fortification" ? "fortification" : b.type} size={11} />
+                    {#if b.type === "fortification"}
+                      {b.level === 2 ? t("building_fortification_l2") : t("building_fortification_l1")}
+                    {:else if b.type === "market"}
+                      {t("building_market")}
+                    {:else if b.type === "industry"}
+                      {t("building_industry")}
+                    {:else if b.type === "airfield"}
+                      {t("building_airfield")}
+                    {:else if b.type === "port"}
+                      {t("building_port")}
+                    {/if}
+                  </span>
+                {/each}
+              </div>
+            {/if}
+
+            {#if isOwnedByMe && isMyTurn && !game.pendingConquest && !game.winnerId}
+              <div class="recon-build-grid">
+                <!-- Market ($5) -->
+                {#if !hasTerritoryBuilding(inspectedTerritory.state, "market")}
+                  <button
+                    class="btn-build-option"
+                    disabled={bldgs.length >= maxSlots || myRes.money < 5}
+                    onclick={() => handleBuildStructure(inspectedTerritory!.def.id, "market")}
+                    title={t("building_market_desc")}
+                  >
+                    <Icon name="market" size={11} />
+                    <span>{t("building_market")}</span>
+                    <strong class="cost-tag">$5</strong>
+                  </button>
+                {/if}
+
+                <!-- Industry ($6, 1 Steel) -->
+                {#if !hasTerritoryBuilding(inspectedTerritory.state, "industry")}
+                  <button
+                    class="btn-build-option"
+                    disabled={bldgs.length >= maxSlots || myRes.money < 6 || myRes.steel < 1}
+                    onclick={() => handleBuildStructure(inspectedTerritory!.def.id, "industry")}
+                    title={t("building_industry_desc")}
+                  >
+                    <Icon name="industry" size={11} />
+                    <span>{t("building_industry")}</span>
+                    <strong class="cost-tag">$6+1A</strong>
+                  </button>
+                {/if}
+
+                <!-- Fortification (Casamata $4 / Fortaleza $4+1A) -->
+                {#if inspectedFortLevel === 0}
+                  <button
+                    class="btn-build-option"
+                    disabled={bldgs.length >= maxSlots || myRes.money < 4}
+                    onclick={() => handleBuildStructure(inspectedTerritory!.def.id, "fortification")}
+                    title={t("building_fortification_l1_desc")}
+                  >
+                    <Icon name="fortification" size={11} />
+                    <span>{t("building_fortification_l1")}</span>
+                    <strong class="cost-tag">$4</strong>
+                  </button>
+                {:else if inspectedFortLevel === 1}
+                  <button
+                    class="btn-build-option upgrade"
+                    disabled={myRes.money < 4 || myRes.steel < 1}
+                    onclick={() => handleBuildStructure(inspectedTerritory!.def.id, "fortification")}
+                    title={t("building_fortification_l2_desc")}
+                  >
+                    <Icon name="fortification" size={11} />
+                    <span>{t("building_btn_upgrade_l2")}</span>
+                    <strong class="cost-tag">$4+1A</strong>
+                  </button>
+                {/if}
+
+                <!-- Airfield ($5, 1 Steel) -->
+                {#if !hasTerritoryBuilding(inspectedTerritory.state, "airfield")}
+                  <button
+                    class="btn-build-option"
+                    disabled={bldgs.length >= maxSlots || myRes.money < 5 || myRes.steel < 1}
+                    onclick={() => handleBuildStructure(inspectedTerritory!.def.id, "airfield")}
+                    title={t("building_airfield_desc")}
+                  >
+                    <Icon name="airfield" size={11} />
+                    <span>{t("building_airfield")}</span>
+                    <strong class="cost-tag">$5+1A</strong>
+                  </button>
+                {/if}
+
+                <!-- Port ($5, coastal only) -->
+                {#if inspectedTerritory.def.isCoastal !== false && !hasTerritoryBuilding(inspectedTerritory.state, "port")}
+                  <button
+                    class="btn-build-option"
+                    disabled={bldgs.length >= maxSlots || myRes.money < 5}
+                    onclick={() => handleBuildStructure(inspectedTerritory!.def.id, "port")}
+                    title={t("building_port_desc")}
+                  >
+                    <Icon name="anchor" size={11} />
+                    <span>{t("building_port")}</span>
+                    <strong class="cost-tag">$5</strong>
+                  </button>
+                {/if}
+              </div>
+            {/if}
           </div>
         {/if}
 
@@ -2276,11 +2471,20 @@
           {:else if game.phase === "maneuver"}
             {#if selectedFromId && selectedToId}
               {@const fromT = game.territories[selectedFromId]}
+              {@const toT = game.territories[selectedToId]}
               {@const maxM = Math.max(1, fromT.armies - fromT.movedInArmies - 1)}
+              {@const isAirlift =
+                !territoryById.get(selectedFromId)?.neighbors.includes(selectedToId) &&
+                hasTerritoryBuilding(fromT, "airfield") &&
+                hasTerritoryBuilding(toT, "airfield")}
               <div class="action-popup">
                 <div class="popup-head">
                   <h4>
-                    {t("maneuver_prompt", { from: getTerritoryName(selectedFromId), to: getTerritoryName(selectedToId) })}
+                    {#if isAirlift}
+                      <Icon name="airfield" size={14} /> {t("airlift_btn_label")} ({getTerritoryName(selectedFromId)} → {getTerritoryName(selectedToId)})
+                    {:else}
+                      {t("maneuver_prompt", { from: getTerritoryName(selectedFromId), to: getTerritoryName(selectedToId) })}
+                    {/if}
                   </h4>
                   <div class="quick-presets">
                     <button class="preset-btn" onclick={() => (sliderArmies = 1)}>Min (1)</button>
@@ -2299,7 +2503,11 @@
                 <div class="slider-row">
                   <input type="range" min="1" max={maxM} bind:value={sliderArmies} />
                   <button class="btn primary-gold" onclick={confirmManeuver}>
-                    {t("maneuver_transfer", { count: sliderArmies })}
+                    {#if isAirlift}
+                      <Icon name="airfield" size={14} /> {t("airlift_btn_label")} ({sliderArmies})
+                    {:else}
+                      {t("maneuver_transfer", { count: sliderArmies })}
+                    {/if}
                   </button>
                 </div>
               </div>
@@ -4273,5 +4481,121 @@
   .recon-res-badge.money {
     color: #6ee7b7;
     border-color: rgba(52, 211, 153, 0.35);
+  }
+  .recon-infra-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 0.35rem;
+    padding-top: 0.3rem;
+    border-top: 1px solid rgba(148, 163, 184, 0.15);
+  }
+  .infra-title {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    font-size: 0.68rem;
+    font-weight: 700;
+    color: #94a3b8;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  .infra-slots {
+    font-family: var(--font-mono);
+    font-size: 0.65rem;
+    color: #cbd5e1;
+    background: rgba(15, 23, 42, 0.6);
+    border: 1px solid rgba(148, 163, 184, 0.2);
+    padding: 1px 5px;
+    border-radius: 3px;
+  }
+  .recon-active-bldgs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem;
+    margin-top: 0.2rem;
+  }
+  .recon-bldg-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.2rem;
+    padding: 0.12rem 0.38rem;
+    border-radius: 3px;
+    font-size: 0.65rem;
+    font-weight: 600;
+    background: rgba(15, 23, 42, 0.85);
+    border: 1px solid rgba(148, 163, 184, 0.25);
+  }
+  .recon-bldg-chip.market {
+    color: #fde047;
+    border-color: rgba(234, 179, 8, 0.4);
+    background: rgba(234, 179, 8, 0.1);
+  }
+  .recon-bldg-chip.industry {
+    color: #fb923c;
+    border-color: rgba(251, 146, 60, 0.4);
+    background: rgba(251, 146, 60, 0.1);
+  }
+  .recon-bldg-chip.fortification {
+    color: #38bdf8;
+    border-color: rgba(56, 189, 248, 0.4);
+    background: rgba(56, 189, 248, 0.1);
+  }
+  .recon-bldg-chip.airfield {
+    color: #93c5fd;
+    border-color: rgba(96, 165, 250, 0.4);
+    background: rgba(96, 165, 250, 0.1);
+  }
+  .recon-bldg-chip.port {
+    color: #5eead4;
+    border-color: rgba(45, 212, 191, 0.4);
+    background: rgba(45, 212, 191, 0.1);
+  }
+  .recon-build-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.25rem;
+    margin-top: 0.3rem;
+  }
+  .btn-build-option {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.2rem;
+    padding: 0.25rem 0.4rem;
+    border-radius: 4px;
+    font-size: 0.64rem;
+    font-weight: 600;
+    color: #e2e8f0;
+    background: rgba(30, 41, 59, 0.7);
+    border: 1px solid rgba(148, 163, 184, 0.25);
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+  .btn-build-option:hover:not(:disabled) {
+    background: rgba(51, 65, 85, 0.85);
+    border-color: #facc15;
+    color: #ffffff;
+  }
+  .btn-build-option.upgrade {
+    border-color: rgba(56, 189, 248, 0.45);
+    color: #bae6fd;
+  }
+  .btn-build-option.upgrade:hover:not(:disabled) {
+    border-color: #38bdf8;
+    background: rgba(14, 116, 144, 0.35);
+  }
+  .btn-build-option:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+    filter: grayscale(0.6);
+  }
+  .btn-build-option .cost-tag {
+    font-family: var(--font-mono);
+    font-size: 0.6rem;
+    color: #facc15;
+    background: rgba(0, 0, 0, 0.35);
+    padding: 1px 3px;
+    border-radius: 2px;
   }
 </style>
