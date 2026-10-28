@@ -799,7 +799,8 @@
     <div class="map-viewport" onwheel={onWheel} onmousedown={onMouseDown}>
       {#if cleanMapMode}
         <div class="clean-map-indicator">
-          <span>🗺️ Visão Limpa Ativa — Pressione <strong>H</strong> ou <strong>F4</strong> para restaurar marcadores</span>
+          <Icon name="eye" size={13} />
+          <span>Visão Limpa Ativa — Pressione <strong>F4</strong> para restaurar marcadores</span>
         </div>
       {/if}
       <svg
@@ -1418,9 +1419,9 @@
               class="mode-btn clean-mode-tab"
               class:active={cleanMapMode}
               onclick={() => (cleanMapMode = !cleanMapMode)}
-              title="Alternar Visão Limpa do Mapa (Ocultar Tropas e Rótulos - Tecla H / F4)"
+              title="Alternar Visão Limpa do Mapa (Ocultar Tropas e Rótulos - Tecla F4)"
             >
-              {cleanMapMode ? "👁️ Visão Limpa [H]" : "👁️ Modo Limpo [H]"}
+              <Icon name="eye" size={12} /> {cleanMapMode ? "Visão Limpa" : "Modo Limpo"}
             </button>
           </div>
 
@@ -2310,10 +2311,10 @@
   }
   .my-hq-row {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     justify-content: space-between;
     gap: 0.35rem;
-    flex-wrap: wrap;
   }
   .hq-general {
     display: flex;
@@ -2336,25 +2337,31 @@
     display: inline-flex;
     align-items: center;
     gap: 0.25rem;
+    margin-left: auto;
   }
   .hq-buttons {
     display: flex;
     align-items: center;
     gap: 0.28rem;
-    margin-left: auto;
+    flex-wrap: wrap;
+    width: 100%;
+    margin-top: 0.15rem;
   }
   .hud-btn {
+    flex: 1 1 auto;
     background: rgba(15, 23, 42, 0.85);
     border: 1px solid rgba(148, 163, 184, 0.28);
     color: #e2e8f0;
-    padding: 0.28rem 0.5rem;
+    padding: 0.28rem 0.45rem;
     border-radius: 4px;
     font-family: var(--font-tactical);
-    font-size: 0.74rem;
+    font-size: 0.73rem;
     font-weight: 700;
     display: inline-flex;
     align-items: center;
+    justify-content: center;
     gap: 0.28rem;
+    white-space: nowrap;
   }
   .hud-btn:hover,
   .hud-btn.active {
@@ -2373,51 +2380,65 @@
     color: #fecaca;
   }
   .btn-exit-room {
-    padding: 0.28rem 0.42rem;
+    flex: 0 0 auto;
+    padding: 0.28rem 0.45rem;
     color: #fca5a5;
     border-color: rgba(239, 68, 68, 0.35);
   }
 
   .map-mode-bar {
     display: flex;
-    align-items: center;
+    align-items: stretch;
     justify-content: space-between;
     gap: 0.35rem;
-    padding-top: 0.32rem;
+    padding-top: 0.35rem;
     border-top: 1px solid rgba(148, 163, 184, 0.16);
   }
   .mode-tabs {
-    display: flex;
-    gap: 0.2rem;
+    flex: 1;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.22rem;
     background: rgba(5, 9, 18, 0.85);
-    padding: 0.16rem;
+    padding: 0.2rem;
     border-radius: 4px;
     border: 1px solid rgba(148, 163, 184, 0.18);
   }
   .mode-btn {
     background: transparent;
-    border: none;
+    border: 1px solid transparent;
     color: #94a3b8;
-    padding: 0.22rem 0.5rem;
+    padding: 0.24rem 0.35rem;
     border-radius: 3px;
     font-family: var(--font-tactical);
-    font-size: 0.72rem;
+    font-size: 0.69rem;
     font-weight: 700;
     text-transform: uppercase;
+    text-align: center;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.25rem;
+    white-space: nowrap;
+    transition: all 0.15s ease;
+  }
+  .mode-btn:hover {
+    color: #e2e8f0;
+    background: rgba(148, 163, 184, 0.12);
   }
   .mode-btn.active {
     background: linear-gradient(135deg, #ca8a04, #a16207);
     color: #ffffff;
+    border-color: rgba(250, 204, 21, 0.4);
   }
   .mode-btn.clean-mode-tab {
-    border-left: 1px solid rgba(148, 163, 184, 0.25);
-    margin-left: 0.15rem;
-    padding-left: 0.45rem;
     color: #38bdf8;
+    border: 1px solid rgba(56, 189, 248, 0.25);
   }
   .mode-btn.clean-mode-tab.active {
     background: linear-gradient(135deg, #0284c7, #0369a1);
     color: #ffffff;
+    border-color: #38bdf8;
   }
   .clean-map-indicator {
     position: absolute;
@@ -2436,22 +2457,34 @@
     box-shadow: 0 4px 18px rgba(0, 0, 0, 0.65);
     letter-spacing: 0.02em;
     backdrop-filter: blur(4px);
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
   }
   .zoom-cluster {
     display: flex;
+    flex-direction: column;
     gap: 0.2rem;
+    justify-content: center;
   }
   .tool-btn {
     background: rgba(5, 9, 18, 0.85);
     border: 1px solid rgba(148, 163, 184, 0.25);
     color: #cbd5e1;
     min-width: 25px;
-    height: 23px;
+    height: 18px;
     padding: 0 0.32rem;
     border-radius: 3px;
     font-family: var(--font-mono);
-    font-size: 0.68rem;
+    font-size: 0.65rem;
     font-weight: 700;
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+  .tool-btn:hover {
+    background: rgba(202, 138, 4, 0.25);
+    border-color: #eab308;
+    color: #fef08a;
   }
 
   /* Floating Drawers */
