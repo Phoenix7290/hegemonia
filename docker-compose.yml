@@ -1,9 +1,25 @@
+name: hegemonia
+
 services:
   postgres:
     image: postgres:18-alpine
     container_name: hegemonia_postgres
     restart: unless-stopped
+    shm_size: 256mb
+    command:
+      - "postgres"
+      - "-c"
+      - "max_connections=100"
+      - "-c"
+      - "shared_buffers=128MB"
+      - "-c"
+      - "work_mem=8MB"
+      - "-c"
+      - "maintenance_work_mem=64MB"
+      - "-c"
+      - "synchronous_commit=on"
     environment:
+      TZ: "${TZ:-America/Sao_Paulo}"
       POSTGRES_DB: "${POSTGRES_DB:-hegemonia}"
       POSTGRES_USER: "${POSTGRES_USER:-hegemonia}"
       POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:-hegemonia}"
@@ -11,11 +27,19 @@ services:
       - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql
+    networks:
+      - hegemonia_net
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-hegemonia} -d $${POSTGRES_DB:-hegemonia}"]
       interval: 5s
       timeout: 5s
       retries: 10
+      start_period: 5s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   hegemonia:
     build:
@@ -24,16 +48,27 @@ services:
     image: hegemonia:latest
     container_name: hegemonia
     restart: unless-stopped
+    init: true
     depends_on:
       postgres:
         condition: service_healthy
     ports:
       - "${PORT:-2567}:2567"
     environment:
-      NODE_ENV: "production"
+      NODE_ENV: "${NODE_ENV:-production}"
+      TZ: "${TZ:-America/Sao_Paulo}"
       PORT: "2567"
-      HOST: "::"
+      HOST: "${HOST:-::}"
+      # PostgreSQL 18 Persistence & Pool Tuning
       DATABASE_URL: "postgresql://${POSTGRES_USER:-hegemonia}:${POSTGRES_PASSWORD:-hegemonia}@postgres:5432/${POSTGRES_DB:-hegemonia}"
+      DATABASE_POOL_MAX: "${DATABASE_POOL_MAX:-20}"
+      DATABASE_CONNECT_TIMEOUT_MS: "${DATABASE_CONNECT_TIMEOUT_MS:-5000}"
+      DATABASE_IDLE_TIMEOUT_MS: "${DATABASE_IDLE_TIMEOUT_MS:-10000}"
+      DATABASE_STATEMENT_TIMEOUT_MS: "${DATABASE_STATEMENT_TIMEOUT_MS:-15000}"
+      DATABASE_QUERY_TIMEOUT_MS: "${DATABASE_QUERY_TIMEOUT_MS:-15000}"
+      DATABASE_SSL: "${DATABASE_SSL:-false}"
+      DATABASE_SSL_REJECT_UNAUTHORIZED: "${DATABASE_SSL_REJECT_UNAUTHORIZED:-true}"
+      # Web Bundle, Identity (Argon2id + HttpOnly Sessions) & Avatar Storage (Sharp WebP)
       PUBLIC_DIR: "/app/apps/web/dist"
       WEB_ORIGIN: "${WEB_ORIGIN:-http://localhost:2567}"
       COOKIE_SECURE: "${COOKIE_SECURE:-false}"
@@ -41,6 +76,30 @@ services:
       AVATAR_DIR: "/app/data/avatars"
     volumes:
       - avatar_data:/app/data/avatars
+      - ./apps/web/public/music:/app/apps/web/dist/music:ro
+    networks:
+      - hegemonia_net
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://localhost:2567/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  hegemonia_net:
+    driver: bridge
 
 volumes:
   postgres_data:
