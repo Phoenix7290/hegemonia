@@ -1,7 +1,7 @@
 FROM node:24-bookworm-slim AS builder
 ENV PNPM_HOME="/pnpm"
 ENV PATH="$PNPM_HOME:$PATH"
-RUN npm install -g pnpm@10
+RUN npm install -g pnpm@11
 
 WORKDIR /app
 COPY pnpm-lock.yaml pnpm-workspace.yaml package.json tsconfig.base.json ./
@@ -15,7 +15,7 @@ RUN pnpm install --frozen-lockfile
 
 COPY . .
 RUN pnpm test
-RUN pnpm --filter @hegemonia/web build && pnpm --filter @hegemonia/server build
+RUN pnpm build
 
 # Production runtime stage
 FROM node:24-bookworm-slim

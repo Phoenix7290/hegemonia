@@ -90,7 +90,7 @@ hegemonia/
 
 The schema includes persistent accounts, hashed sessions, profiles, avatars, friendships, blocks, badges, match history, seasonal ranked ratings, career statistics, and breakdowns by color, objective, map, and doctrine. Casual, LAN, guest, and bot matches remain supported; only eligible ranked matches affect the leaderboard.
 
-Account sessions use an `HttpOnly`, `SameSite=Lax` cookie. Passwords are hashed with Argon2id and only SHA-256 session-token hashes are stored. Avatars are validated and converted to 256×256 WebP files. Set `COOKIE_SECURE=true` and the exact HTTPS `WEB_ORIGIN` in production; the HTTP-only local Docker default intentionally uses `COOKIE_SECURE=false`.
+Account sessions use an `HttpOnly`, `SameSite=Lax` cookie. Passwords are hashed with Argon2id and only SHA-256 session-token hashes are stored. Avatars are validated and converted to 256×256 WebP files, stored either on the local filesystem (`AVATAR_STORAGE_DRIVER=local`) or in S3-compatible object storage (`AVATAR_STORAGE_DRIVER=s3`, compatible with AWS S3, Cloudflare R2, MinIO, or Backblaze B2). Set `COOKIE_SECURE=true` and the exact HTTPS `WEB_ORIGIN` in production; the HTTP-only local Docker default intentionally uses `COOKIE_SECURE=false`.
 
 PostgreSQL integration tests are opt-in and destructive to their target database. Use a dedicated disposable database and an explicit `TEST_DATABASE_URL`:
 ```bash

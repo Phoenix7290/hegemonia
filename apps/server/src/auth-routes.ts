@@ -18,6 +18,7 @@ import {
   AuthError,
 } from "./auth-service.js";
 import { setAvatarUrl, updateProfileRecord } from "./auth-repository.js";
+import { type AvatarStorage, createAvatarStorage } from "./avatar-storage.js";
 import {
   blockUser,
   getMutualFriends,
@@ -47,8 +48,10 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const avatarDir = resolve(process.env.AVATAR_DIR ?? "data/avatars");
 const authLimiter = createRateLimiter({ windowMs: 15 * 60 * 1000, max: 12 });
 
-export async function createAuthRouter(): Promise<express.Router> {
-  await mkdir(avatarDir, { recursive: true });
+export async function createAuthRouter(avatarStorage: AvatarStorage = createAvatarStorage()): Promise<express.Router> {
+  if (avatarStorage.driver === "local") {
+    await mkdir(avatarDir, { recursive: true });
+  }
   const router = express.Router();
   router.use(optionalIdentity);
   router.use((req, res, next) => {
@@ -109,7 +112,6 @@ export async function createAuthRouter(): Promise<express.Router> {
   });
 
   router.put("/profile/avatar", requireIdentity, express.raw({ type: () => true, limit: "5mb" }), async (req, res, next) => {
-    let temporaryPath: string | null = null;
     try {
       if (!Buffer.isBuffer(req.body) || req.body.length < 12) {
         res.status(400).json({ error: "Envie uma imagem válida de até 5 MiB." });
@@ -122,16 +124,14 @@ export async function createAuthRouter(): Promise<express.Router> {
         return;
       }
       const filename = `${randomBytes(24).toString("hex")}.webp`;
-      temporaryPath = resolve(avatarDir, `.${filename}.tmp`);
-      const finalPath = resolve(avatarDir, filename);
-      await image.rotate().resize(256, 256, { fit: "cover" }).webp({ quality: 84 }).toFile(temporaryPath);
-      await rename(temporaryPath, finalPath);
-      temporaryPath = null;
-      const previous = await setAvatarUrl(identity(res).user.id, `/avatars/${filename}`);
-      await removeAvatar(previous);
-      res.json({ avatarUrl: `/avatars/${filename}` });
+      const buffer = await image.rotate().resize(256, 256, { fit: "cover" }).webp({ quality: 84 }).toBuffer();
+      const avatarUrl = await avatarStorage.save(filename, buffer);
+      const previous = await setAvatarUrl(identity(res).user.id, avatarUrl);
+      if (previous && previous !== avatarUrl) {
+        await avatarStorage.delete(previous);
+      }
+      res.json({ avatarUrl });
     } catch (error) {
-      if (temporaryPath) await unlink(temporaryPath).catch(() => undefined);
       next(error);
     }
   });
@@ -139,7 +139,9 @@ export async function createAuthRouter(): Promise<express.Router> {
   router.delete("/profile/avatar", requireIdentity, async (_req, res, next) => {
     try {
       const previous = await setAvatarUrl(identity(res).user.id, null);
-      await removeAvatar(previous);
+      if (previous) {
+        await avatarStorage.delete(previous);
+      }
       res.status(204).end();
     } catch (error) { next(error); }
   });
@@ -234,11 +236,8 @@ function validUserId(req: express.Request, res: express.Response, next: express.
   next();
 }
 
-async function removeAvatar(url: string | null): Promise<void> {
-  if (!url?.startsWith("/avatars/")) return;
-  const filename = basename(url);
-  if (!/^[a-f0-9]{48}\.webp$/.test(filename)) return;
-  await unlink(resolve(avatarDir, filename)).catch(() => undefined);
+export async function removeAvatar(url: string | null, storage: AvatarStorage = createAvatarStorage()): Promise<void> {
+  await storage.delete(url);
 }
 
 export function socialErrorStatus(error: unknown): number | null {
