@@ -288,7 +288,6 @@
     };
   });
 
-
   // Turn alert sound
   let lastTurnPlayerId = "";
   $effect(() => {
