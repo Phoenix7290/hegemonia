@@ -53,20 +53,50 @@
     </button>
   </form>
   {#if message}<p class="form-message">{message}</p>{/if}
-  <div class="search-results">
-    {#each users as user}
-      <article class="person-row">
-        <button class="person-link" onclick={() => navigate(`/profile/${user.username}`)}>
-          <Avatar name={user.displayName} avatarUrl={user.avatarUrl} size="small" />
-          <span>
-            <strong>{user.displayName}</strong>
-            <small>@{user.username}</small>
-          </span>
-        </button>
-        <button class="outline-button" onclick={() => request(user.id)}>
-          {t("friends_btn_add")}
-        </button>
-      </article>
-    {/each}
-  </div>
+  {#if users.length > 0}
+    <div class="search-results">
+      {#each users as user}
+        <article class="person-row">
+          <button class="person-link" onclick={() => navigate(`/profile/${user.username}`)}>
+            <Avatar name={user.displayName} avatarUrl={user.avatarUrl} size="small" />
+            <span>
+              <strong>{user.displayName}</strong>
+              <small>@{user.username}</small>
+            </span>
+          </button>
+          <button class="outline-button" onclick={() => request(user.id)}>
+            {t("friends_btn_add")}
+          </button>
+        </article>
+      {/each}
+    </div>
+  {/if}
 </div>
+
+<style>
+  .user-search {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .user-search form {
+    display: flex;
+    gap: 10px;
+  }
+
+  .user-search form input {
+    flex: 1;
+  }
+
+  .user-search .form-message {
+    margin-top: 2px;
+  }
+
+  .user-search .search-results {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 2px;
+  }
+</style>

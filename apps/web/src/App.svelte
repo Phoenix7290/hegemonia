@@ -33,6 +33,7 @@
     subtractUnits,
     totalUnits,
   } from "@hegemonia/engine";
+  import { SESSION_REPLACED_CLOSE_CODE } from "@hegemonia/shared";
   import type {
     AirMissionType,
     BuildingType,
@@ -55,6 +56,14 @@
   import VictoryModal from "./components/VictoryModal.svelte";
   import WarJournal from "./components/WarJournal.svelte";
   import { CommunicationsController } from "./lib/communications.svelte";
+  import {
+    InvalidRoomCodeError,
+    connectToRoom,
+    isRecoverableConnectionError,
+    isRoomNotFoundError,
+    resolveWebSocketUrl,
+    retryWithBackoff,
+  } from "./lib/multiplayer";
   import { t } from "./i18n/index.svelte";
   import {
     getTerritoryName,
@@ -209,7 +218,8 @@
   // Session Resilience & Reconnection State
   let isReconnecting = $state(false);
   let reconnectAttempts = $state(0);
-  let reconnectTimeout: number | null = null;
+  let connectionGeneration = 0;
+  let autoConnectAttempted = false;
 
   // Objective Map Visualizer State
   let highlightObjectiveTerritories = $state(false);
@@ -550,72 +560,119 @@
     pressedKeys.delete(e.key.toLowerCase());
   }
 
-  function resolveWsUrl(): string {
-    const envUrl = import.meta.env.VITE_WS_URL as string | undefined;
-    if (envUrl) return envUrl;
-    const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
-    if (window.location.port === "5173") {
-      return `${proto}//${window.location.hostname}:2567`;
-    }
-    return `${proto}//${window.location.host}`;
+  interface RoomStateMessage {
+    roomCode: string;
+    status: "lobby" | "playing";
+    turnDeadline: number;
+    myPlayerId: string | null;
+    lobbyPlayers: LobbyPlayerView[];
+    game: GameState | null;
   }
 
-  async function joinOrCreateRoom(createNew: boolean, forcedCode?: string) {
-    errorBanner = "";
-    sound.playClick();
-    const cleanName = (auth.user?.displayName || playerName).trim() || "General";
-    playerName = cleanName;
-    localStorage.setItem("hegemonia_name", cleanName);
-    const client = new Client(resolveWsUrl());
+  function clearPersistedRoom() {
+    try {
+      sessionStorage.removeItem("hegemonia_active_room");
+      const url = new URL(window.location.href);
+      url.searchParams.delete("room");
+      window.history.replaceState({}, "", url.toString());
+    } catch {
+      // Storage and history can be unavailable in restricted browser contexts.
+    }
+  }
+
+  function resetRoomState() {
+    communications.detach();
+    connectedRoom = null;
+    roomStatus = "disconnected";
+    roomCode = "";
+    roomCodeInput = "";
+    myPlayerId = null;
+    turnDeadline = 0;
+    remainingSeconds = 120;
+    game = null;
+    lobbyPlayers = [];
+    isReconnecting = false;
+    reconnectAttempts = 0;
+    selectedFromId = null;
+    selectedToId = null;
+    activeRightDrawer = null;
+    showHudManager = false;
+  }
+
+  async function openRoom(
+    createNew: boolean,
+    forcedCode: string | undefined,
+    generation: number,
+    reconnecting: boolean
+  ) {
+    const client = new Client(
+      resolveWebSocketUrl(window.location, import.meta.env.VITE_WS_URL as string | undefined)
+    );
     const token = getOrCreateToken();
+    const cleanName = (auth.user?.displayName || playerName).trim() || "General";
     connecting = true;
+    isReconnecting = reconnecting;
 
     try {
-      const code = createNew ? undefined : (forcedCode || roomCodeInput).trim().toUpperCase();
-      const room = await client.joinOrCreate("hegemonia", {
-        name: cleanName,
-        token,
-        roomCode: code,
-      });
+      const room = await retryWithBackoff(
+        () => connectToRoom<Room>(client, {
+          create: createNew,
+          roomCode: forcedCode ?? roomCodeInput,
+          name: cleanName,
+          token,
+        }),
+        {
+          maxAttempts: reconnecting ? undefined : 1,
+          shouldRetry: (error) =>
+            generation === connectionGeneration && isRecoverableConnectionError(error),
+          onAttempt: (attempt) => {
+            if (generation === connectionGeneration) reconnectAttempts = attempt;
+          },
+        }
+      );
+
+      if (generation !== connectionGeneration) {
+        room.removeAllListeners();
+        void room.leave().catch(() => undefined);
+        return;
+      }
 
       connectedRoom = room;
       communications.attach(room, token, lobbyPlayers);
       isReconnecting = false;
       reconnectAttempts = 0;
-      if (reconnectTimeout) {
-        clearTimeout(reconnectTimeout);
-        reconnectTimeout = null;
-      }
 
-      // Persist active room for F5 resilience and bookmark sharing
       try {
-        sessionStorage.setItem("hegemonia_active_room", room.id);
+        sessionStorage.setItem("hegemonia_active_room", room.roomId);
         const url = new URL(window.location.href);
-        url.searchParams.set("room", room.id);
+        url.searchParams.set("room", room.roomId);
         window.history.replaceState({}, "", url.toString());
       } catch {
-        // ignore storage error
+        // The connection remains usable without persistence.
       }
 
       room.onLeave((code) => {
-        if (roomStatus === "disconnected") return;
-        if (code !== 1000) {
-          isReconnecting = true;
-          reconnectAttempts++;
-          if (reconnectAttempts <= 8) {
-            reconnectTimeout = window.setTimeout(() => {
-              if (roomStatus !== "disconnected") {
-                joinOrCreateRoom(false, room.id);
-              }
-            }, 2000);
-          } else {
-            isReconnecting = false;
-            errorBanner = "Conexão perdida com o quartel general. Tente reconectar.";
-          }
+        if (generation !== connectionGeneration) return;
+        if (code === SESSION_REPLACED_CLOSE_CODE) {
+          connectionGeneration++;
+          resetRoomState();
+          clearPersistedRoom();
+          errorBanner = t("multiplayer_session_replaced");
+          return;
+        }
+        connectedRoom = null;
+        communications.detach();
+        void openRoom(false, room.roomId, generation, true);
+      });
+
+      room.onError((code) => {
+        if (generation === connectionGeneration) {
+          errorBanner = t("multiplayer_room_error", { code });
         }
       });
 
-      room.onMessage("room_state", (payload) => {
+      room.onMessage("room_state", (payload: RoomStateMessage) => {
+        if (generation !== connectionGeneration) return;
         const prevLastCombat = game?.lastCombat;
         roomCode = payload.roomCode;
         roomStatus = payload.status;
@@ -632,68 +689,85 @@
           sound.playCombatAttack();
           sound.playDiceRoll();
           if (game.lastCombat.conquered) {
-            setTimeout(() => sound.playConquest(), 300);
+            setTimeout(() => {
+              if (generation === connectionGeneration) sound.playConquest();
+            }, 300);
           }
         }
       });
 
       room.onMessage("error_msg", (payload: { message: string }) => {
+        if (generation !== connectionGeneration) return;
         errorBanner = payload.message;
         setTimeout(() => {
-          if (errorBanner === payload.message) errorBanner = "";
+          if (generation === connectionGeneration && errorBanner === payload.message) {
+            errorBanner = "";
+          }
         }, 4200);
       });
-    } catch (err: unknown) {
-      errorBanner = err instanceof Error ? err.message : "Falha ao conectar ao servidor Hegemonia.";
+    } catch (error: unknown) {
+      if (generation !== connectionGeneration) return;
+      if (error instanceof InvalidRoomCodeError) {
+        errorBanner = t("multiplayer_invalid_room_code");
+      } else if (isRoomNotFoundError(error)) {
+        errorBanner = t("multiplayer_room_not_found");
+      } else {
+        errorBanner = t(reconnecting
+          ? "multiplayer_connection_lost"
+          : "multiplayer_connection_failed");
+      }
+      resetRoomState();
+      clearPersistedRoom();
     } finally {
-      connecting = false;
+      if (generation === connectionGeneration) connecting = false;
     }
+  }
+
+  async function joinOrCreateRoom(createNew: boolean, forcedCode?: string) {
+    const generation = ++connectionGeneration;
+    autoConnectAttempted = true;
+    errorBanner = "";
+    sound.playClick();
+    const cleanName = (auth.user?.displayName || playerName).trim() || "General";
+    playerName = cleanName;
+    localStorage.setItem("hegemonia_name", cleanName);
+
+    const previousRoom = connectedRoom;
+    connectedRoom = null;
+    communications.detach();
+    if (previousRoom) {
+      previousRoom.removeAllListeners();
+      void previousRoom.leave().catch(() => undefined);
+    }
+
+    await openRoom(createNew, forcedCode, generation, false);
   }
 
   // Auto-reconnect to previous session on page refresh (F5) or direct room link
   $effect(() => {
-    if (typeof window === "undefined") return;
+    if (typeof window === "undefined" || autoConnectAttempted) return;
     const urlParams = new URLSearchParams(window.location.search);
     const roomFromUrl = urlParams.get("room");
     const roomFromStorage = sessionStorage.getItem("hegemonia_active_room");
     const targetRoom = roomFromUrl || roomFromStorage;
 
     if (targetRoom && roomStatus === "disconnected" && !connecting && !connectedRoom) {
+      autoConnectAttempted = true;
       roomCodeInput = targetRoom.toUpperCase();
-      joinOrCreateRoom(false, targetRoom.toUpperCase());
+      void joinOrCreateRoom(false, targetRoom);
     }
   });
 
   function leaveCurrentRoom() {
     sound.playClick();
-    communications.detach();
-    try {
-      sessionStorage.removeItem("hegemonia_active_room");
-      const url = new URL(window.location.href);
-      url.searchParams.delete("room");
-      window.history.replaceState({}, "", url.toString());
-    } catch {
-      // ignore
+    connectionGeneration++;
+    const room = connectedRoom;
+    resetRoomState();
+    clearPersistedRoom();
+    if (room) {
+      room.removeAllListeners();
+      void room.leave().catch(() => undefined);
     }
-    isReconnecting = false;
-    if (reconnectTimeout) {
-      clearTimeout(reconnectTimeout);
-      reconnectTimeout = null;
-    }
-    try {
-      connectedRoom?.leave();
-    } catch {
-      // ignore disconnect errors
-    }
-    connectedRoom = null;
-    roomStatus = "disconnected";
-    roomCode = "";
-    game = null;
-    lobbyPlayers = [];
-    selectedFromId = null;
-    selectedToId = null;
-    activeRightDrawer = null;
-    showHudManager = false;
   }
 
   function sendAction(action: unknown) {
@@ -1001,6 +1075,9 @@
       selectedUnitTotal > game.pendingConquest.maxMove
     ) return;
     sendAction({ type: "occupy", armies: selectedUnitTotal, units: selectedUnits });
+    selectedFromId = null;
+    selectedToId = null;
+    selectedUnits = emptyUnitCounts();
   }
 
   function confirmManeuver() {
@@ -1028,7 +1105,7 @@
     selectedUnits = emptyUnitCounts();
   }
 
-  // --- Mouse Drag & Wheel Camera Controls ---
+  // --- Mouse Drag, Touch Pan (Tablet) & Wheel Camera Controls ---
   function onMouseDown(e: MouseEvent) {
     if (e.button !== 0 && e.button !== 1) return;
     const target = e.target as Element;
@@ -1054,6 +1131,31 @@
     isDragging = false;
   }
 
+  function onTouchStart(e: TouchEvent) {
+    if (e.touches.length !== 1) return;
+    const target = e.target as Element;
+    if (target.closest(".hud-panel") || target.closest(".war-journal-panel")) return;
+    isDragging = true;
+    lastMouseX = e.touches[0].clientX;
+    lastMouseY = e.touches[0].clientY;
+  }
+
+  function onTouchMove(e: TouchEvent) {
+    if (!isDragging || e.touches.length !== 1) return;
+    const dxPx = e.touches[0].clientX - lastMouseX;
+    const dyPx = e.touches[0].clientY - lastMouseY;
+    lastMouseX = e.touches[0].clientX;
+    lastMouseY = e.touches[0].clientY;
+
+    const svgScale = MAP_WIDTH / Math.max(window.innerWidth, 320);
+    camX = wrapCamX(camX + (dxPx * svgScale) / zoom);
+    camY = clampCamY(camY + (dyPx * svgScale) / zoom);
+  }
+
+  function onTouchEnd() {
+    isDragging = false;
+  }
+
   function onWheel(e: WheelEvent) {
     e.preventDefault();
     const zoomFactor = e.deltaY < 0 ? 1.14 : 0.88;
@@ -1076,6 +1178,7 @@
 <svelte:window
   onmouseup={onMouseUp}
   onmousemove={onMouseMove}
+  ontouchend={onTouchEnd}
   onkeydown={onKeyDown}
   onkeyup={onKeyUp}
 />
@@ -1109,7 +1212,13 @@
   {:else if game}
     <!-- FULLSCREEN CONTINUOUS WRAPAROUND GEOPOLITICAL & CARTOGRAPHIC MAP (UNTOUCHED) -->
     <!-- svelte-ignore a11y_no_static_element_interactions -->
-    <div class="map-viewport" onwheel={onWheel} onmousedown={onMouseDown}>
+    <div
+      class="map-viewport"
+      onwheel={onWheel}
+      onmousedown={onMouseDown}
+      ontouchstart={onTouchStart}
+      ontouchmove={onTouchMove}
+    >
       {#if cleanMapMode}
         <div class="clean-map-indicator">
           <Icon name="eye" size={13} />
@@ -3275,17 +3384,19 @@
           </div>
 
           {#if isMyTurn && !game.winnerId}
-            <div class="phase-action-slot">
-              {#if game.phase === "attack" && !game.pendingConquest}
-                <button class="btn secondary" onclick={() => sendAction({ type: "end_attack" })}>
-                  {t("advance_to_maneuver")}
-                </button>
-              {:else if game.phase === "maneuver"}
-                <button class="btn primary-gold" onclick={() => sendAction({ type: "end_turn" })}>
-                  <Icon name="check" size={15} /> {t("end_turn")}
-                </button>
-              {/if}
-            </div>
+            {#if (game.phase === "attack" && !game.pendingConquest) || game.phase === "maneuver"}
+              <div class="phase-action-slot">
+                {#if game.phase === "attack" && !game.pendingConquest}
+                  <button class="btn secondary" onclick={() => sendAction({ type: "end_attack" })}>
+                    {t("advance_to_maneuver")}
+                  </button>
+                {:else if game.phase === "maneuver"}
+                  <button class="btn primary-gold" onclick={() => sendAction({ type: "end_turn" })}>
+                    <Icon name="check" size={15} /> {t("end_turn")}
+                  </button>
+                {/if}
+              </div>
+            {/if}
           {/if}
         </div>
       </footer>
@@ -3316,7 +3427,7 @@
       {#if isReconnecting}
         <div class="reconnecting-toast">
           <div class="reconnecting-spinner"></div>
-          <span>Reconectando ao Quartel-General... ({reconnectAttempts}/8)</span>
+          <span>{t("multiplayer_reconnecting", { attempt: reconnectAttempts })}</span>
         </div>
       {/if}
     </div>
@@ -3356,7 +3467,8 @@
   .territory-group:hover path:first-child {
     filter: brightness(1.25);
   }
-  .division-counter {
+  .division-counter,
+  .economic-counter {
     pointer-events: none;
   }
 
@@ -4338,8 +4450,11 @@
     border-color: rgba(250, 204, 21, 0.4);
   }
   .mode-btn.clean-mode-tab {
-    color: #38bdf8;
     border: 1px solid rgba(56, 189, 248, 0.25);
+    border-left: 1px solid rgba(148, 163, 184, 0.25);
+    margin-left: 0.15rem;
+    padding-left: 0.45rem;
+    color: #38bdf8;
   }
   .mode-btn.clean-mode-tab.active {
     background: linear-gradient(135deg, #0284c7, #0369a1);
@@ -4366,34 +4481,6 @@
     display: inline-flex;
     align-items: center;
     gap: 0.4rem;
-  }
-  .mode-btn.clean-mode-tab {
-    border-left: 1px solid rgba(148, 163, 184, 0.25);
-    margin-left: 0.15rem;
-    padding-left: 0.45rem;
-    color: #38bdf8;
-  }
-  .mode-btn.clean-mode-tab.active {
-    background: linear-gradient(135deg, #0284c7, #0369a1);
-    color: #ffffff;
-  }
-  .clean-map-indicator {
-    position: absolute;
-    top: 4.8rem;
-    left: 50%;
-    transform: translateX(-50%);
-    background: rgba(6, 11, 21, 0.9);
-    border: 1px solid rgba(56, 189, 248, 0.5);
-    color: #e0f2fe;
-    padding: 0.35rem 0.9rem;
-    border-radius: 20px;
-    font-size: 0.72rem;
-    font-weight: 600;
-    pointer-events: none;
-    z-index: 10;
-    box-shadow: 0 4px 18px rgba(0, 0, 0, 0.65);
-    letter-spacing: 0.02em;
-    backdrop-filter: blur(4px);
   }
   .zoom-cluster {
     display: flex;
@@ -4880,6 +4967,7 @@
     gap: 0.4rem;
   }
   .recon-inspector-card {
+    pointer-events: auto;
     background: linear-gradient(160deg, rgba(11, 18, 33, 0.94), rgba(6, 11, 21, 0.96));
     border: 1px solid rgba(212, 175, 55, 0.45);
     border-radius: 6px;
@@ -4992,13 +5080,15 @@
     width: fit-content;
   }
 
-  /* Bottom-Center Phase Dock */
+  /* Bottom-Center Phase Dock — Centralizado no eixo horizontal da tela */
   .bottom-center-dock {
-    grid-column: 2;
-    grid-row: 3;
-    justify-self: center;
-    align-self: end;
-    width: min(100%, 640px);
+    position: fixed;
+    left: 50%;
+    bottom: 0.75rem;
+    transform: translateX(-50%);
+    z-index: 25;
+    width: min(calc(100vw - 2rem), 620px);
+    margin: 0;
   }
   .action-popup {
     background: rgba(5, 9, 18, 0.92);
@@ -5106,18 +5196,19 @@
     gap: 0.45rem;
   }
 
+  /* Passos 1 - 2 - 3 sempre centralizados no Console de Ordens */
   .phase-stepper-row {
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    gap: 0.4rem;
+    justify-content: center;
+    gap: 0.55rem;
     flex-wrap: wrap;
   }
   .phase-step {
     display: flex;
     align-items: center;
     gap: 0.35rem;
-    padding: 0.3rem 0.55rem;
+    padding: 0.32rem 0.65rem;
     border-radius: 4px;
     background: rgba(5, 9, 18, 0.75);
     color: #64748b;
@@ -5154,7 +5245,7 @@
     font-weight: 700;
   }
   .phase-action-slot {
-    margin-left: auto;
+    margin-left: 0.35rem;
   }
 
   .btn {
@@ -5174,6 +5265,12 @@
     background: linear-gradient(135deg, #eab308, #a16207);
     border: 1px solid #fef08a;
     color: #050911;
+  }
+  .btn.primary-gold:hover:not(:disabled) {
+    background: linear-gradient(135deg, #fde047, #ca8a04);
+    border-color: #ffffff;
+    color: #050911;
+    box-shadow: 0 6px 18px rgba(234, 179, 8, 0.4);
   }
   .btn.secondary {
     background: #1e293b;
@@ -5368,33 +5465,6 @@
     }
     50% {
       opacity: 0.75;
-    }
-  }
-
-  /* Responsive Widescreen & Laptop Adaptations (1366x768 -> 21:9) */
-  @media (max-height: 800px) {
-    .hud-layer {
-      padding: 0.5rem;
-      gap: 0.45rem;
-    }
-    .hud-panel {
-      padding: 0.55rem 0.65rem;
-      gap: 0.38rem;
-    }
-    .continents-dropdown {
-      max-height: 120px;
-    }
-    .floating-drawer {
-      max-height: 185px;
-    }
-  }
-
-  @media (max-width: 1180px) {
-    .hud-layer {
-      grid-template-columns: 290px 1fr 310px;
-    }
-    .top-center-banner {
-      max-width: 460px;
     }
   }
 
@@ -5642,5 +5712,94 @@
     background: rgba(0, 0, 0, 0.35);
     padding: 1px 3px;
     border-radius: 2px;
+  }
+
+  /* Responsive Widescreen, Tablet Landscape & Tablet Portrait Adaptations */
+  @media (max-height: 800px) {
+    .hud-layer {
+      padding: 0.5rem;
+      gap: 0.45rem;
+    }
+    .hud-panel {
+      padding: 0.55rem 0.65rem;
+      gap: 0.38rem;
+    }
+    .continents-dropdown {
+      max-height: 120px;
+    }
+    .floating-drawer {
+      max-height: 185px;
+    }
+  }
+
+  @media (max-width: 1180px) {
+    .hud-layer {
+      grid-template-columns: 270px 1fr 290px;
+    }
+    .top-center-banner {
+      max-width: 440px;
+    }
+    .bottom-center-dock {
+      width: min(calc(100vw - 2rem), 520px);
+    }
+  }
+
+  /* Tablet Landscape & Portrait (<= 1024px) */
+  @media (max-width: 1024px) {
+    .hud-layer {
+      grid-template-columns: 250px 1fr 265px;
+      padding: 0.5rem;
+      gap: 0.4rem;
+    }
+    .top-left-panel {
+      max-height: calc(100vh - 175px);
+    }
+    .top-center-banner {
+      max-width: 380px;
+      padding: 0.4rem 0.7rem;
+    }
+    .tc-directive {
+      font-size: 0.72rem;
+    }
+    .bottom-left-hint {
+      display: none;
+    }
+    .bottom-left-stack {
+      margin-bottom: 3.6rem;
+    }
+    .bottom-center-dock {
+      width: min(calc(100vw - 1.5rem), 490px);
+      bottom: 0.5rem;
+    }
+    .tool-btn {
+      min-width: 30px;
+      height: 24px;
+    }
+  }
+
+  /* Tablet Portrait (<= 820px) */
+  @media (max-width: 820px) {
+    .hud-layer {
+      grid-template-columns: 220px 1fr 235px;
+      padding: 0.4rem;
+      gap: 0.35rem;
+    }
+    .top-center-banner {
+      max-width: 300px;
+      padding: 0.35rem 0.55rem;
+    }
+    .tc-kicker {
+      font-size: 0.58rem;
+    }
+    .tc-directive {
+      font-size: 0.66rem;
+    }
+    .bottom-center-dock {
+      width: min(calc(100vw - 1rem), 440px);
+    }
+    .phase-step {
+      padding: 0.25rem 0.45rem;
+      font-size: 0.68rem;
+    }
   }
 </style>

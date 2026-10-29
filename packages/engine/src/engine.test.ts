@@ -1764,7 +1764,7 @@ describe("Military Supply Lines, Fuel Starvation & Encirclement (HEGEM-35)", () 
     ).toThrow(/cerco militar/);
   });
 
-  it("re-establishes supply line via port-to-port maritime bridge across unblockaded sea link", () => {
+  it("maintains maritime supply line across unblockaded sea link (e.g. China to Japan)", () => {
     const state = createGame({
       id: "g_supply_port",
       seed: "supply-port-seed",
@@ -1773,23 +1773,22 @@ describe("Military Supply Lines, Fuel Starvation & Encirclement (HEGEM-35)", () 
         { id: "p2", name: "Bob", color: "red" },
       ],
     });
-    const p1 = state.players[0];
-    p1.capitalTerritoryId = "brasil";
-    state.territories["brasil"].ownerId = p1.id;
+    const p1 = state.players.find((p) => p.id === "p1")!;
+    p1.capitalTerritoryId = "china";
+    state.territories["china"].ownerId = p1.id;
 
-    // Argélia is connected to Brasil via direct sea link ("brasil" <-> "argelia")
-    state.territories["argelia"].ownerId = p1.id;
-    // Without ports on both ends, Argélia is encircled
-    state.territories["brasil"].buildings = [];
-    state.territories["argelia"].buildings = [];
+    // Japão is connected to China via direct sea link ("china" <-> "japao")
+    state.territories["japao"].ownerId = p1.id;
+    // Without enemy blockade, Japão is supplied naturally
     updateSupplyAndEncirclement(state, CLASSIC_MAP);
-    expect(state.territories["argelia"].isEncircled).toBe(true);
+    expect(state.territories["japao"].isEncircled).toBe(false);
 
-    // Build port on both ends
-    state.territories["brasil"].buildings = [{ type: "port", level: 1 }];
-    state.territories["argelia"].buildings = [{ type: "port", level: 1 }];
+    // If severed from Capital (e.g. enemy conquers China), Japão becomes encircled
+    state.territories["china"].ownerId = "p2";
+    state.territories["vladivostok"].ownerId = "p2";
+    state.territories["havai"].ownerId = "p2";
     updateSupplyAndEncirclement(state, CLASSIC_MAP);
-    expect(state.territories["argelia"].isEncircled).toBe(false);
+    expect(state.territories["japao"].isEncircled).toBe(true);
   });
 
   it("applies defense penalty (-1 or -2) when attacking an encircled territory", () => {

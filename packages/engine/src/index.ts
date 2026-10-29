@@ -380,10 +380,6 @@ export function updateSupplyAndEncirclement(
         if (!nbrTerr || nbrTerr.ownerId !== player.id) continue;
 
         if (isSeaLink(currId, nbrId)) {
-          const currHasPort = hasTerritoryBuilding(currTerr, "port");
-          const nbrHasPort = hasTerritoryBuilding(nbrTerr, "port");
-          if (!currHasPort || !nbrHasPort) continue;
-
           const blockade = checkNavalBlockade(state, currId, nbrId, player.id);
           if (blockade.isBlockaded) continue;
         }

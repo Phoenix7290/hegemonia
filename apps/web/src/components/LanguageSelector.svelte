@@ -6,7 +6,7 @@
 </script>
 
 <div class="lang-selector" class:compact role="group" aria-label="Idioma / Language">
-  <Icon name="globe" size={13} />
+  <Icon name="globe" size={14} />
   <button
     type="button"
     class="lang-btn"
@@ -34,55 +34,60 @@
   .lang-selector {
     display: inline-flex;
     align-items: center;
-    gap: 5px;
-    padding: 3px 8px;
-    background: rgba(15, 23, 42, 0.7);
-    border: 1px solid rgba(212, 175, 55, 0.25);
-    border-radius: 4px;
+    justify-content: center;
+    gap: 6px;
+    height: 42px;
+    padding: 0 12px;
+    background: rgba(15, 23, 42, 0.78);
+    border: 1px solid rgba(212, 175, 55, 0.28);
+    border-radius: 6px;
     color: #94a3b8;
     font-family: var(--font-mono, monospace);
-    font-size: 0.75rem;
+    font-size: 0.78rem;
     line-height: 1;
     user-select: none;
     transition: border-color 0.15s ease, background-color 0.15s ease;
   }
 
   .lang-selector:hover {
-    border-color: rgba(212, 175, 55, 0.5);
-    background: rgba(15, 23, 42, 0.9);
+    border-color: rgba(212, 175, 55, 0.55);
+    background: rgba(15, 23, 42, 0.95);
   }
 
   .lang-btn {
     background: none;
     border: none;
-    padding: 2px 4px;
+    padding: 4px 6px;
     color: #64748b;
     font-family: inherit;
-    font-size: 0.72rem;
-    font-weight: 600;
+    font-size: 0.76rem;
+    font-weight: 700;
     letter-spacing: 0.05em;
     cursor: pointer;
-    border-radius: 2px;
+    border-radius: 4px;
     transition: color 0.15s ease, background 0.15s ease;
   }
 
-  .lang-btn:hover {
+  .lang-btn:hover:not(:disabled) {
     color: #e2e8f0;
+    background: rgba(255, 255, 255, 0.05);
+    border-color: transparent;
   }
 
   .lang-btn.active {
     color: #fbbf24;
-    background: rgba(234, 179, 8, 0.12);
-    font-weight: 700;
+    background: rgba(234, 179, 8, 0.16);
+    font-weight: 800;
   }
 
   .lang-divider {
     color: #475569;
-    font-size: 0.7rem;
+    font-size: 0.75rem;
   }
 
   .compact {
-    padding: 2px 6px;
-    font-size: 0.7rem;
+    height: 36px;
+    padding: 0 10px;
+    font-size: 0.72rem;
   }
 </style>
