@@ -1494,85 +1494,94 @@
                           filter="drop-shadow(0 2px 4px rgba(0,0,0,0.85))"
                         />
 
-                        <!-- Resource Icon on Left -->
+                        <!-- Resource Icon on Left (Unified 24x24 Design System Plate) -->
                         {#if t.resource === "gold"}
-                          <g transform="translate(-14, -0.5)">
-                            <polygon points="-4.5,2.5 -2.5,-3.5 2.5,-3.5 4.5,2.5" fill="#facc15" stroke="#ca8a04" stroke-width="0.6" />
-                            <polygon points="-5,5.5 -4.5,2.5 4.5,2.5 5,5.5" fill="#eab308" />
+                          <g transform="translate(-14, 0)">
+                            <circle cx="0" cy="0" r="5.2" fill="#2e1b05" stroke="#facc15" stroke-width="0.85" />
+                            <Icon name="gold" size={8} x={-4} y={-4} color="#fde047" strokeWidth={2} />
                           </g>
                         {:else if t.resource === "steel"}
                           <g transform="translate(-14, 0)">
-                            <polygon points="-4.5,3.8 4.5,3.8 3,-3 -3,-3" fill="#94a3b8" stroke="#cbd5e1" stroke-width="0.6" />
+                            <circle cx="0" cy="0" r="5.2" fill="#0f172a" stroke="#94a3b8" stroke-width="0.85" />
+                            <Icon name="steel" size={8} x={-4} y={-4} color="#e2e8f0" strokeWidth={2} />
                           </g>
                         {:else if t.resource === "oil"}
-                          <g transform="translate(-14, -0.5)">
-                            <path d="M0,-4.5 C-3,0 -3,3.5 0,4.5 C3,3.5 3,0 0,-4.5 Z" fill="#f59e0b" stroke="#b45309" stroke-width="0.6" />
+                          <g transform="translate(-14, 0)">
+                            <circle cx="0" cy="0" r="5.2" fill="#321202" stroke="#f97316" stroke-width="0.85" />
+                            <Icon name="oil" size={8} x={-4} y={-4} color="#fdba74" strokeWidth={2} />
                           </g>
                         {:else if t.tradeBonus && t.tradeBonus > 0}
                           <g transform="translate(-14, 0)">
-                            <circle cx="0" cy="0" r="4.2" fill="#065f46" stroke="#10b981" stroke-width="0.8" />
-                            <text x="0" y="0.5" text-anchor="middle" dominant-baseline="central" fill="#ecfdf5" font-size="4.8" font-weight="900">$</text>
+                            <circle cx="0" cy="0" r="5.2" fill="#042f2e" stroke="#10b981" stroke-width="0.85" />
+                            <Icon name="coins" size={8} x={-4} y={-4} color="#6ee7b7" strokeWidth={2} />
                           </g>
                         {:else}
                           <g transform="translate(-14, 0)">
-                            <circle cx="0" cy="0" r="2.8" fill="#1e293b" stroke="rgba(148, 163, 184, 0.4)" stroke-width="0.7" />
+                            <circle cx="0" cy="0" r="3.2" fill="#0f172a" stroke="rgba(148, 163, 184, 0.45)" stroke-width="0.75" />
                           </g>
                         {/if}
 
                         <!-- Divider Line -->
-                        <line x1="-7.5" y1="-8" x2="-7.5" y2="8" stroke="rgba(148, 163, 184, 0.3)" stroke-width="0.7" />
+                        <line x1="-7.2" y1="-8" x2="-7.2" y2="8" stroke="rgba(148, 163, 184, 0.3)" stroke-width="0.7" />
 
                         <!-- Building Slots on Right (2 for regular, 3 for active Capital) -->
-                        <g transform="translate(6, 0)">
+                        <g transform="translate(6.2, 0)">
                           {#each Array(maxSlots) as _, slotIdx}
                             {@const b = bldgs[slotIdx]}
-                            {@const slotX = (slotIdx - (maxSlots - 1) / 2) * 8.5}
+                            {@const slotX = (slotIdx - (maxSlots - 1) / 2) * 8.6}
                             <g transform="translate({slotX}, 0)">
                               {#if b}
                                 <rect
-                                  x="-3.5"
-                                  y="-4.5"
-                                  width="7"
-                                  height="9"
-                                  rx="1.2"
+                                  x="-3.8"
+                                  y="-4.6"
+                                  width="7.6"
+                                  height="9.2"
+                                  rx="1.4"
                                   fill={b.type === "market"
-                                    ? "#78350f"
+                                    ? "#451a03"
                                     : b.type === "industry"
-                                      ? "#1e3a8a"
+                                      ? "#1e293b"
                                       : b.type === "fortification"
-                                        ? (b.level === 2 ? "#0369a1" : "#334155")
+                                        ? (b.level === 2 ? "#082f49" : "#1e293b")
                                         : b.type === "airfield"
-                                          ? "#4c1d95"
-                                          : "#065f46"}
-                                  stroke={b.type === "fortification" && b.level === 2 ? "#38bdf8" : "rgba(255,255,255,0.3)"}
-                                  stroke-width="0.7"
+                                          ? "#172554"
+                                          : "#042f2e"}
+                                  stroke={b.type === "market"
+                                    ? "#f59e0b"
+                                    : b.type === "industry"
+                                      ? "#fb923c"
+                                      : b.type === "fortification"
+                                        ? (b.level === 2 ? "#38bdf8" : "#94a3b8")
+                                        : b.type === "airfield"
+                                          ? "#60a5fa"
+                                          : "#2dd4bf"}
+                                  stroke-width="0.8"
                                 />
-                                <text
-                                  x="0"
-                                  y="0.3"
-                                  text-anchor="middle"
-                                  dominant-baseline="central"
-                                  fill="#ffffff"
-                                  font-size="4.5"
-                                  font-weight="bold"
-                                >
-                                  {b.type === "market"
-                                    ? "M"
+                                <Icon
+                                  name={b.type === "fortification"
+                                    ? (b.level === 2 ? "fortification-l2" : "fortification")
+                                    : b.type}
+                                  size={6.2}
+                                  x={-3.1}
+                                  y={-3.1}
+                                  color={b.type === "market"
+                                    ? "#fde047"
                                     : b.type === "industry"
-                                      ? "I"
+                                      ? "#fdba74"
                                       : b.type === "fortification"
-                                        ? (b.level === 2 ? "F2" : "F1")
+                                        ? (b.level === 2 ? "#7dd3fc" : "#e2e8f0")
                                         : b.type === "airfield"
-                                          ? "A"
-                                          : "P"}
-                                </text>
+                                          ? "#93c5fd"
+                                          : "#5eead4"}
+                                  strokeWidth={2.1}
+                                />
                               {:else}
                                 <rect
-                                  x="-3.5"
-                                  y="-4.5"
-                                  width="7"
-                                  height="9"
-                                  rx="1.2"
+                                  x="-3.8"
+                                  y="-4.6"
+                                  width="7.6"
+                                  height="9.2"
+                                  rx="1.4"
                                   fill="rgba(15, 23, 42, 0.4)"
                                   stroke="rgba(148, 163, 184, 0.35)"
                                   stroke-dasharray="1.2, 1"
@@ -1595,7 +1604,7 @@
                           pointer-events="none"
                           style="paint-order: stroke; stroke: #050912; stroke-width: 2.2px; stroke-linejoin: round;"
                         >
-                          {isCapital ? `⭐ ${getTerritoryName(t.id)}` : getTerritoryName(t.id)}
+                          {getTerritoryName(t.id)}
                         </text>
                       </g>
                     {:else}
@@ -1606,15 +1615,14 @@
                       >
                       <!-- Capital Crown / Golden Star Crest -->
                       {#if isCapital}
-                        <g transform="translate(0, -10.2)">
-                          <circle cx="0" cy="0" r="4.2" fill="#090e1a" stroke="#f59e0b" stroke-width="1.3" />
-                          <polygon points="0,-3.2 0.95,-0.9 3.2,-0.9 1.4,0.4 2.1,2.6 0,1.3 -2.1,2.6 -1.4,0.4 -3.2,-0.9 -0.95,-0.9" fill="#facc15" />
+                        <g transform="translate(0, -10.5)">
+                          <circle cx="0" cy="0" r="4.4" fill="#090e1a" stroke="#f59e0b" stroke-width="1.2" />
+                          <Icon name="capital" size={6.4} x={-3.2} y={-3.2} color="#facc15" strokeWidth={2.1} />
                         </g>
                       {:else if isFallenCapital}
-                        <g transform="translate(0, -10.2)">
-                          <circle cx="0" cy="0" r="4.2" fill="#090e1a" stroke="#ef4444" stroke-width="1.3" />
-                          <polygon points="0,-3.2 0.95,-0.9 3.2,-0.9 1.4,0.4 2.1,2.6 0,1.3 -2.1,2.6 -1.4,0.4 -3.2,-0.9 -0.95,-0.9" fill="#94a3b8" />
-                          <line x1="-2.8" y1="-2.8" x2="2.8" y2="2.8" stroke="#ef4444" stroke-width="1.2" />
+                        <g transform="translate(0, -10.5)">
+                          <circle cx="0" cy="0" r="4.4" fill="#090e1a" stroke="#ef4444" stroke-width="1.2" />
+                          <Icon name="capital-fallen" size={6.4} x={-3.2} y={-3.2} color="#fca5a5" strokeWidth={2.1} />
                         </g>
                       {/if}
 
@@ -1685,32 +1693,39 @@
                       <!-- Fortification Crest -->
                       {#if fortLevel > 0}
                         <g transform="translate(13.5, -4.5)">
-                          <circle cx="0" cy="0" r="3.4" fill="#090e1a" stroke={fortLevel === 2 ? "#38bdf8" : "#94a3b8"} stroke-width="1.1" />
-                          <polygon points="0,-1.8 1.4,-0.8 1.4,1 0,1.8 -1.4,1 -1.4,-0.8" fill={fortLevel === 2 ? "#38bdf8" : "#cbd5e1"} />
+                          <circle cx="0" cy="0" r="3.8" fill="#090e1a" stroke={fortLevel === 2 ? "#38bdf8" : "#94a3b8"} stroke-width="1.1" />
+                          <Icon
+                            name={fortLevel === 2 ? "fortification-l2" : "fortification"}
+                            size={5.2}
+                            x={-2.6}
+                            y={-2.6}
+                            color={fortLevel === 2 ? "#38bdf8" : "#cbd5e1"}
+                            strokeWidth={2.2}
+                          />
                         </g>
                       {/if}
 
                       <!-- Encirclement / Out of Supply Badge (HEGEM-35) -->
                       {#if tState.isEncircled}
                         <g transform="translate(-13.5, -4.5)" pointer-events="none">
-                          <circle cx="0" cy="0" r="3.6" fill="#450a0a" stroke="#ef4444" stroke-width="1.1" />
-                          <text x="0" y="0.8" text-anchor="middle" dominant-baseline="central" font-size="4.5" fill="#fca5a5" font-weight="900">📦</text>
+                          <circle cx="0" cy="0" r="3.8" fill="#450a0a" stroke="#ef4444" stroke-width="1.1" />
+                          <Icon name="supply-cut" size={5.2} x={-2.6} y={-2.6} color="#fca5a5" strokeWidth={2.2} />
                         </g>
                       {/if}
 
                       <!-- Fuel Starvation Badge (HEGEM-35) -->
                       {#if tState.outOfFuel}
                         <g transform="translate(-13.5, 4.5)" pointer-events="none">
-                          <circle cx="0" cy="0" r="3.6" fill="#451a03" stroke="#f97316" stroke-width="1.1" />
-                          <text x="0" y="0.8" text-anchor="middle" dominant-baseline="central" font-size="4.5" fill="#fdba74" font-weight="900">⛽</text>
+                          <circle cx="0" cy="0" r="3.8" fill="#451a03" stroke="#f97316" stroke-width="1.1" />
+                          <Icon name="fuel-empty" size={5.2} x={-2.6} y={-2.6} color="#fdba74" strokeWidth={2.2} />
                         </g>
                       {/if}
 
                       <!-- Blitzkrieg Spearhead Indicator (HEGEM-25) -->
                       {#if tState.blitzkriegAvailable}
                         <g transform="translate(13.5, 4.5)" pointer-events="none">
-                          <circle cx="0" cy="0" r="3.6" fill="#422006" stroke="#eab308" stroke-width="1.1" />
-                          <text x="0" y="0.8" text-anchor="middle" dominant-baseline="central" font-size="5" fill="#fef08a" font-weight="900">⚡</text>
+                          <circle cx="0" cy="0" r="3.8" fill="#422006" stroke="#eab308" stroke-width="1.1" />
+                          <Icon name="blitzkrieg" size={5.2} x={-2.6} y={-2.6} color="#fef08a" strokeWidth={2.2} />
                         </g>
                       {/if}
 
@@ -1726,7 +1741,7 @@
                         pointer-events="none"
                         style="paint-order: stroke; stroke: #050912; stroke-width: 2.4px; stroke-linejoin: round;"
                       >
-                        {isCapital ? `⭐ ${getTerritoryName(t.id)}` : getTerritoryName(t.id)}
+                        {getTerritoryName(t.id)}
                       </text>
 
                       <!-- Structural Indicators (Dots for constructed infrastructure) -->
@@ -1808,7 +1823,7 @@
 
     <!-- FLOATING SUPREME COMMAND HUD LAYER -->
     <div class="hud-layer">
-      <!-- ⚡ REAL-TIME TREATY PROPOSALS TOAST -->
+      <!-- REAL-TIME TREATY PROPOSALS TOAST -->
       {#if incomingTreatyProposals.length > 0}
         <div class="treaty-notifications-layer">
           {#each incomingTreatyProposals as prop}
@@ -2052,7 +2067,7 @@
               {#if activeCoalitionAgainstTarget && activeCoalitionAgainstTarget.memberPlayerIds.length >= 2}
                 {@const bonus = (activeDiplomacyTarget.infamy ?? 0) >= 100 && activeCoalitionAgainstTarget.memberPlayerIds.length >= 3 ? 2 : 1}
                 <div class="hegemon-bonus-banner">
-                  <span>⭐ Mobilização Total Hegemon: +{bonus} nos dados contra membros da coalizão</span>
+                  <span><Icon name="capital" size={12} /> Mobilização Total Hegemon: +{bonus} nos dados contra membros da coalizão</span>
                 </div>
               {/if}
             </div>
@@ -2102,12 +2117,13 @@
                   <span title={t("divisions", { count: m.totalArmies })} class="stat-pill">D: {m.totalArmies}</span>
                   <span title={t("cards_title")} class="stat-pill">C: {m.player.cards.length}</span>
                   {#if (m.player.infamy ?? 0) > 0}
-                    <span title="Infâmia do General" class="stat-pill infamy-pill">🔥 {m.player.infamy}%</span>
+                    <span title="Infâmia do General" class="stat-pill infamy-pill"><Icon name="infamy" size={11} /> {m.player.infamy}%</span>
                   {/if}
                   {#if m.player.id !== myPlayerId && !m.player.eliminated}
                     <button
                       class="btn-diplomacy-icon"
                       class:active={activeDiplomacyTargetId === m.player.id}
+                      aria-label="Dossiê Diplomático com {m.player.name}"
                       title="Dossiê Diplomático com {m.player.name}"
                       onclick={() => (activeDiplomacyTargetId = activeDiplomacyTargetId === m.player.id ? null : m.player.id)}
                     >
@@ -2124,7 +2140,7 @@
         <div class="continents-toggle-row">
           <button class="btn-ghost" onclick={() => (showContinents = !showContinents)}>
             <span><Icon name="globe" size={14} /> {t("theatres_and_bonuses")}</span>
-            <span>{showContinents ? "▲" : "▼"}</span>
+            <Icon name={showContinents ? "chevron-up" : "chevron-down"} size={14} />
           </button>
         </div>
 
@@ -2280,6 +2296,7 @@
             <button
               class="hud-btn btn-exit-room"
               onclick={leaveCurrentRoom}
+              aria-label={t("victory_return_btn")}
               title={t("victory_return_btn")}
             >
               <Icon name="back" size={14} />
@@ -2368,9 +2385,15 @@
           </div>
 
           <div class="zoom-cluster">
-            <button class="tool-btn" onclick={zoomIn} title="Aproximar (+)">+</button>
-            <button class="tool-btn" onclick={zoomOut} title="Afastar (Q)">-</button>
-            <button class="tool-btn" onclick={resetZoom} title="Centralizar Mapa">RST</button>
+            <button class="tool-btn" onclick={zoomIn} aria-label="Aproximar (+)" title="Aproximar (+)">
+              <Icon name="plus" size={13} />
+            </button>
+            <button class="tool-btn" onclick={zoomOut} aria-label="Afastar (Q)" title="Afastar (Q)">
+              <Icon name="minus" size={13} />
+            </button>
+            <button class="tool-btn" onclick={resetZoom} aria-label="Centralizar Mapa" title="Centralizar Mapa">
+              <Icon name="reset" size={13} />
+            </button>
           </div>
         </div>
         {/if}
@@ -2380,7 +2403,9 @@
           <div class="floating-drawer music-drawer">
             <div class="drawer-header">
               <h4><Icon name="radio" size={15} /> Equalizador & Rádio Militar</h4>
-              <button class="btn-close" onclick={() => (activeRightDrawer = null)}>✕</button>
+              <button class="btn-close" aria-label={t("close")} title={t("close")} onclick={() => (activeRightDrawer = null)}>
+                <Icon name="close" size={14} />
+              </button>
             </div>
             <div class="radio-controls">
               <div class="radio-top-btns">
@@ -2450,7 +2475,9 @@
           <div class="floating-drawer objective-drawer">
             <div class="drawer-header">
               <h4><Icon name="target" size={15} /> Diretriz Secreta de Alto Comando</h4>
-              <button class="btn-close" onclick={() => (activeRightDrawer = null)}>✕</button>
+              <button class="btn-close" aria-label={t("close")} title={t("close")} onclick={() => (activeRightDrawer = null)}>
+                <Icon name="close" size={14} />
+              </button>
             </div>
             <p class="objective-body">{getObjectiveDescription(myPlayerState.objective.id)}</p>
             {#if objectiveProgress}
@@ -2490,7 +2517,9 @@
           <div class="floating-drawer hud-drawer">
             <div class="drawer-header">
               <h4><Icon name="eye" size={15} /> Personalização da Interface (HUD)</h4>
-              <button class="btn-close" onclick={() => (showHudManager = false)}>✕</button>
+              <button class="btn-close" aria-label={t("close")} title={t("close")} onclick={() => (showHudManager = false)}>
+                <Icon name="close" size={14} />
+              </button>
             </div>
 
             <div class="hud-immersive-box">
@@ -2571,7 +2600,9 @@
           <div class="floating-drawer cards-drawer">
             <div class="drawer-header">
               <h4><Icon name="cards" size={15} /> {t("cards_count", { count: myPlayerState.cards.length })}</h4>
-              <button class="btn-close" onclick={() => (activeRightDrawer = null)}>✕</button>
+              <button class="btn-close" aria-label={t("close")} title={t("close")} onclick={() => (activeRightDrawer = null)}>
+                <Icon name="close" size={14} />
+              </button>
             </div>
 
             <div class="escalation-banner">
@@ -2583,6 +2614,16 @@
               {#each myPlayerState.cards as c}
                 <div class="card-item">
                   <span class="card-symbol">
+                    <Icon
+                      name={c.symbol === "circle"
+                        ? "infantry"
+                        : c.symbol === "square"
+                          ? "tank"
+                          : c.symbol === "triangle"
+                            ? "artillery"
+                            : "star"}
+                      size={12}
+                    />
                     {c.symbol === "circle"
                       ? t("card_symbol_circle")
                       : c.symbol === "square"
@@ -2654,7 +2695,9 @@
           <div class="floating-drawer market-drawer">
             <div class="drawer-header">
               <h4><Icon name="market" size={15} /> {t("market_modal_title")}</h4>
-              <button class="btn-close" onclick={() => (activeRightDrawer = null)}>✕</button>
+              <button class="btn-close" aria-label={t("close")} title={t("close")} onclick={() => (activeRightDrawer = null)}>
+                <Icon name="close" size={14} />
+              </button>
             </div>
             <p class="drawer-sub">{t("market_modal_sub")}</p>
 
@@ -2875,12 +2918,12 @@
             </div>
             {#if inspectedTerritory.owner?.capitalTerritoryId === inspectedTerritory.def.id}
               <div class="recon-capital-tag gold">
-                {t("capital_national")}
+                <Icon name="capital" size={12} /> {t("capital_national")}
               </div>
             {:else if game.players.some((p) => p.capitalTerritoryId === inspectedTerritory.def.id)}
               {@const origOwner = game.players.find((p) => p.capitalTerritoryId === inspectedTerritory.def.id)}
               <div class="recon-capital-tag red">
-                {t("capital_captured", { name: origOwner?.name ?? "" })}
+                <Icon name="capital-fallen" size={12} /> {t("capital_captured", { name: origOwner?.name ?? "" })}
               </div>
             {/if}
             <div class="recon-meta">
@@ -3119,12 +3162,15 @@
                     <button class="preset-btn" onclick={() => (sliderArmies = maxD)}>
                       {t("total")} ({maxD})
                     </button>
-                    <button class="preset-btn" onclick={() => (selectedFromId = null)}>✕</button>
+                    <button class="preset-btn" aria-label={t("close")} title={t("close")} onclick={() => (selectedFromId = null)}>
+                      <Icon name="close" size={12} />
+                    </button>
                   </div>
                 </div>
                 {#if fromTerr?.isEncircled}
-                  <div style="margin: 4px 0 8px; font-size: 0.8rem; color: #f87171; background: rgba(220, 38, 38, 0.2); padding: 4px 8px; border-radius: 4px; border: 1px solid rgba(239, 68, 68, 0.4);">
-                    📦❌ <strong>Território sob Cerco Militar:</strong> Sem conexão com a Capital. Reforços bloqueados!
+                  <div class="tactical-intel-alert danger">
+                    <Icon name="supply-cut" size={14} />
+                    <span><strong>Território sob Cerco Militar:</strong> Sem conexão com a Capital. Reforços bloqueados!</span>
                   </div>
                 {/if}
                 <div class="slider-row">
@@ -3135,11 +3181,11 @@
                       title={t("capital_select_hint")}
                       onclick={() => sendAction({ type: "select_capital", territoryId: selectedFromId })}
                     >
-                      {t("capital_select_btn")}
+                      <Icon name="capital" size={13} /> {t("capital_select_btn")}
                     </button>
                   {/if}
                   <button class="btn primary-gold" disabled={fromTerr?.isEncircled} onclick={confirmDeploy}>
-                    {t("deploy_confirm", { count: sliderArmies })}
+                    <Icon name="phase-deploy" size={14} /> {t("deploy_confirm", { count: sliderArmies })}
                   </button>
                 </div>
               </div>
@@ -3167,27 +3213,32 @@
 
                 <!-- Tactical Logistics & Support Intel -->
                 {#if toTerr.isEncircled}
-                  <div style="margin: 4px 0; font-size: 0.8rem; color: #fca5a5; background: rgba(185, 28, 28, 0.25); padding: 4px 8px; border-radius: 4px; border: 1px solid rgba(239, 68, 68, 0.35);">
-                    📦 <strong>Defensor Sob Cerco:</strong> Penalidade de -{(toTerr.encircledRounds ?? 1) >= 2 ? 2 : 1} no dado de defesa.
+                  <div class="tactical-intel-alert danger">
+                    <Icon name="supply-cut" size={14} />
+                    <span><strong>Defensor Sob Cerco:</strong> Penalidade de -{(toTerr.encircledRounds ?? 1) >= 2 ? 2 : 1} no dado de defesa.</span>
                   </div>
                 {/if}
                 {#if fromTerr.outOfFuel}
-                  <div style="margin: 4px 0; font-size: 0.8rem; color: #fdba74; background: rgba(194, 65, 12, 0.25); padding: 4px 8px; border-radius: 4px; border: 1px solid rgba(249, 115, 22, 0.35);">
-                    ⛽ <strong>Sem Petróleo:</strong> Blindados imobilizados e sem re-rolagem de 1s.
+                  <div class="tactical-intel-alert warning">
+                    <Icon name="fuel-empty" size={14} />
+                    <span><strong>Sem Petróleo:</strong> Blindados imobilizados e sem re-rolagem de 1s.</span>
                   </div>
                 {/if}
                 {#if fromTerr.blitzkriegAvailable}
-                  <div style="margin: 4px 0; font-size: 0.8rem; color: #fde047; background: rgba(202, 138, 4, 0.25); padding: 4px 8px; border-radius: 4px; border: 1px solid rgba(234, 179, 8, 0.35);">
-                    ⚡ <strong>Blitzkrieg Ativo:</strong> Blindados sobreviventes podem liderar este segundo ataque imediato!
+                  <div class="tactical-intel-alert gold">
+                    <Icon name="blitzkrieg" size={14} />
+                    <span><strong>Blitzkrieg Ativo:</strong> Blindados sobreviventes podem liderar este segundo ataque imediato!</span>
                   </div>
                 {/if}
                 {#if navalCheck?.isBlockaded}
-                  <div style="margin: 4px 0; font-size: 0.8rem; color: #f87171; background: rgba(220, 38, 38, 0.25); padding: 4px 8px; border-radius: 4px; border: 1px solid rgba(239, 68, 68, 0.45);">
-                    🚫 <strong>Bloqueio Naval:</strong> Frota inimiga ({navalCheck.defenderNavy} vs {navalCheck.attackerNavy}) impede o desembarque anfíbio.
+                  <div class="tactical-intel-alert danger">
+                    <Icon name="blockade" size={14} />
+                    <span><strong>Bloqueio Naval:</strong> Frota inimiga ({navalCheck.defenderNavy} vs {navalCheck.attackerNavy}) impede o desembarque anfíbio.</span>
                   </div>
                 {:else if navalCheck && navalCheck.attackerNavy > 0}
-                  <div style="margin: 4px 0; font-size: 0.8rem; color: #38bdf8; background: rgba(2, 132, 199, 0.25); padding: 4px 8px; border-radius: 4px; border: 1px solid rgba(56, 189, 248, 0.35);">
-                    ⚓ <strong>Bombardeio Costeiro:</strong> Frotas aliadas no Porto concedem +1 ao dado mais alto!
+                  <div class="tactical-intel-alert info">
+                    <Icon name="anchor" size={14} />
+                    <span><strong>Bombardeio Costeiro:</strong> Frotas aliadas no Porto concedem +1 ao dado mais alto!</span>
                   </div>
                 {/if}
 
@@ -3243,41 +3294,41 @@
                 {/if}
 
                 {#if canArtillery || canAir}
-                  <div style="display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px;">
+                  <div class="support-missions-row">
                     {#if canArtillery}
                       <button
-                        class="btn secondary-btn"
-                        style="font-size: 0.78rem; padding: 4px 8px;"
+                        class="btn secondary-btn support-mission-btn"
                         title="Disparo de saturação sem contra-ataque: 4+ degrada fortaleza ou destrói unidades"
                         onclick={confirmArtilleryBarrage}
                       >
-                        🎯 Barragem de Artilharia ({fromUnits.artillery})
+                        <Icon name="artillery" size={13} />
+                        <span>Barragem de Artilharia ({fromUnits.artillery})</span>
                       </button>
                     {/if}
                     {#if canAir}
                       <button
-                        class="btn secondary-btn"
-                        style="font-size: 0.78rem; padding: 4px 8px;"
+                        class="btn secondary-btn support-mission-btn"
                         title="Apoio Aéreo Aproximado: +1 dado no próximo ataque a este território"
                         onclick={() => confirmAirMission("cas")}
                       >
-                        ✈️ Apoio Aéreo (CAS)
+                        <Icon name="aircraft" size={13} />
+                        <span>Apoio Aéreo (CAS)</span>
                       </button>
                       <button
-                        class="btn secondary-btn"
-                        style="font-size: 0.78rem; padding: 4px 8px;"
+                        class="btn secondary-btn support-mission-btn"
                         title="Bombardeio Estratégico: 5+ degrada construções inimigas"
                         onclick={() => confirmAirMission("bombardment")}
                       >
-                        💣 Bombardeio Estratégico
+                        <Icon name="bombardment" size={13} />
+                        <span>Bombardeio Estratégico</span>
                       </button>
                       <button
-                        class="btn secondary-btn"
-                        style="font-size: 0.78rem; padding: 4px 8px;"
+                        class="btn secondary-btn support-mission-btn"
                         title="Reconhecimento Aéreo: revela dados secretos e espionagem"
                         onclick={() => confirmAirMission("recon")}
                       >
-                        🔭 Reconhecimento
+                        <Icon name="recon-plane" size={13} />
+                        <span>Reconhecimento</span>
                       </button>
                     {/if}
                   </div>
@@ -3299,7 +3350,7 @@
                     disabled={selectedUnitTotal < 1 || (navalCheck?.isBlockaded ?? false)}
                     onclick={confirmAttack}
                   >
-                    <Icon name="swords" size={15} /> {t("combat_execute")}
+                    <Icon name="phase-attack" size={15} /> {t("combat_execute")}
                   </button>
                 </div>
               </div>
@@ -3319,9 +3370,13 @@
                 <div class="popup-head">
                   <h4>
                     {#if isAirlift}
-                      <Icon name="airfield" size={14} /> {t("airlift_btn_label")} ({getTerritoryName(selectedFromId)} → {getTerritoryName(selectedToId)})
+                      <Icon name="airfield" size={14} />
+                      <span>{t("airlift_btn_label")} ({getTerritoryName(selectedFromId)}</span>
+                      <Icon name="arrow-right" size={12} />
+                      <span>{getTerritoryName(selectedToId)})</span>
                     {:else}
-                      {t("maneuver_prompt", { from: getTerritoryName(selectedFromId), to: getTerritoryName(selectedToId) })}
+                      <Icon name="phase-maneuver" size={14} />
+                      <span>{t("maneuver_prompt", { from: getTerritoryName(selectedFromId), to: getTerritoryName(selectedToId) })}</span>
                     {/if}
                   </h4>
                   <div class="quick-presets">
@@ -3331,12 +3386,14 @@
                     {/if}
                     <button
                       class="preset-btn"
+                      aria-label={t("close")}
+                      title={t("close")}
                       onclick={() => {
                         selectedFromId = null;
                         selectedToId = null;
                       }}
                     >
-                      ✕
+                      <Icon name="close" size={12} />
                     </button>
                   </div>
                 </div>
@@ -3358,7 +3415,7 @@
                     disabled={selectedUnitTotal < 1}
                     onclick={confirmManeuver}
                   >
-                    {t("maneuver_transfer", { count: selectedUnitTotal })}
+                    <Icon name="phase-maneuver" size={14} /> {t("maneuver_transfer", { count: selectedUnitTotal })}
                   </button>
                 {/if}
               </div>
@@ -3366,38 +3423,49 @@
           {/if}
         {/if}
 
-        <!-- 1 - 2 - 3 Step Phase Navigator -->
+        <!-- 1 - 2 - 3 Step Phase Navigator (Structurally Decoupled from Conditional Action Slot) -->
         <div class="phase-stepper-row">
-          <div class="phase-step" class:active-phase={game.phase === "deploy"}>
-            <span class="num">1</span>
-            <span class="label">{t("phase_deploy")}</span>
-          </div>
-          <div class="phase-arrow">›</div>
-          <div class="phase-step" class:active-phase={game.phase === "attack"}>
-            <span class="num">2</span>
-            <span class="label">{t("phase_attack")}</span>
-          </div>
-          <div class="phase-arrow">›</div>
-          <div class="phase-step" class:active-phase={game.phase === "maneuver"}>
-            <span class="num">3</span>
-            <span class="label">{t("phase_maneuver")}</span>
+          <div class="phase-balance-slot" aria-hidden="true"></div>
+
+          <div class="phase-steps-group" role="group" aria-label="Turn Phases">
+            <div class="phase-step" class:active-phase={game.phase === "deploy"} title={t("phase_deploy_desc")}>
+              <span class="num">1</span>
+              <span class="step-icon"><Icon name="phase-deploy" size={14} /></span>
+              <span class="label">{t("phase_deploy")}</span>
+            </div>
+            <div class="phase-arrow" aria-hidden="true">
+              <Icon name="chevron-right" size={13} />
+            </div>
+            <div class="phase-step" class:active-phase={game.phase === "attack"} title={t("phase_attack_desc")}>
+              <span class="num">2</span>
+              <span class="step-icon"><Icon name="phase-attack" size={14} /></span>
+              <span class="label">{t("phase_attack")}</span>
+            </div>
+            <div class="phase-arrow" aria-hidden="true">
+              <Icon name="chevron-right" size={13} />
+            </div>
+            <div class="phase-step" class:active-phase={game.phase === "maneuver"} title={t("phase_maneuver_desc")}>
+              <span class="num">3</span>
+              <span class="step-icon"><Icon name="phase-maneuver" size={14} /></span>
+              <span class="label">{t("phase_maneuver")}</span>
+            </div>
           </div>
 
-          {#if isMyTurn && !game.winnerId}
-            {#if (game.phase === "attack" && !game.pendingConquest) || game.phase === "maneuver"}
-              <div class="phase-action-slot">
-                {#if game.phase === "attack" && !game.pendingConquest}
-                  <button class="btn secondary" onclick={() => sendAction({ type: "end_attack" })}>
-                    {t("advance_to_maneuver")}
-                  </button>
-                {:else if game.phase === "maneuver"}
-                  <button class="btn primary-gold" onclick={() => sendAction({ type: "end_turn" })}>
-                    <Icon name="check" size={15} /> {t("end_turn")}
-                  </button>
-                {/if}
-              </div>
+          <div class="phase-action-slot">
+            {#if isMyTurn && !game.winnerId}
+              {#if game.phase === "attack" && !game.pendingConquest}
+                <button class="btn secondary phase-cta-btn" onclick={() => sendAction({ type: "end_attack" })}>
+                  <span>{t("advance_to_maneuver")}</span>
+                  <Icon name="chevron-right" size={14} />
+                </button>
+              {:else if game.phase === "maneuver"}
+                <button class="btn primary-gold phase-cta-btn" onclick={() => sendAction({ type: "end_turn" })}>
+                  <Icon name="check" size={15} />
+                  <span>{t("end_turn")}</span>
+                </button>
+              {/if}
             {/if}
-          {/if}
+          </div>
         </div>
       </footer>
       {/if}
@@ -3727,6 +3795,9 @@
     background: rgba(239, 68, 68, 0.22);
     color: #fca5a5;
     border: 1px solid rgba(239, 68, 68, 0.45);
+    display: inline-flex;
+    align-items: center;
+    gap: 0.2rem;
   }
   .btn-diplomacy-icon {
     background: rgba(212, 175, 55, 0.15);
@@ -4115,6 +4186,11 @@
     color: #fde047;
     text-align: center;
   }
+  .hegemon-bonus-banner span {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+  }
 
   /* Floating Real-time Treaty Proposals Toast Banner */
   .treaty-notifications-layer {
@@ -4492,14 +4568,17 @@
     background: rgba(5, 9, 18, 0.85);
     border: 1px solid rgba(148, 163, 184, 0.25);
     color: #cbd5e1;
-    min-width: 25px;
-    height: 18px;
-    padding: 0 0.32rem;
+    min-width: 26px;
+    height: 20px;
+    padding: 0 0.28rem;
     border-radius: 3px;
     font-family: var(--font-mono);
     font-size: 0.65rem;
     font-weight: 700;
     cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     transition: all 0.15s ease;
   }
   .tool-btn:hover {
@@ -4810,10 +4889,20 @@
   }
   .btn-close {
     background: transparent;
-    border: none;
+    border: 1px solid transparent;
+    border-radius: 4px;
     color: #94a3b8;
-    padding: 2px 6px;
-    font-size: 0.85rem;
+    width: 24px;
+    height: 24px;
+    padding: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .btn-close:hover {
+    color: #f8fafc;
+    background: rgba(148, 163, 184, 0.14);
+    border-color: rgba(148, 163, 184, 0.28);
   }
   .objective-body {
     font-size: 0.82rem;
@@ -4900,6 +4989,9 @@
     font-family: var(--font-tactical);
     font-weight: 800;
     color: #eab308;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.32rem;
   }
   .empty-cards-note {
     font-size: 0.74rem;
@@ -5006,6 +5098,7 @@
     letter-spacing: 0.02em;
     display: inline-flex;
     align-items: center;
+    gap: 0.3rem;
     width: fit-content;
   }
   .recon-capital-tag.gold {
@@ -5087,7 +5180,7 @@
     bottom: 0.75rem;
     transform: translateX(-50%);
     z-index: 25;
-    width: min(calc(100vw - 2rem), 620px);
+    width: min(calc(100vw - 2rem), 680px);
     margin: 0;
   }
   .action-popup {
@@ -5127,11 +5220,59 @@
     font-family: var(--font-mono);
     font-size: 0.68rem;
     font-weight: 700;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
   }
   .preset-btn.active {
     background: rgba(202, 138, 4, 0.25);
     border-color: #fde047;
     color: #fef08a;
+  }
+
+  .tactical-intel-alert {
+    margin: 2px 0;
+    font-size: 0.76rem;
+    padding: 5px 8px;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    gap: 0.42rem;
+    line-height: 1.3;
+  }
+  .tactical-intel-alert.danger {
+    color: #fca5a5;
+    background: rgba(185, 28, 28, 0.24);
+    border: 1px solid rgba(239, 68, 68, 0.4);
+  }
+  .tactical-intel-alert.warning {
+    color: #fdba74;
+    background: rgba(194, 65, 12, 0.24);
+    border: 1px solid rgba(249, 115, 22, 0.4);
+  }
+  .tactical-intel-alert.gold {
+    color: #fde047;
+    background: rgba(202, 138, 4, 0.24);
+    border: 1px solid rgba(234, 179, 8, 0.4);
+  }
+  .tactical-intel-alert.info {
+    color: #38bdf8;
+    background: rgba(2, 132, 199, 0.24);
+    border: 1px solid rgba(56, 189, 248, 0.4);
+  }
+
+  .support-missions-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 4px;
+  }
+  .support-mission-btn {
+    font-size: 0.74rem;
+    padding: 4px 8px;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.32rem;
   }
 
   .slider-row {
@@ -5196,56 +5337,102 @@
     gap: 0.45rem;
   }
 
-  /* Passos 1 - 2 - 3 sempre centralizados no Console de Ordens */
+  /* Passos 1 - 2 - 3 sempre centralizados e imunes à presença de botões condicionais (HEGEM-63) */
   .phase-stepper-row {
-    display: flex;
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
     align-items: center;
-    justify-content: center;
-    gap: 0.55rem;
-    flex-wrap: wrap;
+    gap: 0.5rem;
+    width: 100%;
+    min-height: 34px;
+  }
+  .phase-balance-slot {
+    min-width: 0;
+  }
+  .phase-steps-group {
+    display: inline-grid;
+    grid-template-columns: minmax(112px, 1fr) auto minmax(112px, 1fr) auto minmax(112px, 1fr);
+    align-items: center;
+    justify-items: stretch;
+    gap: 0.32rem;
   }
   .phase-step {
-    display: flex;
+    display: inline-flex;
     align-items: center;
-    gap: 0.35rem;
-    padding: 0.32rem 0.65rem;
+    justify-content: center;
+    gap: 0.32rem;
+    padding: 0.32rem 0.55rem;
     border-radius: 4px;
-    background: rgba(5, 9, 18, 0.75);
+    background: rgba(5, 9, 18, 0.82);
     color: #64748b;
     font-family: var(--font-tactical);
-    font-size: 0.76rem;
+    font-size: 0.74rem;
     font-weight: 700;
     letter-spacing: 0.04em;
     text-transform: uppercase;
-    border: 1px solid transparent;
+    border: 1px solid rgba(148, 163, 184, 0.14);
+    white-space: nowrap;
+    line-height: 1;
+    transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
   }
   .phase-step .num {
-    width: 18px;
-    height: 18px;
+    width: 17px;
+    height: 17px;
     border-radius: 3px;
     background: #1e293b;
+    color: #94a3b8;
     font-family: var(--font-mono);
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    font-size: 0.68rem;
+    font-size: 0.66rem;
+    flex-shrink: 0;
+  }
+  .phase-step .step-icon {
+    width: 15px;
+    height: 15px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    opacity: 0.85;
+  }
+  .phase-step .label {
+    display: inline-block;
+    line-height: 1;
   }
   .phase-step.active-phase {
     background: rgba(234, 179, 8, 0.16);
     color: #fef08a;
-    border-color: rgba(234, 179, 8, 0.55);
+    border-color: rgba(234, 179, 8, 0.58);
+    box-shadow: 0 0 12px rgba(234, 179, 8, 0.14);
   }
   .phase-step.active-phase .num {
     background: #eab308;
     color: #090d16;
   }
+  .phase-step.active-phase .step-icon {
+    opacity: 1;
+    color: #fde047;
+  }
   .phase-arrow {
     color: #475569;
-    font-size: 0.95rem;
-    font-weight: 700;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 14px;
   }
   .phase-action-slot {
-    margin-left: 0.35rem;
+    justify-self: end;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    min-width: 0;
+  }
+  .phase-cta-btn {
+    padding: 0.36rem 0.68rem;
+    font-size: 0.72rem;
+    white-space: nowrap;
   }
 
   .btn {
@@ -5740,7 +5927,10 @@
       max-width: 440px;
     }
     .bottom-center-dock {
-      width: min(calc(100vw - 2rem), 520px);
+      width: min(calc(100vw - 2rem), 620px);
+    }
+    .phase-steps-group {
+      grid-template-columns: minmax(98px, 1fr) auto minmax(98px, 1fr) auto minmax(98px, 1fr);
     }
   }
 
@@ -5768,8 +5958,11 @@
       margin-bottom: 3.6rem;
     }
     .bottom-center-dock {
-      width: min(calc(100vw - 1.5rem), 490px);
+      width: min(calc(100vw - 1.5rem), 560px);
       bottom: 0.5rem;
+    }
+    .phase-steps-group {
+      grid-template-columns: minmax(88px, 1fr) auto minmax(88px, 1fr) auto minmax(88px, 1fr);
     }
     .tool-btn {
       min-width: 30px;
@@ -5795,7 +5988,18 @@
       font-size: 0.66rem;
     }
     .bottom-center-dock {
-      width: min(calc(100vw - 1rem), 440px);
+      width: min(calc(100vw - 1rem), 480px);
+    }
+    .phase-stepper-row {
+      grid-template-columns: 1fr;
+      justify-items: center;
+      gap: 0.35rem;
+    }
+    .phase-balance-slot {
+      display: none;
+    }
+    .phase-action-slot {
+      justify-self: center;
     }
     .phase-step {
       padding: 0.25rem 0.45rem;

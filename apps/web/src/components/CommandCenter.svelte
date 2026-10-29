@@ -242,7 +242,8 @@
                 <h3>{t("deck_honor_title")}</h3>
               </div>
               <button class="text-gold-btn" onclick={() => navigate("/leaderboard")}>
-                {t("deck_btn_full_ranking")}
+                <span>{t("deck_btn_full_ranking")}</span>
+                <Icon name="chevron-right" size={14} />
               </button>
             </div>
 
