@@ -1205,3 +1205,57 @@ export const ALL_OBJECTIVES: ObjectiveCard[] = [
   ...CLASSIC_OBJECTIVES,
   ...ROLEPLAY_OBJECTIVES,
 ];
+
+/**
+ * 21 Direct Intra-Tile Strategic Maritime Connections
+ */
+export const DIRECT_SEA_LINKS: [string, string][] = [
+  ["brasil", "argelia"],
+  ["argentina", "africa_do_sul"],
+  ["california", "havai"],
+  ["groenlandia", "islandia"],
+  ["inglaterra", "islandia"],
+  ["inglaterra", "suecia"],
+  ["inglaterra", "franca"],
+  ["inglaterra", "alemanha"],
+  ["franca", "argelia"],
+  ["franca", "egito"],
+  ["balcas", "egito"],
+  ["sudao", "madagascar"],
+  ["africa_do_sul", "madagascar"],
+  ["india", "sumatra"],
+  ["sumatra", "australia"],
+  ["vietna", "borneu"],
+  ["borneu", "australia"],
+  ["borneu", "nova_guine"],
+  ["nova_guine", "australia"],
+  ["vladivostok", "japao"],
+  ["china", "japao"],
+];
+
+/**
+ * 4 Trans-Pacific Wraparound Maritime Routes
+ */
+export const PACIFIC_WRAP_LINKS: [string, string][] = [
+  ["alasca", "vladivostok"],
+  ["havai", "japao"],
+  ["havai", "nova_guine"],
+  ["argentina", "australia"],
+];
+
+/**
+ * All 25 Strategic Maritime Links
+ */
+export const ALL_SEA_LINKS: [string, string][] = [
+  ...DIRECT_SEA_LINKS,
+  ...PACIFIC_WRAP_LINKS,
+];
+
+/**
+ * Checks whether an adjacency between two territories crosses an ocean/sea lane.
+ */
+export function isSeaLink(territoryA: string, territoryB: string): boolean {
+  return ALL_SEA_LINKS.some(
+    ([a, b]) => (a === territoryA && b === territoryB) || (a === territoryB && b === territoryA)
+  );
+}

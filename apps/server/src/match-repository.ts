@@ -306,6 +306,11 @@ async function finalizeMatch(
     const eloResidual = observedWin - expectedWinRate;
     const progress = calculateObjectiveProgress(state, player.id);
 
+    const analytics = player.analytics;
+    const fuelStarvationRate = analytics
+      ? Number((analytics.fuelStarvationTurns / Math.max(1, state.round)).toFixed(4))
+      : 0;
+
     const statsJson = {
       objectiveId: player.objective?.id ?? null,
       objectiveType: player.objective?.rule?.type ?? null,
@@ -319,6 +324,17 @@ async function finalizeMatch(
       winVelocityRounds: state.round,
       worldTensionFinal: state.worldTension ?? 0,
       infamyFinal: player.infamy ?? 0,
+      // Geoeconomic telemetry & continental balance (Task #59)
+      capitalContinentId: analytics?.capitalContinentId ?? null,
+      fuelStarvationTurns: analytics?.fuelStarvationTurns ?? 0,
+      fuelStarvationRate,
+      encircledRoundsCount: analytics?.encircledRoundsCount ?? 0,
+      totalMoneyEarned: analytics?.totalMoneyEarned ?? 0,
+      buildingsConstructed: analytics?.buildingsConstructed ?? null,
+      unitsRecruited: analytics?.unitsRecruited ?? null,
+      unitsLost: analytics?.unitsLost ?? null,
+      unificationRounds: analytics?.unificationRounds ?? {},
+      marketPricesFinal: state.marketPrices ?? null,
     };
 
     await client.query(
