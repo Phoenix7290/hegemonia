@@ -300,7 +300,7 @@
   }
 </script>
 
-<!-- ⚡ REAL-TIME TREATY PROPOSALS TOAST -->
+<!-- REAL-TIME TREATY PROPOSALS TOAST -->
 {#if incomingTreatyProposals.length > 0}
   <div class="treaty-notifications-layer">
     {#each incomingTreatyProposals as prop}
@@ -594,7 +594,7 @@
               <span title={t("divisions", { count: m.totalArmies })} class="stat-pill">D: {m.totalArmies}</span>
               <span title={t("cards_title")} class="stat-pill">C: {m.player.cards.length}</span>
               {#if (m.player.infamy ?? 0) > 0}
-                <span title="Infâmia do General" class="stat-pill infamy-pill">🔥 {m.player.infamy}%</span>
+                <span title="Infâmia do General" class="stat-pill infamy-pill"><Icon name="infamy" size={11} /> {m.player.infamy}%</span>
               {/if}
               {#if m.player.id !== myPlayerId && !m.player.eliminated}
                 <button
@@ -616,7 +616,7 @@
     <div class="continents-toggle-row">
       <button class="btn-ghost" onclick={() => (showContinents = !showContinents)}>
         <span><Icon name="globe" size={14} /> {t("theatres_and_bonuses")}</span>
-        <span>{showContinents ? "▲" : "▼"}</span>
+        <Icon name={showContinents ? "chevron-up" : "chevron-down"} size={14} />
       </button>
     </div>
 
@@ -872,7 +872,7 @@
       <div class="floating-drawer music-drawer">
         <div class="drawer-header">
           <h4><Icon name="radio" size={15} /> Equalizador & Rádio Militar</h4>
-          <button class="btn-close" onclick={() => (activeRightDrawer = null)}>✕</button>
+          <button class="btn-close" onclick={() => (activeRightDrawer = null)} aria-label={t("close")}><Icon name="close" size={14} /></button>
         </div>
         <div class="radio-controls">
           <div class="radio-top-btns">
@@ -942,7 +942,7 @@
       <div class="floating-drawer objective-drawer">
         <div class="drawer-header">
           <h4><Icon name="target" size={15} /> Diretriz Secreta de Alto Comando</h4>
-          <button class="btn-close" onclick={() => (activeRightDrawer = null)}>✕</button>
+          <button class="btn-close" onclick={() => (activeRightDrawer = null)} aria-label={t("close")}><Icon name="close" size={14} /></button>
         </div>
         <p class="objective-body">{getObjectiveDescription(myPlayerState.objective.id)}</p>
         {#if objectiveProgress}
@@ -982,7 +982,7 @@
       <div class="floating-drawer hud-drawer">
         <div class="drawer-header">
           <h4><Icon name="eye" size={15} /> Personalização da Interface (HUD)</h4>
-          <button class="btn-close" onclick={() => (showHudManager = false)}>✕</button>
+          <button class="btn-close" onclick={() => (showHudManager = false)} aria-label={t("close")}><Icon name="close" size={14} /></button>
         </div>
 
         <div class="hud-immersive-box">
@@ -1063,7 +1063,7 @@
       <div class="floating-drawer cards-drawer">
         <div class="drawer-header">
           <h4><Icon name="cards" size={15} /> {t("cards_count", { count: myPlayerState.cards.length })}</h4>
-          <button class="btn-close" onclick={() => (activeRightDrawer = null)}>✕</button>
+          <button class="btn-close" onclick={() => (activeRightDrawer = null)} aria-label={t("close")}><Icon name="close" size={14} /></button>
         </div>
 
         <div class="escalation-banner">
@@ -1146,7 +1146,7 @@
       <div class="floating-drawer market-drawer">
         <div class="drawer-header">
           <h4><Icon name="market" size={15} /> {t("market_modal_title")}</h4>
-          <button class="btn-close" onclick={() => (activeRightDrawer = null)}>✕</button>
+          <button class="btn-close" onclick={() => (activeRightDrawer = null)} aria-label={t("close")}><Icon name="close" size={14} /></button>
         </div>
         <p class="drawer-sub">{t("market_modal_sub")}</p>
 
