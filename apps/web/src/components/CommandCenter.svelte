@@ -320,72 +320,74 @@
         <div class="briefing-body-grid">
           <!-- LEFT: 6-SLOT COMMAND ROSTER & FACTION SELECTION -->
           <div class="briefing-main-col">
-            <div class="section-subhead">
-              <span>{t("lobby_roster_title")}</span>
-              <small>{t("lobby_roster_sub")}</small>
-            </div>
+            <div class="roster-block">
+              <div class="section-subhead">
+                <span>{t("lobby_roster_title")}</span>
+                <small>{t("lobby_roster_sub")}</small>
+              </div>
 
-            <div class="slots-grid">
-              {#each lobbyPlayers as p}
-                <div
-                  class="slot-card occupied"
-                  class:is-me={p.token === myPlayerId}
-                  style="border-left-color: var(--faction-{p.color}, #eab308);"
-                >
-                  <FactionFlag color={p.color} width={30} height={19} />
-                  <Avatar name={p.name} avatarUrl={p.avatarUrl ?? null} size="small" />
+              <div class="slots-grid">
+                {#each lobbyPlayers as p}
+                  <div
+                    class="slot-card occupied"
+                    class:is-me={p.token === myPlayerId}
+                    style="border-left-color: var(--faction-{p.color}, #eab308);"
+                  >
+                    <FactionFlag color={p.color} width={30} height={19} />
+                    <Avatar name={p.name} avatarUrl={p.avatarUrl ?? null} size="small" />
 
-                  <div class="slot-info">
-                    <div class="slot-name-row">
-                      <strong>{p.name}</strong>
-                      {#if p.token === myPlayerId}
-                        <span class="me-tag">{t("you")}</span>
+                    <div class="slot-info">
+                      <div class="slot-name-row">
+                        <strong>{p.name}</strong>
+                        {#if p.token === myPlayerId}
+                          <span class="me-tag">{t("you")}</span>
+                        {/if}
+                      </div>
+                      <small>
+                        {getFactionName(p.color)}
+                        {#if p.username} • @{p.username}{/if}
+                      </small>
+                    </div>
+
+                    <div class="slot-badges">
+                      {#if p.isHost}
+                        <span class="role-badge host"><Icon name="crown" size={12} /> {t("lobby_role_host")}</span>
+                      {:else if p.isBot}
+                        <span class="role-badge bot"><Icon name="bot" size={12} /> {t("lobby_role_bot")}</span>
+                      {:else}
+                        <span class="role-badge human">{t("lobby_role_human")}</span>
+                      {/if}
+
+                      {#if p.isBot && amIHost}
+                        <button
+                          class="remove-bot-btn"
+                          onclick={() => onRemoveBot(p.token)}
+                          title={t("lobby_btn_remove_bot")}
+                        >
+                          <Icon name="close" size={14} />
+                        </button>
                       {/if}
                     </div>
-                    <small>
-                      {getFactionName(p.color)}
-                      {#if p.username} • @{p.username}{/if}
-                    </small>
                   </div>
+                {/each}
 
-                  <div class="slot-badges">
-                    {#if p.isHost}
-                      <span class="role-badge host"><Icon name="crown" size={12} /> {t("lobby_role_host")}</span>
-                    {:else if p.isBot}
-                      <span class="role-badge bot"><Icon name="bot" size={12} /> {t("lobby_role_bot")}</span>
-                    {:else}
-                      <span class="role-badge human">{t("lobby_role_human")}</span>
-                    {/if}
-
-                    {#if p.isBot && amIHost}
-                      <button
-                        class="remove-bot-btn"
-                        onclick={() => onRemoveBot(p.token)}
-                        title={t("lobby_btn_remove_bot")}
-                      >
-                        <Icon name="close" size={14} />
+                {#each Array(emptySlotsCount) as _, idx}
+                  <div class="slot-card empty-slot">
+                    <div class="empty-slot-left">
+                      <span class="empty-slot-num">0{lobbyPlayers.length + idx + 1}</span>
+                      <div>
+                        <strong>{t("lobby_slot_available")}</strong>
+                        <small>{t("lobby_slot_waiting")}</small>
+                      </div>
+                    </div>
+                    {#if amIHost && idx === 0}
+                      <button class="outline-button mini-bot-btn" onclick={onAddBot}>
+                        <Icon name="bot" size={13} /> {t("lobby_btn_alloc_ai")}
                       </button>
                     {/if}
                   </div>
-                </div>
-              {/each}
-
-              {#each Array(emptySlotsCount) as _, idx}
-                <div class="slot-card empty-slot">
-                  <div class="empty-slot-left">
-                    <span class="empty-slot-num">0{lobbyPlayers.length + idx + 1}</span>
-                    <div>
-                      <strong>{t("lobby_slot_available")}</strong>
-                      <small>{t("lobby_slot_waiting")}</small>
-                    </div>
-                  </div>
-                  {#if amIHost && idx === 0}
-                    <button class="outline-button mini-bot-btn" onclick={onAddBot}>
-                      <Icon name="bot" size={13} /> {t("lobby_btn_alloc_ai")}
-                    </button>
-                  {/if}
-                </div>
-              {/each}
+                {/each}
+              </div>
             </div>
 
             <!-- Faction Flag & Color Selector -->
@@ -463,7 +465,7 @@
 
           <div class="footer-buttons">
             {#if amIHost && lobbyPlayers.length < 6}
-              <button class="outline-button" onclick={onAddBot}>
+              <button class="outline-button add-ai-btn" onclick={onAddBot}>
                 <Icon name="bot" size={16} /> {t("lobby_btn_add_ai")}
               </button>
             {/if}
@@ -490,22 +492,24 @@
     inset: 0;
     padding-top: 68px;
     overflow-y: auto;
+    overflow-x: hidden;
     z-index: 40;
     background:
       radial-gradient(circle at 50% 25%, rgba(16, 28, 52, 0.55) 0%, rgba(4, 8, 16, 0.92) 75%),
       url("/assets/war-room-bg.webp") center/cover no-repeat;
     display: flex;
+    flex-direction: column;
     align-items: center;
-    justify-content: center;
+    justify-content: flex-start;
   }
 
   .command-deck-container {
-    width: min(1180px, calc(100% - 36px));
+    width: min(1180px, calc(100% - 32px));
     margin: auto;
-    padding: 18px 0 36px;
+    padding: 20px 0 40px;
     display: flex;
     flex-direction: column;
-    gap: 20px;
+    gap: 22px;
   }
 
   /* Hero Emblem Lockup */
@@ -514,10 +518,10 @@
     flex-direction: column;
     align-items: center;
     text-align: center;
-    gap: 6px;
+    gap: 8px;
   }
   .hero-emblem-img {
-    height: clamp(115px, 16vh, 165px);
+    height: clamp(100px, 15vh, 155px);
     width: auto;
     object-fit: contain;
     filter: drop-shadow(0 12px 28px rgba(0, 0, 0, 0.92));
@@ -526,11 +530,11 @@
     font-family: var(--font-tactical);
     font-size: 0.76rem;
     font-weight: 700;
-    letter-spacing: 0.22em;
+    letter-spacing: 0.2em;
     color: #cbd5e1;
     text-shadow: 0 2px 8px rgba(0, 0, 0, 0.9);
     background: linear-gradient(90deg, transparent, rgba(9, 15, 28, 0.85) 20%, rgba(9, 15, 28, 0.85) 80%, transparent);
-    padding: 4px 24px;
+    padding: 5px 24px;
     border-top: 1px solid rgba(212, 175, 55, 0.3);
     border-bottom: 1px solid rgba(212, 175, 55, 0.3);
   }
@@ -538,7 +542,7 @@
   .deck-grid {
     display: grid;
     grid-template-columns: 1.12fr 0.88fr;
-    gap: 20px;
+    gap: 22px;
     align-items: stretch;
   }
 
@@ -547,7 +551,7 @@
     background: linear-gradient(165deg, rgba(13, 22, 39, 0.94) 0%, rgba(7, 12, 23, 0.97) 100%);
     border: 1px solid rgba(212, 175, 55, 0.42);
     border-radius: 8px;
-    padding: 24px;
+    padding: 26px 28px;
     box-shadow: 0 24px 60px rgba(0, 0, 0, 0.82), inset 0 1px 0 rgba(255, 255, 255, 0.07);
     backdrop-filter: blur(16px);
   }
@@ -562,23 +566,23 @@
     pointer-events: none;
   }
   .card-corner.tl {
-    top: 6px;
-    left: 6px;
+    top: 8px;
+    left: 8px;
     border-width: 2px 0 0 2px;
   }
   .card-corner.tr {
-    top: 6px;
-    right: 6px;
+    top: 8px;
+    right: 8px;
     border-width: 2px 2px 0 0;
   }
   .card-corner.bl {
-    bottom: 6px;
-    left: 6px;
+    bottom: 8px;
+    left: 8px;
     border-width: 0 0 2px 2px;
   }
   .card-corner.br {
-    bottom: 6px;
-    right: 6px;
+    bottom: 8px;
+    right: 8px;
     border-width: 0 2px 2px 0;
   }
 
@@ -586,7 +590,7 @@
     display: flex;
     flex-direction: column;
     justify-content: space-between;
-    gap: 18px;
+    gap: 20px;
   }
 
   .ops-header h2 {
@@ -630,6 +634,7 @@
   }
   .cid-badges {
     display: flex;
+    flex-wrap: wrap;
     gap: 6px;
     margin-bottom: 2px;
   }
@@ -710,9 +715,10 @@
     align-items: center;
     gap: 5px;
   }
-  .text-gold-btn:hover {
+  .text-gold-btn:hover:not(:disabled) {
     background: rgba(234, 179, 8, 0.12);
     color: #ffffff;
+    border-color: transparent;
   }
 
   /* Launch Campaign CTA */
@@ -731,6 +737,7 @@
   }
   .launch-campaign-btn:hover:not(:disabled) {
     background: linear-gradient(135deg, #eab308 0%, #a16207 100%);
+    border-color: #fef08a;
     transform: translateY(-1px);
     box-shadow: 0 14px 36px rgba(234, 179, 8, 0.45);
   }
@@ -826,12 +833,17 @@
     font-size: 0.85rem;
     text-transform: uppercase;
   }
+  .join-btn:hover:not(:disabled) {
+    background: linear-gradient(145deg, #26354d, #162238);
+    border-color: #fde047;
+    color: #ffffff;
+  }
 
   /* Side Column Cards */
   .deck-side-column {
     display: flex;
     flex-direction: column;
-    gap: 18px;
+    gap: 20px;
   }
   .intel-specs-grid {
     display: grid;
@@ -843,7 +855,7 @@
     display: flex;
     align-items: flex-start;
     gap: 10px;
-    padding: 11px;
+    padding: 12px;
     background: rgba(5, 9, 18, 0.68);
     border: 1px solid rgba(148, 163, 184, 0.16);
     border-radius: 5px;
@@ -875,15 +887,15 @@
   .mini-rank-list {
     display: flex;
     flex-direction: column;
-    gap: 6px;
-    margin-top: 12px;
+    gap: 8px;
+    margin-top: 14px;
   }
   .mini-rank-row {
     width: 100%;
     display: flex;
     align-items: center;
     gap: 10px;
-    padding: 8px 10px;
+    padding: 9px 12px;
     background: rgba(5, 9, 18, 0.72);
     border: 1px solid rgba(148, 163, 184, 0.16);
     border-radius: 5px;
@@ -934,17 +946,18 @@
   }
 
   /* ==========================================================================
-     PRE-GAME BRIEFING ROOM (LOBBY)
+     PRE-GAME BRIEFING ROOM (LOBBY) — REFINED SPACING & BUTTON HOVER
      ========================================================================== */
   .briefing-room-container {
-    width: min(1160px, calc(100% - 36px));
+    width: min(1180px, calc(100% - 32px));
     margin: auto;
-    padding: 20px 0 36px;
+    padding: 24px 0 40px;
   }
   .briefing-card {
     display: flex;
     flex-direction: column;
-    gap: 20px;
+    gap: 24px;
+    padding: 28px 32px;
   }
   .briefing-header {
     display: flex;
@@ -952,8 +965,8 @@
     align-items: center;
     flex-wrap: wrap;
     gap: 16px;
-    padding-bottom: 16px;
-    border-bottom: 1px solid rgba(212, 175, 55, 0.3);
+    padding-bottom: 18px;
+    border-bottom: 1px solid rgba(212, 175, 55, 0.28);
   }
   .briefing-title-group {
     display: flex;
@@ -968,12 +981,13 @@
   .op-code-row {
     display: flex;
     align-items: center;
+    flex-wrap: wrap;
     gap: 12px;
-    margin-top: 2px;
+    margin-top: 3px;
   }
   .op-code-row h2 {
     font-family: var(--font-display);
-    font-size: 1.55rem;
+    font-size: 1.5rem;
     color: #f8fafc;
   }
   .op-code-val {
@@ -985,22 +999,29 @@
     display: inline-flex;
     align-items: center;
     gap: 6px;
-    padding: 5px 10px;
+    height: 34px;
+    padding: 0 12px;
     font-size: 0.74rem;
     background: rgba(202, 138, 4, 0.16);
     border-color: rgba(234, 179, 8, 0.5);
     color: #fef08a;
   }
+  .copy-code-btn:hover:not(:disabled) {
+    background: rgba(234, 179, 8, 0.28);
+    border-color: #fde047;
+    color: #ffffff;
+  }
   .briefing-header-right {
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: 12px;
   }
   .capacity-pill {
     display: inline-flex;
     align-items: center;
     gap: 7px;
-    padding: 7px 12px;
+    height: 38px;
+    padding: 0 14px;
     background: rgba(5, 9, 18, 0.85);
     border: 1px solid rgba(148, 163, 184, 0.28);
     border-radius: 5px;
@@ -1016,27 +1037,36 @@
     display: inline-flex;
     align-items: center;
     gap: 6px;
+    height: 38px;
+    padding: 0 14px;
     background: rgba(127, 29, 29, 0.35);
     border-color: rgba(239, 68, 68, 0.45);
     color: #fca5a5;
     font-size: 0.78rem;
     text-transform: uppercase;
   }
-  .leave-room-btn:hover {
-    background: rgba(153, 27, 27, 0.6);
+  .leave-room-btn:hover:not(:disabled) {
+    background: rgba(153, 27, 27, 0.65);
     border-color: #f87171;
     color: #ffffff;
   }
 
   .briefing-body-grid {
     display: grid;
-    grid-template-columns: 1.35fr 0.65fr;
-    gap: 20px;
+    grid-template-columns: 1.32fr 0.68fr;
+    gap: 24px;
+    align-items: start;
   }
   .briefing-main-col {
     display: flex;
     flex-direction: column;
-    gap: 18px;
+    gap: 24px;
+  }
+  .roster-block,
+  .faction-picker-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
   }
   .section-subhead {
     display: flex;
@@ -1044,34 +1074,34 @@
     align-items: baseline;
     flex-wrap: wrap;
     gap: 8px;
-    margin-bottom: 8px;
   }
   .section-subhead span {
     font-family: var(--font-tactical);
-    font-size: 0.78rem;
+    font-size: 0.8rem;
     font-weight: 800;
     letter-spacing: 0.12em;
     color: #eab308;
   }
   .section-subhead small {
-    font-size: 0.72rem;
+    font-size: 0.73rem;
     color: #94a3b8;
   }
 
   .slots-grid {
     display: grid;
     grid-template-columns: 1fr 1fr;
-    gap: 10px;
+    gap: 12px;
   }
   .slot-card {
     display: flex;
     align-items: center;
-    gap: 10px;
-    padding: 10px 12px;
+    gap: 12px;
+    min-height: 62px;
+    padding: 12px 14px;
     background: rgba(5, 9, 18, 0.85);
     border: 1px solid rgba(148, 163, 184, 0.22);
     border-left: 3px solid #eab308;
-    border-radius: 5px;
+    border-radius: 6px;
   }
   .slot-card.is-me {
     background: linear-gradient(90deg, rgba(202, 138, 4, 0.16), rgba(5, 9, 18, 0.9));
@@ -1080,6 +1110,7 @@
   .slot-info {
     display: flex;
     flex-direction: column;
+    gap: 2px;
     min-width: 0;
     flex: 1;
   }
@@ -1090,7 +1121,7 @@
   }
   .slot-name-row strong {
     font-family: var(--font-tactical);
-    font-size: 0.92rem;
+    font-size: 0.94rem;
     color: #f8fafc;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -1106,7 +1137,7 @@
     border-radius: 3px;
   }
   .slot-info small {
-    font-size: 0.68rem;
+    font-size: 0.7rem;
     color: #94a3b8;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -1122,7 +1153,7 @@
     font-size: 0.62rem;
     font-weight: 800;
     letter-spacing: 0.08em;
-    padding: 2px 6px;
+    padding: 3px 7px;
     border-radius: 3px;
     display: inline-flex;
     align-items: center;
@@ -1143,14 +1174,19 @@
     color: #cbd5e1;
   }
   .remove-bot-btn {
-    width: 24px;
-    height: 24px;
+    width: 26px;
+    height: 26px;
     padding: 0;
     display: grid;
     place-items: center;
     background: rgba(127, 29, 29, 0.4);
     border-color: rgba(239, 68, 68, 0.45);
     color: #fca5a5;
+  }
+  .remove-bot-btn:hover:not(:disabled) {
+    background: rgba(185, 28, 28, 0.7);
+    border-color: #f87171;
+    color: #ffffff;
   }
 
   .slot-card.empty-slot {
@@ -1174,33 +1210,37 @@
   .empty-slot-left strong {
     display: block;
     font-family: var(--font-tactical);
-    font-size: 0.82rem;
+    font-size: 0.84rem;
     color: #64748b;
   }
   .empty-slot-left small {
-    font-size: 0.65rem;
+    font-size: 0.66rem;
     color: #475569;
   }
   .mini-bot-btn {
-    padding: 4px 9px;
-    font-size: 0.7rem;
+    padding: 5px 10px;
+    font-size: 0.72rem;
   }
 
   /* Faction Picker */
   .faction-cards-grid {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
-    gap: 8px;
+    gap: 10px;
   }
   .faction-choice-card {
     display: flex;
     align-items: center;
-    gap: 10px;
-    padding: 9px 11px;
+    gap: 12px;
+    padding: 11px 13px;
     background: rgba(5, 9, 18, 0.82);
     border: 1px solid rgba(148, 163, 184, 0.22);
-    border-radius: 5px;
+    border-radius: 6px;
     text-align: left;
+  }
+  .faction-choice-card:hover:not(:disabled) {
+    background: rgba(15, 23, 42, 0.92);
+    border-color: rgba(234, 179, 8, 0.55);
   }
   .faction-choice-card.selected {
     background: linear-gradient(135deg, rgba(202, 138, 4, 0.25), rgba(161, 98, 7, 0.1));
@@ -1213,15 +1253,16 @@
   .f-choice-meta {
     display: flex;
     flex-direction: column;
+    gap: 2px;
     min-width: 0;
   }
   .f-choice-meta strong {
     font-family: var(--font-tactical);
-    font-size: 0.84rem;
+    font-size: 0.86rem;
     color: #f8fafc;
   }
   .f-choice-meta small {
-    font-size: 0.66rem;
+    font-size: 0.68rem;
     color: #94a3b8;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -1232,17 +1273,17 @@
   .briefing-side-col {
     display: flex;
     flex-direction: column;
-    gap: 14px;
+    gap: 16px;
   }
   .lobby-comms-box {
     flex: 1;
     display: flex;
     flex-direction: column;
-    min-height: 350px;
+    min-height: 360px;
     background: rgba(5, 9, 18, 0.85);
     border: 1px solid rgba(148, 163, 184, 0.22);
     border-radius: 6px;
-    padding: 12px;
+    padding: 14px;
     transition: min-height 0.2s ease;
   }
   .lobby-comms-box.chat-size-large {
@@ -1256,7 +1297,7 @@
     background: rgba(12, 20, 36, 0.85);
     border: 1px solid rgba(212, 175, 55, 0.28);
     border-radius: 6px;
-    padding: 12px 14px;
+    padding: 14px 16px;
   }
   .campaign-protocol-box h4 {
     font-family: var(--font-tactical);
@@ -1273,10 +1314,10 @@
     list-style: none;
     display: flex;
     flex-direction: column;
-    gap: 5px;
-    font-size: 0.72rem;
+    gap: 6px;
+    font-size: 0.73rem;
     color: #cbd5e1;
-    line-height: 1.4;
+    line-height: 1.45;
   }
 
   /* Footer */
@@ -1285,22 +1326,23 @@
     justify-content: space-between;
     align-items: center;
     flex-wrap: wrap;
-    gap: 14px;
-    padding-top: 14px;
-    border-top: 1px solid rgba(148, 163, 184, 0.2);
+    gap: 16px;
+    padding-top: 20px;
+    margin-top: 4px;
+    border-top: 1px solid rgba(212, 175, 55, 0.25);
   }
   .waiting-host-note {
     display: inline-flex;
     align-items: center;
     gap: 8px;
-    font-size: 0.8rem;
+    font-size: 0.82rem;
     color: #94a3b8;
   }
   .ready-note {
     display: inline-flex;
     align-items: center;
-    gap: 6px;
-    font-size: 0.82rem;
+    gap: 8px;
+    font-size: 0.85rem;
     color: #6ee7b7;
     font-weight: 600;
   }
@@ -1313,12 +1355,23 @@
   }
   .footer-buttons {
     display: flex;
-    gap: 10px;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+  .add-ai-btn {
+    height: 46px;
+    padding: 0 18px;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
   }
   .launch-battle-btn {
-    padding: 11px 24px;
+    height: 46px;
+    padding: 0 26px;
     background: linear-gradient(135deg, #eab308 0%, #a16207 100%);
     border: 1px solid #fef08a;
+    border-radius: 6px;
     color: #050911;
     font-family: var(--font-display);
     font-weight: 900;
@@ -1326,20 +1379,74 @@
     letter-spacing: 0.1em;
     display: inline-flex;
     align-items: center;
-    gap: 8px;
-    box-shadow: 0 8px 25px rgba(234, 179, 8, 0.35);
+    justify-content: center;
+    gap: 9px;
+    box-shadow: 0 8px 25px rgba(234, 179, 8, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.35);
+    transition: transform 0.16s ease, box-shadow 0.16s ease, background 0.16s ease, border-color 0.16s ease;
+  }
+  .launch-battle-btn:hover:not(:disabled) {
+    background: linear-gradient(135deg, #fde047 0%, #ca8a04 100%);
+    border-color: #ffffff;
+    color: #050911;
+    transform: translateY(-1px);
+    box-shadow: 0 12px 32px rgba(250, 204, 21, 0.55), 0 0 18px rgba(234, 179, 8, 0.4);
+  }
+  .launch-battle-btn:active:not(:disabled) {
+    transform: translateY(0);
   }
 
-  @media (max-width: 980px) {
+  /* Tablet Landscape & Portrait Responsiveness (768px - 1080px) */
+  @media (max-width: 1080px) {
+    .command-deck-container,
+    .briefing-room-container {
+      width: min(960px, calc(100% - 28px));
+      padding: 16px 0 32px;
+    }
     .deck-grid,
     .briefing-body-grid {
       grid-template-columns: 1fr;
+    }
+    .briefing-card,
+    .deck-card {
+      padding: 22px 24px;
+    }
+    .slots-grid {
+      grid-template-columns: 1fr 1fr;
+    }
+    .faction-cards-grid {
+      grid-template-columns: repeat(3, 1fr);
+    }
+    .lobby-comms-box {
+      min-height: 310px;
+    }
+  }
+
+  /* Smaller Tablets & Large Phones (< 760px) */
+  @media (max-width: 760px) {
+    .command-center-backdrop {
+      padding-top: 62px;
     }
     .slots-grid {
       grid-template-columns: 1fr;
     }
     .faction-cards-grid {
       grid-template-columns: 1fr 1fr;
+    }
+    .intel-specs-grid {
+      grid-template-columns: 1fr;
+    }
+    .briefing-footer {
+      flex-direction: column;
+      align-items: stretch;
+    }
+    .footer-buttons {
+      width: 100%;
+      justify-content: stretch;
+    }
+    .add-ai-btn,
+    .launch-battle-btn {
+      flex: 1;
+      justify-content: center;
     }
   }
 </style>

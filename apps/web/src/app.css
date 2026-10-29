@@ -74,6 +74,16 @@ button:hover:not(:disabled) {
   background: #1d2d4b;
 }
 
+/* Garante que botões dourados de destaque mantenham texto escuro sobre fundo dourado claro no hover */
+button.gold-button:hover:not(:disabled),
+button.primary-gold:hover:not(:disabled),
+button.launch-battle-btn:hover:not(:disabled) {
+  background: linear-gradient(135deg, #fde047 0%, #ca8a04 100%);
+  border-color: #ffffff;
+  color: #050911;
+  box-shadow: 0 8px 24px rgba(234, 179, 8, 0.45);
+}
+
 button:disabled {
   opacity: 0.45;
   cursor: not-allowed;
@@ -129,4 +139,106 @@ input[type="range"]::-moz-range-thumb {
   border: 2px solid #090e1a;
   box-shadow: 0 0 8px rgba(234, 179, 8, 0.6);
   cursor: pointer;
+}
+
+/* ==========================================================================
+   UNIFICAÇÃO DE ALTURA DO HEADER (IDIOMA, ÁUDIO E CONTA = 42px)
+   ========================================================================== */
+header .lang-selector,
+.topbar .lang-selector,
+header .account-trigger,
+.topbar .account-trigger,
+header .login-button,
+.topbar .login-button,
+header .audio-trigger,
+.topbar .audio-trigger,
+.topbar-actions > button,
+header > div:last-child > button {
+  height: 42px !important;
+  min-height: 42px !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center;
+  box-sizing: border-box;
+  border-radius: 6px;
+}
+
+header .account-trigger,
+.topbar .account-trigger {
+  padding: 0 12px !important;
+  gap: 10px;
+}
+
+header .account-trigger :global(.avatar-small),
+.topbar .account-trigger :global(.avatar-small) {
+  width: 30px;
+  height: 30px;
+}
+
+/* ==========================================================================
+   RESPONSIVIDADE GLOBAL PARA TABLETS (SITE, PERFIL, RANKING E ALIADOS)
+   ========================================================================== */
+@media (max-width: 1024px) {
+  /* Header / Topbar em Tablets */
+  header,
+  .topbar {
+    padding-left: 14px !important;
+    padding-right: 14px !important;
+    gap: 10px !important;
+  }
+
+  .brand-subtitle {
+    display: none !important;
+  }
+
+  /* Páginas Internas (Dossiê, Aliados, Classificação) */
+  .profile-layout,
+  .friends-layout,
+  .leaderboard-panel {
+    width: min(100%, calc(100% - 28px)) !important;
+    margin-left: auto;
+    margin-right: auto;
+  }
+
+  .profile-columns {
+    grid-template-columns: 1fr !important;
+    gap: 16px !important;
+  }
+
+  .stats-grid {
+    grid-template-columns: repeat(2, 1fr) !important;
+    gap: 12px !important;
+  }
+}
+
+@media (max-width: 820px) {
+  /* Ajuste da tabela de Classificação e Perfil para Tablets em Modo Retrato */
+  .leaderboard-head,
+  .leaderboard-row {
+    grid-template-columns: 44px 1.6fr 0.8fr 0.8fr 1fr !important;
+    font-size: 0.8rem !important;
+  }
+
+  /* Oculta coluna secundária de taxa de vitória em telas estreitas para evitar quebra */
+  .leaderboard-head > span:nth-child(5),
+  .leaderboard-row > span:nth-child(5) {
+    display: none !important;
+  }
+
+  .profile-hero {
+    flex-direction: column !important;
+    align-items: flex-start !important;
+    gap: 16px !important;
+  }
+
+  .profile-actions {
+    width: 100%;
+    justify-content: flex-start !important;
+    flex-wrap: wrap;
+  }
+
+  .match-row {
+    grid-template-columns: auto 1fr auto !important;
+    gap: 10px !important;
+  }
 }
