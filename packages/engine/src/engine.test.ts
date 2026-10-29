@@ -22,8 +22,8 @@ import {
 } from "./index.js";
 
 describe("Classic Map Graph Integrity", () => {
-  it("has exactly 44 territories across 6 continents", () => {
-    expect(CLASSIC_MAP.territories.length).toBe(44);
+  it("has exactly 53 territories across 6 continents", () => {
+    expect(CLASSIC_MAP.territories.length).toBe(53);
     expect(CLASSIC_MAP.continents.length).toBe(6);
 
     const counts: Record<string, number> = {};
@@ -31,11 +31,11 @@ describe("Classic Map Graph Integrity", () => {
       counts[t.continent] = (counts[t.continent] ?? 0) + 1;
     }
     expect(counts).toEqual({
-      south_america: 4,
-      north_america: 10,
-      europe: 8,
-      africa: 6,
-      asia: 12,
+      south_america: 6,
+      north_america: 11,
+      europe: 10,
+      africa: 8,
+      asia: 14,
       oceania: 4,
     });
   });
@@ -67,7 +67,7 @@ describe("Classic Map Graph Integrity", () => {
         if (!visited.has(n)) queue.push(n);
       }
     }
-    expect(visited.size).toBe(44);
+    expect(visited.size).toBe(53);
 
     // Verify no territory has an inverted spherical ring that covers the whole ocean (1200x600)
     for (const t of CLASSIC_MAP.territories) {
@@ -142,7 +142,7 @@ describe("War Classic Rules Engine", () => {
 
     const firstPlayer = state.players[0];
     expect(state.round).toBe(1);
-    expect(firstPlayer.unplacedArmies).toBe(7); // 42 / 3 = 14 territories -> floor(14/2) = 7
+    expect(firstPlayer.unplacedArmies).toBe(9); // 53 / 3 = 17 rem 2 -> 18 territories -> floor(18/2) = 9
 
     const ownedTerritory = Object.values(state.territories).find(
       (t) => t.ownerId === firstPlayer.id
@@ -151,7 +151,7 @@ describe("War Classic Rules Engine", () => {
     state = applyAction(
       state,
       firstPlayer.id,
-      { type: "deploy", territoryId: ownedTerritory.id, armies: 7 },
+      { type: "deploy", territoryId: ownedTerritory.id, armies: 9 },
       rng
     );
 
@@ -185,14 +185,14 @@ describe("War Classic Rules Engine", () => {
         { id: "p2", name: "Enemy", color: "red" },
       ],
     });
-    // Give p1 only South America (4 territories)
+    // Give p1 only South America (6 territories)
     for (const t of CLASSIC_MAP.territories) {
       state.territories[t.id].ownerId = t.continent === "south_america" ? "p1" : "p2";
     }
     const reinf = calculateTurnReinforcements(state, "p1");
-    expect(reinf.baseArmies).toBe(3); // floor(4/2)=2, min 3 -> 3
-    expect(reinf.continentBonus).toBe(2); // South America +2
-    expect(reinf.total).toBe(5);
+    expect(reinf.baseArmies).toBe(3); // floor(6/2)=3, min 3 -> 3
+    expect(reinf.continentBonus).toBe(3); // South America +3
+    expect(reinf.total).toBe(6);
   });
 
   it("awards Asia sub-region bonuses (+2 Indo-Arábia, +2 Estepes, +3 Leste = +7 total) and verifies new sea lanes", () => {
@@ -216,14 +216,14 @@ describe("War Classic Rules Engine", () => {
 
     // Check strategic maritime connections & new territories (Havaí and Bálcãs)
     const byId = new Map(CLASSIC_MAP.territories.map((t) => [t.id, t]));
-    expect(byId.get("argentina")!.neighbors).toContain("australia");
-    expect(byId.get("argentina")!.neighbors).toContain("africa_do_sul");
+    expect(byId.get("patagonia")!.neighbors).toContain("australia");
+    expect(byId.get("patagonia")!.neighbors).toContain("africa_do_sul");
     expect(byId.get("havai")!.neighbors).toEqual(
       expect.arrayContaining(["california", "japao", "nova_guine"])
     );
     expect(byId.get("california")!.neighbors).not.toContain("japao");
     expect(byId.get("balcas")!.neighbors).toEqual(
-      expect.arrayContaining(["alemanha", "franca", "polonia", "moscou", "oriente_medio", "egito"])
+      expect.arrayContaining(["alemanha", "italia", "polonia", "moscou", "oriente_medio", "egito"])
     );
   });
 
@@ -251,10 +251,10 @@ describe("War Classic Rules Engine", () => {
 
     expect(checkPlayerVictory(state, "p1")).toBe(false);
 
-    // Give p1 all 12 required territories for Pax Britannica
+    // Give p1 all 13 required territories for Pax Britannica
     for (const tid of [
       "inglaterra", "ottawa", "labrador", "vancouver", "nova_york",
-      "egito", "sudao", "africa_do_sul", "oriente_medio", "india", "borneu", "australia"
+      "egito", "sudao", "mocambique", "africa_do_sul", "oriente_medio", "india", "borneu", "australia"
     ]) {
       state.territories[tid].ownerId = "p1";
     }
@@ -279,9 +279,10 @@ describe("War Classic Rules Engine", () => {
     state.territories["moscou"].ownerId = "p1";
     expect(checkPlayerVictory(state, "p1")).toBe(true);
 
-    // Option B: Without Moscow, but with China + Mongolia
+    // Option B: Without Moscow, but with China + Beijing + Mongolia
     state.territories["moscou"].ownerId = "p2";
     state.territories["china"].ownerId = "p1";
+    state.territories["pequim"].ownerId = "p1";
     expect(checkPlayerVictory(state, "p1")).toBe(false); // missing mongolia
     state.territories["mongolia"].ownerId = "p1";
     expect(checkPlayerVictory(state, "p1")).toBe(true);
@@ -360,13 +361,13 @@ describe("War Classic Rules Engine", () => {
     const attacker = state.players[state.turnIndex];
     const defender = state.players.find((p) => p.id !== attacker.id)!;
 
-    // Setup adjacent combat: attacker attacks defender's capital at argentina from brasil
+    // Setup adjacent combat: attacker attacks defender's capital at argentina from sao_paulo
     state.round = 2; // Allow attack
     state.phase = "attack";
     attacker.unplacedArmies = 0;
 
-    state.territories["brasil"].ownerId = attacker.id;
-    state.territories["brasil"].armies = 20;
+    state.territories["sao_paulo"].ownerId = attacker.id;
+    state.territories["sao_paulo"].armies = 20;
 
     state.territories["argentina"].ownerId = defender.id;
     state.territories["argentina"].armies = 1;
@@ -381,7 +382,7 @@ describe("War Classic Rules Engine", () => {
       state = applyAction(
         state,
         attacker.id,
-        { type: "attack", fromTerritoryId: "brasil", toTerritoryId: "argentina", diceCount: 3 },
+        { type: "attack", fromTerritoryId: "sao_paulo", toTerritoryId: "argentina", diceCount: 3 },
         rng
       );
     }
@@ -452,8 +453,8 @@ describe("Diplomacy, Treaties, World Tension and Coalitions", () => {
     state.phase = "attack";
     state.turnIndex = state.players.findIndex((p) => p.id === "p1");
     state.players[state.turnIndex].unplacedArmies = 0;
-    state.territories["brasil"].ownerId = "p1";
-    state.territories["brasil"].armies = 10;
+    state.territories["sao_paulo"].ownerId = "p1";
+    state.territories["sao_paulo"].armies = 10;
     state.territories["argentina"].ownerId = "p2";
     state.territories["argentina"].armies = 2;
 
@@ -461,7 +462,7 @@ describe("Diplomacy, Treaties, World Tension and Coalitions", () => {
     expect(() =>
       applyAction(state, "p1", {
         type: "attack",
-        fromTerritoryId: "brasil",
+        fromTerritoryId: "sao_paulo",
         toTerritoryId: "argentina",
       }, rng)
     ).toThrow(/tratado de paz ativo/);
@@ -587,15 +588,15 @@ describe("Diplomacy, Treaties, World Tension and Coalitions", () => {
     state.phase = "attack";
     state.turnIndex = state.players.findIndex((p) => p.id === "p2");
     state.players[state.turnIndex].unplacedArmies = 0;
-    state.territories["brasil"].ownerId = "p2";
-    state.territories["brasil"].armies = 5;
+    state.territories["sao_paulo"].ownerId = "p2";
+    state.territories["sao_paulo"].armies = 5;
     state.territories["argentina"].ownerId = "p3";
     state.territories["argentina"].armies = 2;
 
     expect(() =>
       applyAction(state, "p2", {
         type: "attack",
-        fromTerritoryId: "brasil",
+        fromTerritoryId: "sao_paulo",
         toTerritoryId: "argentina",
       }, rng)
     ).toThrow(/mesma coalizão/);
@@ -604,7 +605,7 @@ describe("Diplomacy, Treaties, World Tension and Coalitions", () => {
     state.territories["argentina"].ownerId = "p1";
     state = applyAction(state, "p2", {
       type: "attack",
-      fromTerritoryId: "brasil",
+      fromTerritoryId: "sao_paulo",
       toTerritoryId: "argentina",
       diceCount: 1,
     }, rng);
@@ -646,8 +647,8 @@ describe("Diplomacy, Treaties, World Tension and Coalitions", () => {
   });
 });
 
-describe("HEGEM-56: Cartographic Resource & Coastal Matrix (44 Territories)", () => {
-  it("distributes 15 Steel, 11 Oil, 6 Gold, 12 Trade Hubs (+17$), 37 Coastal and 7 Landlocked territories", () => {
+describe("HEGEM-56: Cartographic Resource & Coastal Matrix (53 Territories)", () => {
+  it("distributes 18 Steel, 15 Oil, 11 Gold, 19 Trade Hubs (+24$), 45 Coastal and 8 Landlocked territories", () => {
     const steelTerrs = CLASSIC_MAP.territories.filter((t) => t.resource === "steel");
     const oilTerrs = CLASSIC_MAP.territories.filter((t) => t.resource === "oil");
     const goldTerrs = CLASSIC_MAP.territories.filter((t) => t.resource === "gold");
@@ -655,18 +656,18 @@ describe("HEGEM-56: Cartographic Resource & Coastal Matrix (44 Territories)", ()
     const coastalTerrs = CLASSIC_MAP.territories.filter((t) => t.isCoastal === true);
     const landlockedTerrs = CLASSIC_MAP.territories.filter((t) => t.isCoastal === false);
 
-    expect(steelTerrs.length).toBe(15);
-    expect(oilTerrs.length).toBe(11);
-    expect(goldTerrs.length).toBe(6);
-    expect(tradeTerrs.length).toBe(12);
-    expect(tradeTerrs.reduce((sum, t) => sum + (t.tradeBonus ?? 0), 0)).toBe(17);
-    expect(coastalTerrs.length).toBe(37);
+    expect(steelTerrs.length).toBe(18);
+    expect(oilTerrs.length).toBe(15);
+    expect(goldTerrs.length).toBe(11);
+    expect(tradeTerrs.length).toBe(19);
+    expect(tradeTerrs.reduce((sum, t) => sum + (t.tradeBonus ?? 0), 0)).toBe(24);
+    expect(coastalTerrs.length).toBe(45);
     expect(landlockedTerrs.map((t) => t.id).sort()).toEqual(
-      ["aral", "mongolia", "moscou", "omsk", "ottawa", "siberia", "tchita"].sort()
+      ["aral", "mongolia", "moscou", "omsk", "ottawa", "siberia", "tchita", "xinjiang"].sort()
     );
   });
 
-  it("enforces asymmetric continental resource scarcity (Europe & East Asia have 0 native Oil)", () => {
+  it("enforces asymmetric continental resource scarcity (Europe has 0 native Oil, East Asia has only Xinjiang Oil)", () => {
     const europeOil = CLASSIC_MAP.territories.filter(
       (t) => t.continent === "europe" && t.resource === "oil"
     );
@@ -674,13 +675,13 @@ describe("HEGEM-56: Cartographic Resource & Coastal Matrix (44 Territories)", ()
       (t) => t.continent === "europe" && t.resource === "steel"
     );
     expect(europeOil.length).toBe(0);
-    expect(europeSteel.length).toBe(4);
+    expect(europeSteel.length).toBe(6);
 
     const eastAsiaIds = ASIA_SUBREGIONS.find((s) => s.id === "asia_east")!.territoryIds;
     const eastAsiaOil = CLASSIC_MAP.territories.filter(
       (t) => eastAsiaIds.includes(t.id) && t.resource === "oil"
     );
-    expect(eastAsiaOil.length).toBe(0);
+    expect(eastAsiaOil.map((t) => t.id)).toEqual(["xinjiang"]);
   });
 });
 
@@ -696,18 +697,18 @@ describe("HEGEM-18: Core War Economy (Money, Steel, Oil, Scarce Gold)", () => {
     });
 
     // Clear ownership and assign specific territories to p1:
-    // brasil (steel), venezuela (oil), peru (gold -> +1 gold, +2$), egito (oil + tradeBonus 2$)
+    // suecia (steel), venezuela (oil), peru (gold -> +1 gold, +2$), egito (oil + tradeBonus 2$)
     for (const t of Object.values(state.territories)) {
       t.ownerId = "p2";
       t.armies = 2;
     }
-    state.territories["brasil"].ownerId = "p1";
+    state.territories["suecia"].ownerId = "p1";
     state.territories["venezuela"].ownerId = "p1";
     state.territories["peru"].ownerId = "p1";
     state.territories["egito"].ownerId = "p1";
 
     const p1 = state.players.find((p) => p.id === "p1")!;
-    p1.capitalTerritoryId = "brasil";
+    p1.capitalTerritoryId = "suecia";
     p1.isCapitalLost = false;
     p1.economicPenaltyMultiplier = 1.0;
 
@@ -717,7 +718,7 @@ describe("HEGEM-18: Core War Economy (Money, Steel, Oil, Scarce Gold)", () => {
     expect(econ.goldPassiveMoney).toBe(2); // peru (+2$)
     expect(econ.grossMoney).toBe(7);
     expect(econ.netMoney).toBe(7);
-    expect(econ.steel).toBe(1); // brasil
+    expect(econ.steel).toBe(1); // suecia
     expect(econ.oil).toBe(2); // venezuela + egito
     expect(econ.gold).toBe(1); // peru
 
@@ -934,16 +935,16 @@ describe("Territorial Infrastructure & Building System (HEGEM-32)", () => {
     }
 
     // Give p1:
-    // - brasil (Steel, coastal, no tradeBonus): Industry -> +2 Steel
-    // - argentina (No natural resource, coastal, tradeBonus +1$): Industry (+2$) + Market (+2$) + Port (+1$ trade hub bonus)
+    // - suecia (Steel, coastal, no tradeBonus): Industry -> +2 Steel
+    // - havai (No natural resource, coastal, tradeBonus +1$): Industry (+2$) + Market (+2$) + Port (+1$ trade hub bonus)
     // - venezuela (Oil): Industry -> +2 Oil
-    state.territories["brasil"].ownerId = "p1";
-    state.territories["brasil"].armies = 2;
-    state.territories["brasil"].buildings = [{ type: "industry", level: 1 }];
+    state.territories["suecia"].ownerId = "p1";
+    state.territories["suecia"].armies = 2;
+    state.territories["suecia"].buildings = [{ type: "industry", level: 1 }];
 
-    state.territories["argentina"].ownerId = "p1";
-    state.territories["argentina"].armies = 2;
-    state.territories["argentina"].buildings = [
+    state.territories["havai"].ownerId = "p1";
+    state.territories["havai"].armies = 2;
+    state.territories["havai"].buildings = [
       { type: "industry", level: 1 },
       { type: "market", level: 1 },
       { type: "port", level: 1 },
@@ -954,16 +955,16 @@ describe("Territorial Infrastructure & Building System (HEGEM-32)", () => {
     state.territories["venezuela"].buildings = [{ type: "industry", level: 1 }];
 
     const p1 = state.players.find((p) => p.id === "p1")!;
-    p1.capitalTerritoryId = "argentina";
+    p1.capitalTerritoryId = "havai";
     p1.isCapitalLost = false;
 
     const econ = calculateTurnEconomy(state, "p1");
     expect(econ.capitalMoney).toBe(3);
-    expect(econ.tradeHubMoney).toBe(1); // Argentina tradeBonus
+    expect(econ.tradeHubMoney).toBe(1); // Havai tradeBonus
     expect(econ.buildingMoney).toBe(5); // Market (+2$) + Non-resource Industry (+2$) + Port in Trade Hub (+1$)
     expect(econ.grossMoney).toBe(9);
     expect(econ.netMoney).toBe(9);
-    expect(econ.steel).toBe(2); // Brasil with Industry -> +2 Steel
+    expect(econ.steel).toBe(2); // Suecia with Industry -> +2 Steel
     expect(econ.oil).toBe(2); // Venezuela with Industry -> +2 Oil
   });
 
@@ -986,26 +987,26 @@ describe("Territorial Infrastructure & Building System (HEGEM-32)", () => {
     activePlayer.resources = { money: 20, steel: 5, oil: 0, gold: 0 };
 
     // Build Level 1 Casamata ($4) and upgrade to Level 2 Fortaleza ($4 + 1 Steel) on owned territory first
-    state.territories["brasil"].ownerId = activeId;
+    state.territories["sao_paulo"].ownerId = activeId;
     state = applyAction(
       state,
       activeId,
-      { type: "build_structure", territoryId: "brasil", buildingType: "fortification" },
+      { type: "build_structure", territoryId: "sao_paulo", buildingType: "fortification" },
       rng
     );
-    expect(getTerritoryBuildingLevel(state.territories["brasil"], "fortification")).toBe(1);
+    expect(getTerritoryBuildingLevel(state.territories["sao_paulo"], "fortification")).toBe(1);
 
     state = applyAction(
       state,
       activeId,
-      { type: "build_structure", territoryId: "brasil", buildingType: "fortification" },
+      { type: "build_structure", territoryId: "sao_paulo", buildingType: "fortification" },
       rng
     );
-    expect(getTerritoryBuildingLevel(state.territories["brasil"], "fortification")).toBe(2);
-    expect(state.territories["brasil"].buildings?.length).toBe(1); // Upgrade reuses the same slot!
+    expect(getTerritoryBuildingLevel(state.territories["sao_paulo"], "fortification")).toBe(2);
+    expect(state.territories["sao_paulo"].buildings?.length).toBe(1); // Upgrade reuses the same slot!
 
     // Set up Argentina as defender territory with Level 2 Fortress + Market and 1 army
-    state.territories["brasil"].armies = 20;
+    state.territories["sao_paulo"].armies = 20;
     state.territories["argentina"].ownerId = defenderId;
     state.territories["argentina"].armies = 1;
     state.territories["argentina"].buildings = [
@@ -1015,11 +1016,11 @@ describe("Territorial Infrastructure & Building System (HEGEM-32)", () => {
 
     // Attack Argentina until conquered
     for (let i = 0; i < 20 && state.territories["argentina"].ownerId !== activeId; i++) {
-      state.territories["brasil"].armies = 10;
+      state.territories["sao_paulo"].armies = 10;
       state = applyAction(
         state,
         activeId,
-        { type: "attack", fromTerritoryId: "brasil", toTerritoryId: "argentina" },
+        { type: "attack", fromTerritoryId: "sao_paulo", toTerritoryId: "argentina" },
         rng
       );
       expect(state.lastCombat?.fortificationLevel).toBe(2);
@@ -1261,9 +1262,9 @@ describe("Territorial Infrastructure & Building System (HEGEM-32)", () => {
     p1.resources = { money: 10, steel: 3, oil: 0, gold: 0 };
     p2.resources = { money: 15, steel: 0, oil: 0, gold: 0 };
 
-    // Brasil (p1) is adjacent to Argentina (p2)
-    state.territories["brasil"].ownerId = p1.id;
-    state.territories["brasil"].armies = 3;
+    // Sao Paulo (p1) is adjacent to Argentina (p2)
+    state.territories["sao_paulo"].ownerId = p1.id;
+    state.territories["sao_paulo"].armies = 3;
 
     state.territories["argentina"].ownerId = p2.id;
     state.territories["argentina"].armies = 2;
@@ -1277,7 +1278,7 @@ describe("Territorial Infrastructure & Building System (HEGEM-32)", () => {
       {
         type: "propose_border_trade",
         targetPlayerId: p2.id,
-        fromTerritoryId: "brasil",
+        fromTerritoryId: "sao_paulo",
         toTerritoryId: "argentina",
         resource: "steel",
         price: 6,
@@ -1400,9 +1401,9 @@ describe("Combined Arms and Infantry Escort (HEGEM-27)", () => {
 
   it("validates task forces and applies attacker casualties to infantry before specials", () => {
     let { state, activeId, defenderId } = createUnitTestState("attack");
-    state.territories["brasil"].ownerId = activeId;
-    state.territories["brasil"].units = unitCounts(2, 1);
-    state.territories["brasil"].armies = 3;
+    state.territories["sao_paulo"].ownerId = activeId;
+    state.territories["sao_paulo"].units = unitCounts(2, 1);
+    state.territories["sao_paulo"].armies = 3;
     state.territories["argentina"].ownerId = defenderId;
     state.territories["argentina"].units = unitCounts(1);
     state.territories["argentina"].armies = 1;
@@ -1413,7 +1414,7 @@ describe("Combined Arms and Infantry Escort (HEGEM-27)", () => {
         activeId,
         {
           type: "attack",
-          fromTerritoryId: "brasil",
+          fromTerritoryId: "sao_paulo",
           toTerritoryId: "argentina",
           units: unitCounts(0, 2),
         },
@@ -1426,7 +1427,7 @@ describe("Combined Arms and Infantry Escort (HEGEM-27)", () => {
       activeId,
       {
         type: "attack",
-        fromTerritoryId: "brasil",
+        fromTerritoryId: "sao_paulo",
         toTerritoryId: "argentina",
         diceCount: 3,
         units: unitCounts(1, 1),
@@ -1436,19 +1437,19 @@ describe("Combined Arms and Infantry Escort (HEGEM-27)", () => {
 
     expect(state.lastCombat?.attackerDice).toHaveLength(2);
     expect(state.lastCombat?.attackerLossUnits).toEqual(unitCounts(1));
-    expect(getTerritoryUnits(state.territories["brasil"])).toEqual(unitCounts(1, 1));
+    expect(getTerritoryUnits(state.territories["sao_paulo"])).toEqual(unitCounts(1, 1));
 
     ({ state, activeId, defenderId } = createUnitTestState("attack"));
-    state.territories["brasil"].ownerId = activeId;
-    state.territories["brasil"].units = unitCounts(0, 2);
-    state.territories["brasil"].armies = 2;
+    state.territories["sao_paulo"].ownerId = activeId;
+    state.territories["sao_paulo"].units = unitCounts(0, 2);
+    state.territories["sao_paulo"].armies = 2;
     state.territories["argentina"].ownerId = defenderId;
     state = applyAction(
       state,
       activeId,
       {
         type: "attack",
-        fromTerritoryId: "brasil",
+        fromTerritoryId: "sao_paulo",
         toTerritoryId: "argentina",
         diceCount: 1,
         units: unitCounts(0, 1),
@@ -1457,13 +1458,13 @@ describe("Combined Arms and Infantry Escort (HEGEM-27)", () => {
     );
 
     expect(state.lastCombat?.attackerLossUnits).toEqual(unitCounts(0, 1));
-    expect(getTerritoryUnits(state.territories["brasil"])).toEqual(unitCounts(0, 1));
+    expect(getTerritoryUnits(state.territories["sao_paulo"])).toEqual(unitCounts(0, 1));
   });
 
   it("applies defender casualties to infantry before specials and records special losses", () => {
     let { state, activeId, defenderId } = createUnitTestState("attack");
-    state.territories["brasil"].ownerId = activeId;
-    state.territories["brasil"].armies = 3;
+    state.territories["sao_paulo"].ownerId = activeId;
+    state.territories["sao_paulo"].armies = 3;
     state.territories["argentina"].ownerId = defenderId;
     state.territories["argentina"].units = unitCounts(1, 1);
     state.territories["argentina"].armies = 2;
@@ -1473,7 +1474,7 @@ describe("Combined Arms and Infantry Escort (HEGEM-27)", () => {
       activeId,
       {
         type: "attack",
-        fromTerritoryId: "brasil",
+        fromTerritoryId: "sao_paulo",
         toTerritoryId: "argentina",
         diceCount: 1,
         units: unitCounts(1),
@@ -1489,7 +1490,7 @@ describe("Combined Arms and Infantry Escort (HEGEM-27)", () => {
       activeId,
       {
         type: "attack",
-        fromTerritoryId: "brasil",
+        fromTerritoryId: "sao_paulo",
         toTerritoryId: "argentina",
         diceCount: 1,
         units: unitCounts(1),
@@ -1504,9 +1505,9 @@ describe("Combined Arms and Infantry Escort (HEGEM-27)", () => {
 
   it("moves only surviving task-force units during conquest and composed occupation", () => {
     let { state, activeId, defenderId } = createUnitTestState("attack");
-    state.territories["brasil"].ownerId = activeId;
-    state.territories["brasil"].units = unitCounts(2, 2);
-    state.territories["brasil"].armies = 4;
+    state.territories["sao_paulo"].ownerId = activeId;
+    state.territories["sao_paulo"].units = unitCounts(2, 2);
+    state.territories["sao_paulo"].armies = 4;
     state.territories["argentina"].ownerId = defenderId;
     state.territories["argentina"].units = unitCounts(1);
     state.territories["argentina"].armies = 1;
@@ -1516,7 +1517,7 @@ describe("Combined Arms and Infantry Escort (HEGEM-27)", () => {
       activeId,
       {
         type: "attack",
-        fromTerritoryId: "brasil",
+        fromTerritoryId: "sao_paulo",
         toTerritoryId: "argentina",
         diceCount: 3,
         units: unitCounts(2, 1),
@@ -1527,7 +1528,7 @@ describe("Combined Arms and Infantry Escort (HEGEM-27)", () => {
     expect(state.pendingConquest?.maxMove).toBe(3);
     expect(state.pendingConquest?.occupyingUnits).toEqual(unitCounts(1));
     expect(state.pendingConquest?.remainingAttackers).toEqual(unitCounts(1, 1));
-    expect(getTerritoryUnits(state.territories["brasil"])).toEqual(unitCounts(1, 2));
+    expect(getTerritoryUnits(state.territories["sao_paulo"])).toEqual(unitCounts(1, 2));
 
     state = applyAction(
       state,
@@ -1537,19 +1538,19 @@ describe("Combined Arms and Infantry Escort (HEGEM-27)", () => {
     );
 
     expect(state.pendingConquest).toBeNull();
-    expect(getTerritoryUnits(state.territories["brasil"])).toEqual(unitCounts(0, 1));
+    expect(getTerritoryUnits(state.territories["sao_paulo"])).toEqual(unitCounts(0, 1));
     expect(getTerritoryUnits(state.territories["argentina"])).toEqual(unitCounts(2, 1));
-    expect(state.territories["brasil"].armies).toBe(1);
+    expect(state.territories["sao_paulo"].armies).toBe(1);
     expect(state.territories["argentina"].armies).toBe(3);
   });
 
   it("preserves compositions in maneuver, blocks second movement, and restricts airlift to infantry", () => {
     let { state, activeId } = createUnitTestState("maneuver");
-    for (const territoryId of ["brasil", "argentina", "peru", "japao"]) {
+    for (const territoryId of ["sao_paulo", "argentina", "peru", "japao"]) {
       state.territories[territoryId].ownerId = activeId;
     }
-    state.territories["brasil"].units = unitCounts(2, 1);
-    state.territories["brasil"].armies = 3;
+    state.territories["sao_paulo"].units = unitCounts(2, 1);
+    state.territories["sao_paulo"].armies = 3;
 
     expect(() =>
       applyAction(
@@ -1557,7 +1558,7 @@ describe("Combined Arms and Infantry Escort (HEGEM-27)", () => {
         activeId,
         {
           type: "maneuver",
-          fromTerritoryId: "brasil",
+          fromTerritoryId: "sao_paulo",
           toTerritoryId: "argentina",
           armies: 2,
           units: unitCounts(1),
@@ -1571,7 +1572,7 @@ describe("Combined Arms and Infantry Escort (HEGEM-27)", () => {
       activeId,
       {
         type: "maneuver",
-        fromTerritoryId: "brasil",
+        fromTerritoryId: "sao_paulo",
         toTerritoryId: "argentina",
         armies: 1,
         units: unitCounts(0, 1),
@@ -1579,7 +1580,7 @@ describe("Combined Arms and Infantry Escort (HEGEM-27)", () => {
       createSeededRng("hegem-27-maneuver")
     );
 
-    expect(getTerritoryUnits(state.territories["brasil"])).toEqual(unitCounts(2));
+    expect(getTerritoryUnits(state.territories["sao_paulo"])).toEqual(unitCounts(2));
     expect(getTerritoryUnits(state.territories["argentina"])).toEqual(unitCounts(1, 1));
     expect(getMovedInUnits(state.territories["argentina"])).toEqual(unitCounts(0, 1));
 
@@ -1598,15 +1599,15 @@ describe("Combined Arms and Infantry Escort (HEGEM-27)", () => {
       )
     ).toThrow(/Apenas 0/);
 
-    state.territories["brasil"].units = unitCounts(0, 2);
-    state.territories["brasil"].armies = 2;
-    state.territories["brasil"].buildings = [{ type: "airfield", level: 1 }];
+    state.territories["sao_paulo"].units = unitCounts(0, 2);
+    state.territories["sao_paulo"].armies = 2;
+    state.territories["sao_paulo"].buildings = [{ type: "airfield", level: 1 }];
     state.territories["japao"].buildings = [{ type: "airfield", level: 1 }];
     expect(() =>
       applyAction(
         state,
         activeId,
-        { type: "airlift", fromTerritoryId: "brasil", toTerritoryId: "japao", armies: 1 },
+        { type: "airlift", fromTerritoryId: "sao_paulo", toTerritoryId: "japao", armies: 1 },
         createSeededRng("hegem-27-airlift-infantry")
       )
     ).toThrow(/infantaria/);
@@ -1695,8 +1696,8 @@ describe("Geoeconomic Telemetry & Continental Balance Analytics (HEGEM-59)", () 
     state.territories["brasil"].units = unitCounts(1, 2); // Owns tanks without oil
 
     // Give p1 all of South America
-    for (const tId of ["brasil", "argentina", "peru", "venezuela"]) {
-      state.territories[tId].ownerId = p1.id;
+    for (const t of CLASSIC_MAP.territories.filter((t) => t.continent === "south_america")) {
+      state.territories[t.id].ownerId = p1.id;
     }
 
     state.phase = "deploy";
@@ -1731,7 +1732,8 @@ describe("Military Supply Lines, Fuel Starvation & Encirclement (HEGEM-35)", () 
     const p1 = state.players[0];
     p1.capitalTerritoryId = "brasil";
     state.territories["brasil"].ownerId = p1.id;
-    state.territories["argentina"].ownerId = p1.id; // adjacent by land to Brasil -> supplied
+    state.territories["sao_paulo"].ownerId = p1.id;
+    state.territories["argentina"].ownerId = p1.id; // connected by land to Brasil via São Paulo -> supplied
 
     // Peru is owned by enemy p2, severing land access to Venezuela if Argentina doesn't connect
     state.territories["peru"].ownerId = "p2";
@@ -1746,6 +1748,7 @@ describe("Military Supply Lines, Fuel Starvation & Encirclement (HEGEM-35)", () 
     updateSupplyAndEncirclement(state, CLASSIC_MAP);
 
     expect(state.territories["brasil"].isEncircled).toBe(false);
+    expect(state.territories["sao_paulo"].isEncircled).toBe(false);
     expect(state.territories["argentina"].isEncircled).toBe(false);
     expect(state.territories["japao"].isEncircled).toBe(true);
     expect(state.territories["japao"].encircledRounds).toBeGreaterThanOrEqual(1);
@@ -1807,8 +1810,8 @@ describe("Military Supply Lines, Fuel Starvation & Encirclement (HEGEM-35)", () 
     state.phase = "attack";
     state.turnIndex = state.players.findIndex((p) => p.id === "p1");
 
-    state.territories["brasil"].ownerId = "p1";
-    state.territories["brasil"].armies = 4;
+    state.territories["sao_paulo"].ownerId = "p1";
+    state.territories["sao_paulo"].armies = 4;
     state.territories["argentina"].ownerId = "p2";
     state.territories["argentina"].armies = 2;
     state.territories["argentina"].isEncircled = true;
@@ -1820,7 +1823,7 @@ describe("Military Supply Lines, Fuel Starvation & Encirclement (HEGEM-35)", () 
     state = applyAction(
       state,
       "p1",
-      { type: "attack", fromTerritoryId: "brasil", toTerritoryId: "argentina", diceCount: 1 },
+      { type: "attack", fromTerritoryId: "sao_paulo", toTerritoryId: "argentina", diceCount: 1 },
       rng
     );
 
@@ -1869,7 +1872,7 @@ describe("Asymmetric Naval Blockade & Coastal Bombardment (HEGEM-57)", () => {
         { id: "p2", name: "Bob", color: "red" },
       ],
     });
-    const blockade = checkNavalBlockade(state, "brasil", "argelia", "p1");
+    const blockade = checkNavalBlockade(state, "brasil", "nigeria", "p1");
     expect(blockade.isBlockaded).toBe(false);
   });
 
@@ -1891,19 +1894,19 @@ describe("Asymmetric Naval Blockade & Coastal Bombardment (HEGEM-57)", () => {
 
     state.territories["brasil"].ownerId = "p1";
     state.territories["brasil"].armies = 4;
-    state.territories["argelia"].ownerId = "p2";
-    state.territories["argelia"].armies = 3;
+    state.territories["nigeria"].ownerId = "p2";
+    state.territories["nigeria"].armies = 3;
 
     // Defender builds port with 2 navies
-    state.territories["argelia"].buildings = [{ type: "port", level: 1 }];
-    state.territories["argelia"].units = unitCounts(1, 0, 0, 0, 2);
+    state.territories["nigeria"].buildings = [{ type: "port", level: 1 }];
+    state.territories["nigeria"].units = unitCounts(1, 0, 0, 0, 2);
 
     // Attacker has no navy: blocked!
     expect(() =>
       applyAction(
         state,
         "p1",
-        { type: "attack", fromTerritoryId: "brasil", toTerritoryId: "argelia" },
+        { type: "attack", fromTerritoryId: "brasil", toTerritoryId: "nigeria" },
         createSeededRng("atk_block")
       )
     ).toThrow(/bloqueada por frotas inimigas/);
@@ -1912,7 +1915,7 @@ describe("Asymmetric Naval Blockade & Coastal Bombardment (HEGEM-57)", () => {
     state.territories["brasil"].buildings = [{ type: "port", level: 1 }];
     state.territories["brasil"].units = unitCounts(2, 0, 0, 0, 2);
 
-    const check = checkNavalBlockade(state, "brasil", "argelia", "p1");
+    const check = checkNavalBlockade(state, "brasil", "nigeria", "p1");
     expect(check.isBlockaded).toBe(false);
   });
 
@@ -1935,8 +1938,8 @@ describe("Asymmetric Naval Blockade & Coastal Bombardment (HEGEM-57)", () => {
     state.territories["brasil"].buildings = [{ type: "port", level: 1 }];
     state.territories["brasil"].units = unitCounts(3, 0, 0, 0, 1);
 
-    state.territories["argelia"].ownerId = "p2";
-    state.territories["argelia"].armies = 2;
+    state.territories["nigeria"].ownerId = "p2";
+    state.territories["nigeria"].armies = 2;
 
     const rng = createSeededRng("nav_combat");
     rng.rollD6 = () => 4; // Rolls 4, coastal bombardment +1 brings highest to 5
@@ -1944,7 +1947,7 @@ describe("Asymmetric Naval Blockade & Coastal Bombardment (HEGEM-57)", () => {
     state = applyAction(
       state,
       "p1",
-      { type: "attack", fromTerritoryId: "brasil", toTerritoryId: "argelia", diceCount: 1 },
+      { type: "attack", fromTerritoryId: "brasil", toTerritoryId: "nigeria", diceCount: 1 },
       rng
     );
 
@@ -1976,9 +1979,9 @@ describe("Tanks, Blitzkrieg Spearhead & Infantry Assault Fatigue (HEGEM-25)", ()
     state.turnIndex = state.players.findIndex((p) => p.id === "p1");
     state.players.find((p) => p.id === "p1")!.resources.oil = 2;
 
-    state.territories["brasil"].ownerId = "p1";
-    state.territories["brasil"].units = unitCounts(1, 2);
-    state.territories["brasil"].armies = 3;
+    state.territories["sao_paulo"].ownerId = "p1";
+    state.territories["sao_paulo"].units = unitCounts(1, 2);
+    state.territories["sao_paulo"].armies = 3;
     state.territories["argentina"].ownerId = "p2";
     state.territories["argentina"].armies = 2;
 
@@ -1991,7 +1994,7 @@ describe("Tanks, Blitzkrieg Spearhead & Infantry Assault Fatigue (HEGEM-25)", ()
       "p1",
       {
         type: "attack",
-        fromTerritoryId: "brasil",
+        fromTerritoryId: "sao_paulo",
         toTerritoryId: "argentina",
         diceCount: 1,
         units: unitCounts(0, 1),
@@ -2017,12 +2020,12 @@ describe("Tanks, Blitzkrieg Spearhead & Infantry Assault Fatigue (HEGEM-25)", ()
     state.turnIndex = state.players.findIndex((p) => p.id === "p1");
     state.players.find((p) => p.id === "p1")!.resources.oil = 3;
 
-    state.territories["brasil"].ownerId = "p1";
-    setTerritoryUnits(state.territories["brasil"], unitCounts(2, 2));
+    state.territories["sao_paulo"].ownerId = "p1";
+    setTerritoryUnits(state.territories["sao_paulo"], unitCounts(2, 2));
     state.territories["argentina"].ownerId = "p2";
     setTerritoryUnits(state.territories["argentina"], unitCounts(1, 0));
 
-    // Brazil conquers Argentina
+    // São Paulo conquers Argentina
     const rolls = [6, 6, 6, 1, 6, 1];
     const rng = createSeededRng("blitz_conquer");
     rng.rollD6 = () => rolls.shift() ?? 1;
@@ -2032,7 +2035,7 @@ describe("Tanks, Blitzkrieg Spearhead & Infantry Assault Fatigue (HEGEM-25)", ()
       "p1",
       {
         type: "attack",
-        fromTerritoryId: "brasil",
+        fromTerritoryId: "sao_paulo",
         toTerritoryId: "argentina",
         units: unitCounts(1, 2),
       },
@@ -2111,8 +2114,8 @@ describe("Artillery Barrage & Airfield Air Missions (HEGEM-26, HEGEM-30)", () =>
     state.phase = "attack";
     state.turnIndex = state.players.findIndex((p) => p.id === "p1");
 
-    state.territories["brasil"].ownerId = "p1";
-    setTerritoryUnits(state.territories["brasil"], unitCounts(2, 0, 2)); // 2 inf, 2 artillery = 4 armies
+    state.territories["sao_paulo"].ownerId = "p1";
+    setTerritoryUnits(state.territories["sao_paulo"], unitCounts(2, 0, 2)); // 2 inf, 2 artillery = 4 armies
     state.territories["argentina"].ownerId = "p2";
     setTerritoryUnits(state.territories["argentina"], unitCounts(3, 0, 0)); // 3 inf = 3 armies
     state.territories["argentina"].buildings = [{ type: "fortification", level: 2 }];
@@ -2124,14 +2127,14 @@ describe("Artillery Barrage & Airfield Air Missions (HEGEM-26, HEGEM-30)", () =>
     state = applyAction(
       state,
       "p1",
-      { type: "artillery_barrage", fromTerritoryId: "brasil", toTerritoryId: "argentina" },
+      { type: "artillery_barrage", fromTerritoryId: "sao_paulo", toTerritoryId: "argentina" },
       rng
     );
 
     // 1st hit degraded fortress from lvl 2 to lvl 1, 2nd hit destroyed 1 defender unit
     expect(getTerritoryBuildingLevel(state.territories["argentina"], "fortification")).toBe(1);
     expect(state.territories["argentina"].armies).toBe(2);
-    expect(state.territories["brasil"].artilleryBarrageFiredThisTurn).toBe(true);
+    expect(state.territories["sao_paulo"].artilleryBarrageFiredThisTurn).toBe(true);
   });
 
   it("executes air missions (CAS, Strategic Bombing, Recon) within BFS range <= 2 and <= 1 sea crossing", () => {
@@ -2151,23 +2154,24 @@ describe("Artillery Barrage & Airfield Air Missions (HEGEM-26, HEGEM-30)", () =>
     state.territories["brasil"].ownerId = "p1";
     state.territories["brasil"].buildings = [{ type: "airfield", level: 1 }];
     state.territories["brasil"].units = unitCounts(2, 0, 0, 2); // 2 aircraft
-    state.territories["argentina"].ownerId = "p2";
-    state.territories["argentina"].armies = 2;
+    state.territories["sao_paulo"].ownerId = "p2";
+    state.territories["sao_paulo"].armies = 2;
 
     // Verify operational range
     const targets = findAirMissionTargets(state, "brasil", CLASSIC_MAP);
-    expect(targets).toContain("argentina"); // distance 1
-    expect(targets).toContain("argelia"); // 1 sea link
+    expect(targets).toContain("argentina"); // distance 2
+    expect(targets).toContain("nigeria"); // 1 sea link
+    expect(targets).toContain("argelia"); // 1 sea link + 1 land border (distance 2, 1 sea crossing)
     expect(targets).toContain("egito"); // 1 sea link + 1 land border (distance 2, 1 sea crossing)
 
-    // Execute CAS mission
+    // Execute CAS mission (requires adjacent target)
     state = applyAction(
       state,
       "p1",
-      { type: "air_mission", fromTerritoryId: "brasil", toTerritoryId: "argentina", missionType: "cas" },
+      { type: "air_mission", fromTerritoryId: "brasil", toTerritoryId: "sao_paulo", missionType: "cas" },
       createSeededRng("cas_rng")
     );
-    expect(state.territories["argentina"].casBonusAttackerId).toBe("p1");
+    expect(state.territories["sao_paulo"].casBonusAttackerId).toBe("p1");
     expect(state.players.find((p) => p.id === "p1")!.resources.oil).toBe(4); // 1 oil consumed
   });
 });
