@@ -183,6 +183,48 @@ export interface ObjectiveCard {
   coreTerritoryIds?: string[];
 }
 
+export interface PlayerMatchAnalytics {
+  capitalContinentId?: ContinentId;
+  totalMoneyEarned: number;
+  fuelStarvationTurns: number;
+  encircledRoundsCount: number;
+  buildingsConstructed: Record<BuildingType, number>;
+  unitsRecruited: UnitCounts;
+  unitsLost: UnitCounts;
+  unificationRounds: Partial<Record<ContinentId, number>>;
+}
+
+export function createInitialPlayerAnalytics(capitalContinentId?: ContinentId): PlayerMatchAnalytics {
+  return {
+    capitalContinentId,
+    totalMoneyEarned: 0,
+    fuelStarvationTurns: 0,
+    encircledRoundsCount: 0,
+    buildingsConstructed: {
+      market: 0,
+      industry: 0,
+      fortification: 0,
+      airfield: 0,
+      port: 0,
+    },
+    unitsRecruited: {
+      infantry: 0,
+      tank: 0,
+      artillery: 0,
+      aircraft: 0,
+      navy: 0,
+    },
+    unitsLost: {
+      infantry: 0,
+      tank: 0,
+      artillery: 0,
+      aircraft: 0,
+      navy: 0,
+    },
+    unificationRounds: {},
+  };
+}
+
 export interface PlayerState {
   id: string;
   name: string;
@@ -210,6 +252,8 @@ export interface PlayerState {
   resources: PlayerResources;
   /** Whether this player has already purchased a supply card with gold on the current turn */
   boughtCardWithGoldThisTurn?: boolean;
+  /** Geoeconomic match telemetry & continental balance metrics (HEGEM-59) */
+  analytics?: PlayerMatchAnalytics;
 }
 
 export type TreatyType = "nap" | "alliance";
@@ -243,6 +287,24 @@ export interface TerritoryState {
   buildings?: TerritoryBuilding[];
   /** Whether this territory's airfield has already performed a strategic airlift this turn */
   airliftedThisTurn?: boolean;
+  /** Whether this territory is encircled/out of supply line with capital (HEGEM-35) */
+  isEncircled?: boolean;
+  /** Consecutive rounds this territory has been encircled without supply */
+  encircledRounds?: number;
+  /** Whether mechanized units in this territory are out of fuel due to national oil <= 0 */
+  outOfFuel?: boolean;
+  /** Whether this territory has blitzkrieg spearhead attack available this turn */
+  blitzkriegAvailable?: boolean;
+  /** Round when this territory was conquered */
+  conqueredTurnRound?: number;
+  /** Whether infantry in this territory is fatigued from assaulting and cannot lead a second assault */
+  infantryAssaultFatigued?: boolean;
+  /** Whether artillery barrage was already fired from this territory this turn */
+  artilleryBarrageFiredThisTurn?: boolean;
+  /** Whether an air mission was already launched from this airfield this turn */
+  airMissionFlownThisTurn?: boolean;
+  /** Target territory has received Close Air Support (CAS) bonus for attacker */
+  casBonusAttackerId?: string;
 }
 
 export interface PendingConquest {
@@ -268,6 +330,11 @@ export interface CombatRollResult {
   defenderModifier?: number;
   lastStandBonus?: boolean;
   fortificationLevel?: number;
+  casBonus?: boolean;
+  blitzkriegBonus?: boolean;
+  encircledDefenderPenalty?: number;
+  navalBlockade?: boolean;
+  coastalBombardmentBonus?: boolean;
 }
 
 export interface GameState {
@@ -383,6 +450,24 @@ export const RejectBorderTradeActionSchema = z.object({
   dealId: z.string(),
 });
 
+export const ArtilleryBarrageActionSchema = z.object({
+  type: z.literal("artillery_barrage"),
+  fromTerritoryId: z.string(),
+  toTerritoryId: z.string(),
+});
+export type ArtilleryBarrageAction = z.infer<typeof ArtilleryBarrageActionSchema>;
+
+export const AirMissionTypeSchema = z.enum(["cas", "bombardment", "recon"]);
+export type AirMissionType = z.infer<typeof AirMissionTypeSchema>;
+
+export const AirMissionActionSchema = z.object({
+  type: z.literal("air_mission"),
+  fromTerritoryId: z.string(),
+  toTerritoryId: z.string(),
+  missionType: AirMissionTypeSchema,
+});
+export type AirMissionAction = z.infer<typeof AirMissionActionSchema>;
+
 export const AttackActionSchema = z.object({
   type: z.literal("attack"),
   fromTerritoryId: z.string(),
@@ -459,6 +544,8 @@ export const GameActionSchema = z.discriminatedUnion("type", [
   ProposeBorderTradeActionSchema,
   AcceptBorderTradeActionSchema,
   RejectBorderTradeActionSchema,
+  ArtilleryBarrageActionSchema,
+  AirMissionActionSchema,
   AttackActionSchema,
   OccupyActionSchema,
   EndAttackPhaseActionSchema,
