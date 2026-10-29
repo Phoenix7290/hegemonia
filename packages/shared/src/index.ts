@@ -93,6 +93,24 @@ export interface PlayerResources {
   gold: number;
 }
 
+export const UnitTypeSchema = z.enum([
+  "infantry",
+  "tank",
+  "artillery",
+  "aircraft",
+  "navy",
+]);
+export type UnitType = z.infer<typeof UnitTypeSchema>;
+
+export const UnitCountsSchema = z.object({
+  infantry: z.number().int().min(0),
+  tank: z.number().int().min(0),
+  artillery: z.number().int().min(0),
+  aircraft: z.number().int().min(0),
+  navy: z.number().int().min(0),
+});
+export type UnitCounts = z.infer<typeof UnitCountsSchema>;
+
 export interface TerritoryDef {
   id: string;
   name: string;
@@ -215,8 +233,10 @@ export interface TerritoryState {
   id: string;
   ownerId: string;
   armies: number;
+  units?: UnitCounts;
   /** Armies that already moved into this territory during the maneuver phase */
   movedInArmies: number;
+  movedInUnits?: UnitCounts;
   /** Constructed infrastructure buildings on this territory (max 2 regular, 3 in active capital) */
   buildings?: TerritoryBuilding[];
   /** Whether this territory's airfield has already performed a strategic airlift this turn */
@@ -228,6 +248,8 @@ export interface PendingConquest {
   toTerritoryId: string;
   minMove: number;
   maxMove: number;
+  occupyingUnits?: UnitCounts;
+  remainingAttackers?: UnitCounts;
 }
 
 export interface CombatRollResult {
@@ -237,6 +259,8 @@ export interface CombatRollResult {
   defenderDice: number[];
   attackerLosses: number;
   defenderLosses: number;
+  attackerLossUnits?: UnitCounts;
+  defenderLossUnits?: UnitCounts;
   conquered: boolean;
   attackerModifier?: number;
   defenderModifier?: number;
@@ -302,6 +326,13 @@ export const BuildStructureActionSchema = z.object({
   buildingType: BuildingTypeSchema,
 });
 
+export const RecruitUnitActionSchema = z.object({
+  type: z.literal("recruit_unit"),
+  territoryId: z.string(),
+  unitType: UnitTypeSchema,
+  quantity: z.number().int().min(1).default(1),
+});
+
 export const AirliftActionSchema = z.object({
   type: z.literal("airlift"),
   fromTerritoryId: z.string(),
@@ -355,11 +386,13 @@ export const AttackActionSchema = z.object({
   fromTerritoryId: z.string(),
   toTerritoryId: z.string(),
   diceCount: z.number().int().min(1).max(3).optional(),
+  units: UnitCountsSchema.optional(),
 });
 
 export const OccupyActionSchema = z.object({
   type: z.literal("occupy"),
   armies: z.number().int().min(1).max(3),
+  units: UnitCountsSchema.optional(),
 });
 
 export const EndAttackPhaseActionSchema = z.object({
@@ -371,6 +404,7 @@ export const ManeuverActionSchema = z.object({
   fromTerritoryId: z.string(),
   toTerritoryId: z.string(),
   armies: z.number().int().min(1),
+  units: UnitCountsSchema.optional(),
 });
 
 export const EndTurnActionSchema = z.object({
@@ -414,6 +448,7 @@ export const GameActionSchema = z.discriminatedUnion("type", [
   TradeCardsActionSchema,
   BuyCardWithGoldActionSchema,
   BuildStructureActionSchema,
+  RecruitUnitActionSchema,
   AirliftActionSchema,
   MarketTradeActionSchema,
   ProposeInvestmentActionSchema,

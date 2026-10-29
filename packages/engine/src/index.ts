@@ -13,11 +13,28 @@ import {
   type ResourceType,
   type TerritoryCard,
   type TerritoryState,
+  type UnitCounts,
+  type UnitType,
 } from "@hegemonia/shared";
 import { ALL_OBJECTIVES, ASIA_SUBREGIONS, CLASSIC_MAP, CLASSIC_OBJECTIVES, ROLEPLAY_OBJECTIVES } from "@hegemonia/maps";
 import { createSeededRng, hashSeed, type SeededRng } from "./rng.js";
+import {
+  addUnits,
+  canSubtractUnits,
+  emptyUnitCounts,
+  getMovedInUnits,
+  getTerritoryUnits,
+  removeCasualties,
+  selectUnits,
+  setMovedInUnits,
+  setTerritoryUnits,
+  singleUnitCount,
+  subtractUnits,
+  totalUnits,
+} from "./units.js";
 
 export * from "./rng.js";
+export * from "./units.js";
 
 export interface CreateGameOptions {
   id: string;
@@ -144,6 +161,20 @@ export const BUILDING_COSTS: Record<BuildingType, BuildingCost> = {
 export const FORTIFICATION_LEVEL_2_COST: BuildingCost = {
   money: 4,
   steel: 1,
+};
+
+export interface UnitCost {
+  money: number;
+  steel: number;
+  oil: number;
+}
+
+export const UNIT_COSTS: Record<UnitType, UnitCost> = {
+  infantry: { money: 3, steel: 0, oil: 0 },
+  tank: { money: 4, steel: 2, oil: 0 },
+  artillery: { money: 4, steel: 2, oil: 0 },
+  aircraft: { money: 5, steel: 1, oil: 1 },
+  navy: { money: 5, steel: 2, oil: 1 },
 };
 
 export interface MarketPriceConfig {
@@ -398,7 +429,9 @@ export function createGame(opts: CreateGameOptions): GameState {
       id: t.id,
       ownerId: owner.id,
       armies: 1,
+      units: singleUnitCount("infantry"),
       movedInArmies: 0,
+      movedInUnits: emptyUnitCounts(),
       buildings: [],
       airliftedThisTurn: false,
     };
@@ -786,7 +819,11 @@ export function applyAction(
       const territoryBonuses: string[] = [];
       for (const c of selected) {
         if (c.territoryId && state.territories[c.territoryId]?.ownerId === playerId) {
-          state.territories[c.territoryId].armies += 2;
+          const terr = state.territories[c.territoryId];
+          setTerritoryUnits(
+            terr,
+            addUnits(getTerritoryUnits(terr), singleUnitCount("infantry", 2))
+          );
           territoryBonuses.push(mapById.get(c.territoryId)?.namePt ?? c.territoryId);
         }
       }
@@ -930,6 +967,80 @@ export function applyAction(
       break;
     }
 
+    case "recruit_unit": {
+      if (state.phase !== "deploy") {
+        throw new Error("O recrutamento só é permitido na fase de posicionamento.");
+      }
+      const terr = state.territories[action.territoryId];
+      if (!terr || terr.ownerId !== playerId) {
+        throw new Error("Você só pode recrutar em territórios sob seu controle.");
+      }
+      const def = mapById.get(terr.id);
+      if (!def) throw new Error("Território inválido.");
+
+      const requiredBuilding: Partial<Record<UnitType, BuildingType>> = {
+        tank: "industry",
+        artillery: "industry",
+        aircraft: "airfield",
+        navy: "port",
+      };
+      const requirement = requiredBuilding[action.unitType];
+      if (requirement && !hasTerritoryBuilding(terr, requirement)) {
+        const requirementNames: Record<BuildingType, string> = {
+          market: "Mercado",
+          industry: "Indústria",
+          fortification: "Fortificação",
+          airfield: "Aeródromo",
+          port: "Porto Naval",
+        };
+        throw new Error(
+          `O recrutamento desta unidade exige ${requirementNames[requirement]} no território.`
+        );
+      }
+      if (action.unitType === "navy" && def.isCoastal === false) {
+        throw new Error("A Marinha só pode ser recrutada em territórios costeiros ou insulares.");
+      }
+
+      const unitCost = UNIT_COSTS[action.unitType];
+      const totalCost = {
+        money: unitCost.money * action.quantity,
+        steel: unitCost.steel * action.quantity,
+        oil: unitCost.oil * action.quantity,
+      };
+      if (
+        currentPlayer.resources.money < totalCost.money ||
+        currentPlayer.resources.steel < totalCost.steel ||
+        currentPlayer.resources.oil < totalCost.oil
+      ) {
+        throw new Error(
+          `Recursos insuficientes: o recrutamento custa $${totalCost.money}, ${totalCost.steel} Aço e ${totalCost.oil} Petróleo.`
+        );
+      }
+
+      currentPlayer.resources.money -= totalCost.money;
+      currentPlayer.resources.steel -= totalCost.steel;
+      currentPlayer.resources.oil -= totalCost.oil;
+      setTerritoryUnits(
+        terr,
+        addUnits(
+          getTerritoryUnits(terr),
+          singleUnitCount(action.unitType, action.quantity)
+        )
+      );
+
+      const unitNames: Record<UnitType, string> = {
+        infantry: "Infantaria",
+        tank: "Blindado",
+        artillery: "Artilharia",
+        aircraft: "Aeronave",
+        navy: "Marinha",
+      };
+      state.log.push(
+        `${currentPlayer.name} recrutou ${action.quantity}x ${unitNames[action.unitType]} em ${def.namePt}.`
+      );
+      break;
+    }
+
     case "market_trade": {
       if (state.pendingConquest) {
         throw new Error("Conclua a ocupação do território conquistado antes de negociar no mercado.");
@@ -1045,7 +1156,10 @@ export function applyAction(
         state.log.push(`⭐ ${currentPlayer.name} estabeleceu ${capName} como sua Capital Nacional!`);
       }
 
-      terr.armies += action.armies;
+      setTerritoryUnits(
+        terr,
+        addUnits(getTerritoryUnits(terr), singleUnitCount("infantry", action.armies))
+      );
       currentPlayer.unplacedArmies -= action.armies;
       const tName = mapById.get(terr.id)?.namePt ?? terr.id;
       state.log.push(`${currentPlayer.name} posicionou +${action.armies} em ${tName}.`);
@@ -1086,6 +1200,19 @@ export function applyAction(
       const fromDef = mapById.get(fromTerr.id)!;
       if (!fromDef.neighbors.includes(toTerr.id)) {
         throw new Error("Os territórios não fazem fronteira.");
+      }
+
+      const fromUnits = getTerritoryUnits(fromTerr);
+      const toUnits = getTerritoryUnits(toTerr);
+      const attackingUnits = action.units
+        ? { ...action.units }
+        : selectUnits(fromUnits, fromTerr.armies - 1);
+      const attackingCount = totalUnits(attackingUnits);
+      if (attackingCount < 1 || attackingCount > fromTerr.armies - 1) {
+        throw new Error("A força-tarefa deve manter ao menos 1 divisão de guarnição na origem.");
+      }
+      if (!canSubtractUnits(fromUnits, attackingUnits)) {
+        throw new Error("A força-tarefa selecionada excede as unidades disponíveis na origem.");
       }
 
       // Check active diplomatic treaties (NAP or Alliance)
@@ -1149,7 +1276,7 @@ export function applyAction(
         }
       }
 
-      const maxAttackerDice = Math.min(3, fromTerr.armies - 1);
+      const maxAttackerDice = Math.min(3, attackingCount);
       const attackerDiceCount = action.diceCount
         ? Math.min(action.diceCount, maxAttackerDice)
         : maxAttackerDice;
@@ -1197,8 +1324,13 @@ export function applyAction(
         }
       }
 
-      fromTerr.armies -= attackerLosses;
-      toTerr.armies -= defenderLosses;
+      const attackerCombat = removeCasualties(attackingUnits, attackerLosses);
+      const defenderCombat = removeCasualties(toUnits, defenderLosses);
+      setTerritoryUnits(
+        fromTerr,
+        addUnits(subtractUnits(fromUnits, attackingUnits), attackerCombat.remaining)
+      );
+      setTerritoryUnits(toTerr, defenderCombat.remaining);
 
       const defenderId = toTerr.ownerId;
       const conquered = toTerr.armies === 0;
@@ -1210,6 +1342,8 @@ export function applyAction(
         defenderDice,
         attackerLosses,
         defenderLosses,
+        attackerLossUnits: attackerCombat.losses,
+        defenderLossUnits: defenderCombat.losses,
         conquered,
         attackerModifier,
         defenderModifier,
@@ -1283,16 +1417,18 @@ export function applyAction(
           );
         }
 
-        const maxMove = Math.min(attackerDiceCount, fromTerr.armies - 1);
+        const remainingAttackers = attackerCombat.remaining;
+        const maxMove = Math.min(
+          attackerDiceCount,
+          totalUnits(remainingAttackers),
+          fromTerr.armies - 1
+        );
         const minMove = 1;
+        const occupyingUnits = selectUnits(remainingAttackers, 1);
 
-        // Immediately move 1 army into the conquered territory (minimum required)
-        fromTerr.armies -= 1;
-        toTerr.armies = 1;
+        setTerritoryUnits(fromTerr, subtractUnits(getTerritoryUnits(fromTerr), occupyingUnits));
+        setTerritoryUnits(toTerr, occupyingUnits);
 
-        // If up to 1 or 2 additional armies can be moved (up to maxMove total),
-        // record pendingConquest as the remaining optional move (0..maxMove-1),
-        // or if maxMove === 1, no further prompt is needed.
         if (maxMove <= 1) {
           state.pendingConquest = null;
         } else {
@@ -1301,6 +1437,8 @@ export function applyAction(
             toTerritoryId: toTerr.id,
             minMove: 1,
             maxMove,
+            occupyingUnits,
+            remainingAttackers: subtractUnits(remainingAttackers, occupyingUnits),
           };
         }
 
@@ -1335,14 +1473,40 @@ export function applyAction(
       if (!state.pendingConquest) {
         throw new Error("Nenhuma conquista pendente para ocupar.");
       }
-      const { fromTerritoryId, toTerritoryId, minMove, maxMove } = state.pendingConquest;
+      const {
+        fromTerritoryId,
+        toTerritoryId,
+        minMove,
+        maxMove,
+        occupyingUnits,
+        remainingAttackers,
+      } = state.pendingConquest;
       if (action.armies < minMove || action.armies > maxMove) {
         throw new Error(`Você deve mover entre ${minMove} e ${maxMove} exércitos.`);
       }
-      // 1 army was already moved immediately on conquest; move the additional (action.armies - 1)
+
+      const fromTerr = state.territories[fromTerritoryId];
+      const toTerr = state.territories[toTerritoryId];
+      const initialOccupation = occupyingUnits ?? selectUnits(getTerritoryUnits(toTerr), 1);
+      const availableAttackers = remainingAttackers ?? getTerritoryUnits(fromTerr);
       const additional = action.armies - 1;
-      state.territories[fromTerritoryId].armies -= additional;
-      state.territories[toTerritoryId].armies += additional;
+      let additionalUnits = selectUnits(availableAttackers, additional);
+
+      if (action.units) {
+        if (totalUnits(action.units) !== action.armies) {
+          throw new Error("A composição da ocupação deve corresponder ao total de divisões movidas.");
+        }
+        if (!canSubtractUnits(action.units, initialOccupation)) {
+          throw new Error("A composição da ocupação deve incluir a divisão que já ocupou o território.");
+        }
+        additionalUnits = subtractUnits(action.units, initialOccupation);
+        if (!canSubtractUnits(availableAttackers, additionalUnits)) {
+          throw new Error("A composição excede os sobreviventes disponíveis para ocupar.");
+        }
+      }
+
+      setTerritoryUnits(fromTerr, subtractUnits(getTerritoryUnits(fromTerr), additionalUnits));
+      setTerritoryUnits(toTerr, addUnits(getTerritoryUnits(toTerr), additionalUnits));
       state.pendingConquest = null;
       break;
     }
@@ -1356,7 +1520,7 @@ export function applyAction(
       }
       state.phase = "maneuver";
       for (const t of Object.values(state.territories)) {
-        t.movedInArmies = 0;
+        setMovedInUnits(t, emptyUnitCounts());
         t.airliftedThisTurn = false;
       }
       break;
@@ -1383,16 +1547,21 @@ export function applyAction(
       if (fromTerr.airliftedThisTurn) {
         throw new Error("Este Aeródromo já realizou uma operação de Ponte Aérea neste turno.");
       }
-      const movableArmies = Math.max(0, fromTerr.armies - fromTerr.movedInArmies - 1);
+      const availableUnits = subtractUnits(getTerritoryUnits(fromTerr), getMovedInUnits(fromTerr));
+      const movableArmies = Math.min(
+        availableUnits.infantry,
+        Math.max(0, totalUnits(availableUnits) - 1)
+      );
       if (action.armies > movableArmies) {
         throw new Error(
-          `Apenas ${movableArmies} divisão(ões) podem ser transportadas deste território neste turno.`
+          `Apenas ${movableArmies} divisão(ões) de infantaria podem ser transportadas deste território neste turno.`
         );
       }
 
-      fromTerr.armies -= action.armies;
-      toTerr.armies += action.armies;
-      toTerr.movedInArmies += action.armies;
+      const movedUnits = singleUnitCount("infantry", action.armies);
+      setTerritoryUnits(fromTerr, subtractUnits(getTerritoryUnits(fromTerr), movedUnits));
+      setTerritoryUnits(toTerr, addUnits(getTerritoryUnits(toTerr), movedUnits));
+      setMovedInUnits(toTerr, addUnits(getMovedInUnits(toTerr), movedUnits));
       fromTerr.airliftedThisTurn = true;
 
       const fromDef = mapById.get(fromTerr.id)!;
@@ -1418,18 +1587,22 @@ export function applyAction(
         throw new Error("No War clássico, o remanejamento só é permitido entre territórios vizinhos.");
       }
 
-      // Each army can only move once per turn, and at least 1 army must stay behind
-      const movableArmies = Math.max(
-        0,
-        fromTerr.armies - fromTerr.movedInArmies - 1
-      );
+      const availableUnits = subtractUnits(getTerritoryUnits(fromTerr), getMovedInUnits(fromTerr));
+      const movableArmies = Math.max(0, totalUnits(availableUnits) - 1);
       if (action.armies > movableArmies) {
         throw new Error(`Apenas ${movableArmies} exército(s) podem se mover deste território neste turno.`);
       }
+      const movedUnits = action.units ?? selectUnits(availableUnits, action.armies);
+      if (totalUnits(movedUnits) !== action.armies) {
+        throw new Error("A composição deve corresponder ao total de divisões movidas.");
+      }
+      if (!canSubtractUnits(availableUnits, movedUnits)) {
+        throw new Error("A composição inclui unidades indisponíveis ou que já se moveram neste turno.");
+      }
 
-      fromTerr.armies -= action.armies;
-      toTerr.armies += action.armies;
-      toTerr.movedInArmies += action.armies;
+      setTerritoryUnits(fromTerr, subtractUnits(getTerritoryUnits(fromTerr), movedUnits));
+      setTerritoryUnits(toTerr, addUnits(getTerritoryUnits(toTerr), movedUnits));
+      setMovedInUnits(toTerr, addUnits(getMovedInUnits(toTerr), movedUnits));
 
       state.log.push(
         `${currentPlayer.name} moveu ${action.armies} de ${fromDef.namePt} para ${
@@ -1907,7 +2080,7 @@ function advanceTurn(state: GameState, rng: SeededRng, map: GameMapDef): void {
   endingPlayer.boughtCardWithGoldThisTurn = false;
 
   for (const t of Object.values(state.territories)) {
-    t.movedInArmies = 0;
+    setMovedInUnits(t, emptyUnitCounts());
     t.airliftedThisTurn = false;
   }
 

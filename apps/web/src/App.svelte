@@ -11,15 +11,31 @@
     BUILDING_COSTS,
     DEFAULT_MARKET_CONFIG,
     FORTIFICATION_LEVEL_2_COST,
+    UNIT_COSTS,
+    UNIT_TYPES,
+    addUnits,
     calculateTurnEconomy,
+    emptyUnitCounts,
     findValidTradeTriplet,
+    getMovedInUnits,
     getTerritoryBuildingLevel,
     getTerritoryMaxBuildingSlots,
+    getTerritoryUnits,
     getTradeBonusArmies,
     hasTerritoryBuilding,
     playerHasMarket,
+    selectUnits,
+    subtractUnits,
+    totalUnits,
   } from "@hegemonia/engine";
-  import type { BuildingType, GameState, PlayerColor, ResourceType } from "@hegemonia/shared";
+  import type {
+    BuildingType,
+    GameState,
+    PlayerColor,
+    ResourceType,
+    UnitCounts,
+    UnitType,
+  } from "@hegemonia/shared";
   import { sound } from "./audio.js";
   import { estimateAttackWinOdds } from "./odds.js";
   import { auth } from "./lib/auth.svelte";
@@ -29,6 +45,7 @@
   } from "./components/CommandCenter.svelte";
   import FactionFlag from "./components/FactionFlag.svelte";
   import Icon from "./components/Icon.svelte";
+  import UnitSelector from "./components/UnitSelector.svelte";
   import VictoryModal from "./components/VictoryModal.svelte";
   import WarJournal from "./components/WarJournal.svelte";
   import { CommunicationsController } from "./lib/communications.svelte";
@@ -174,6 +191,8 @@
   let selectedToId = $state<string | null>(null);
   let hoveredTerritoryId = $state<string | null>(null);
   let sliderArmies = $state(1);
+  let selectedUnits = $state<UnitCounts>(emptyUnitCounts());
+  let selectedUnitTotal = $derived(totalUnits(selectedUnits));
   let selectedAttackDice = $state<number | null>(null); // null = auto max dice
 
   // HUD Drawers (Mutually Exclusive on Right Panel to Prevent Overlap)
@@ -379,15 +398,10 @@
     const fromT = game.territories[selectedFromId];
     const toT = game.territories[selectedToId];
     if (!fromT || !toT) return null;
-    return estimateAttackWinOdds(fromT.armies, toT.armies);
+    return estimateAttackWinOdds(selectedUnitTotal + 1, toT.armies);
   });
 
-  let maxAttackerDice = $derived.by(() => {
-    if (!game || !selectedFromId) return 3;
-    const fromT = game.territories[selectedFromId];
-    if (!fromT) return 3;
-    return Math.max(1, Math.min(3, fromT.armies - 1));
-  });
+  let maxAttackerDice = $derived(Math.max(1, Math.min(3, selectedUnitTotal)));
 
   let playerMetrics = $derived.by(() => {
     if (!game) return [];
@@ -639,9 +653,7 @@
         communications.setPlayers(payload.lobbyPlayers);
         game = payload.game;
 
-        if (game?.pendingConquest) {
-          sliderArmies = game.pendingConquest.maxMove;
-        }
+        resetSelectedForce();
 
         if (game?.lastCombat && game.lastCombat !== prevLastCombat) {
           sound.playCombatAttack();
@@ -767,6 +779,91 @@
     });
   }
 
+  const UNIT_BUILDING_REQUIREMENTS: Partial<Record<UnitType, BuildingType>> = {
+    tank: "industry",
+    artillery: "industry",
+    aircraft: "airfield",
+    navy: "port",
+  };
+
+  function canRecruitUnit(territoryId: string, unitType: UnitType): boolean {
+    if (!game || !myPlayerState) return false;
+    const territory = game.territories[territoryId];
+    const definition = territoryById.get(territoryId);
+    if (!territory || !definition) return false;
+    const requirement = UNIT_BUILDING_REQUIREMENTS[unitType];
+    if (requirement && !hasTerritoryBuilding(territory, requirement)) return false;
+    if (unitType === "navy" && definition.isCoastal === false) return false;
+    const cost = UNIT_COSTS[unitType];
+    return (
+      myPlayerState.resources.money >= cost.money &&
+      myPlayerState.resources.steel >= cost.steel &&
+      myPlayerState.resources.oil >= cost.oil
+    );
+  }
+
+  function getRecruitRequirement(unitType: UnitType): string {
+    const requirement = UNIT_BUILDING_REQUIREMENTS[unitType];
+    return requirement
+      ? t("unit_requires", { building: t(`building_${requirement}`) })
+      : t("unit_no_requirement");
+  }
+
+  function handleRecruitUnit(territoryId: string, unitType: UnitType) {
+    sendAction({ type: "recruit_unit", territoryId, unitType, quantity: 1 });
+  }
+
+  function resetAttackSelection() {
+    if (!game || !selectedFromId) {
+      selectedUnits = emptyUnitCounts();
+      return;
+    }
+    const territory = game.territories[selectedFromId];
+    selectedUnits = territory
+      ? selectUnits(getTerritoryUnits(territory), Math.max(0, territory.armies - 1))
+      : emptyUnitCounts();
+  }
+
+  function resetManeuverSelection() {
+    if (!game || !selectedFromId) {
+      selectedUnits = emptyUnitCounts();
+      return;
+    }
+    const territory = game.territories[selectedFromId];
+    if (!territory) {
+      selectedUnits = emptyUnitCounts();
+      return;
+    }
+    const available = subtractUnits(getTerritoryUnits(territory), getMovedInUnits(territory));
+    selectedUnits = selectUnits(available, Math.max(0, totalUnits(available) - 1));
+  }
+
+  function getOccupationAvailable(): UnitCounts {
+    if (!game?.pendingConquest) return emptyUnitCounts();
+    const pending = game.pendingConquest;
+    const destination = game.territories[pending.toTerritoryId];
+    const origin = game.territories[pending.fromTerritoryId];
+    const occupying = pending.occupyingUnits ?? selectUnits(getTerritoryUnits(destination), 1);
+    const remaining = pending.remainingAttackers ?? getTerritoryUnits(origin);
+    return addUnits(occupying, remaining);
+  }
+
+  function resetOccupationSelection() {
+    if (!game?.pendingConquest) return;
+    selectedUnits = selectUnits(getOccupationAvailable(), game.pendingConquest.maxMove);
+    sliderArmies = totalUnits(selectedUnits);
+  }
+
+  function resetSelectedForce() {
+    if (game?.pendingConquest) {
+      resetOccupationSelection();
+    } else if (game?.phase === "attack") {
+      resetAttackSelection();
+    } else if (game?.phase === "maneuver") {
+      resetManeuverSelection();
+    }
+  }
+
   function handleMarketTrade(resource: ResourceType, operation: "buy" | "sell") {
     sendAction({
       type: "market_trade",
@@ -832,6 +929,7 @@
         selectedFromId = terrId;
         selectedToId = null;
         selectedAttackDice = null;
+        resetAttackSelection();
       } else if (
         selectedFromId &&
         tState.ownerId !== myPlayerId &&
@@ -860,9 +958,19 @@
         (tDef.neighbors.includes(selectedFromId) || isAirliftTarget)
       ) {
         selectedToId = terrId;
+        if (isAirliftTarget && fromT) {
+          const available = subtractUnits(getTerritoryUnits(fromT), getMovedInUnits(fromT));
+          sliderArmies = Math.max(
+            1,
+            Math.min(available.infantry, totalUnits(available) - 1)
+          );
+        } else {
+          resetManeuverSelection();
+        }
       } else if (tState.ownerId === myPlayerId) {
         selectedFromId = terrId;
         selectedToId = null;
+        resetManeuverSelection();
         sliderArmies = Math.max(1, tState.armies - tState.movedInArmies - 1);
       }
     }
@@ -875,16 +983,18 @@
   }
 
   function confirmAttack() {
-    if (!selectedFromId || !selectedToId) return;
+    if (!selectedFromId || !selectedToId || selectedUnitTotal < 1) return;
     const payload: {
       type: "attack";
       fromTerritoryId: string;
       toTerritoryId: string;
       diceCount?: number;
+      units: UnitCounts;
     } = {
       type: "attack",
       fromTerritoryId: selectedFromId,
       toTerritoryId: selectedToId,
+      units: selectedUnits,
     };
     if (selectedAttackDice !== null) {
       payload.diceCount = Math.min(selectedAttackDice, maxAttackerDice);
@@ -892,15 +1002,26 @@
     sendAction(payload);
   }
 
+  function confirmOccupy() {
+    if (!game?.pendingConquest) return;
+    if (
+      selectedUnitTotal < game.pendingConquest.minMove ||
+      selectedUnitTotal > game.pendingConquest.maxMove
+    ) return;
+    sendAction({ type: "occupy", armies: selectedUnitTotal, units: selectedUnits });
+  }
+
   function confirmManeuver() {
     if (!selectedFromId || !selectedToId) return;
     const isAdjacent = territoryById.get(selectedFromId)?.neighbors.includes(selectedToId);
     if (isAdjacent) {
+      if (selectedUnitTotal < 1) return;
       sendAction({
         type: "maneuver",
         fromTerritoryId: selectedFromId,
         toTerritoryId: selectedToId,
-        armies: sliderArmies,
+        armies: selectedUnitTotal,
+        units: selectedUnits,
       });
     } else {
       sendAction({
@@ -912,6 +1033,7 @@
     }
     selectedFromId = null;
     selectedToId = null;
+    selectedUnits = emptyUnitCounts();
   }
 
   // --- Mouse Drag & Wheel Camera Controls ---
@@ -2671,6 +2793,20 @@
               </span>
             </div>
 
+            <div class="recon-unit-composition">
+              <span class="infra-title"><Icon name="infantry" size={11} /> {t("unit_composition_title")}</span>
+              <div class="recon-unit-chips">
+                {#each UNIT_TYPES as unitType}
+                  {@const quantity = getTerritoryUnits(inspectedTerritory.state)[unitType]}
+                  {#if quantity > 0}
+                    <span class="recon-unit-chip" title={t(`unit_${unitType}`)}>
+                      <Icon name={unitType} size={11} /> {quantity}
+                    </span>
+                  {/if}
+                {/each}
+              </div>
+            </div>
+
             <!-- Territorial Infrastructure Section (HEGEM-32) -->
             <div class="recon-infra-header">
               <span class="infra-title"><Icon name="industry" size={11} /> {t("building_section_title")}</span>
@@ -2782,6 +2918,29 @@
                 {/if}
               </div>
             {/if}
+
+            {#if isOwnedByMe && isMyTurn && game.phase === "deploy" && !game.pendingConquest && !game.winnerId}
+              <div class="recon-infra-header recon-recruit-header">
+                <span class="infra-title"><Icon name="plus" size={11} /> {t("unit_recruit_title")}</span>
+              </div>
+              <div class="recon-build-grid">
+                {#each UNIT_TYPES as unitType}
+                  {@const cost = UNIT_COSTS[unitType]}
+                  <button
+                    class="btn-build-option recruit-option"
+                    disabled={!canRecruitUnit(inspectedTerritory.def.id, unitType)}
+                    onclick={() => handleRecruitUnit(inspectedTerritory!.def.id, unitType)}
+                    title={getRecruitRequirement(unitType)}
+                  >
+                    <Icon name={unitType} size={11} />
+                    <span>{t(`unit_${unitType}`)}</span>
+                    <strong class="cost-tag">
+                      {t("unit_cost_summary", { money: cost.money, steel: cost.steel, oil: cost.oil })}
+                    </strong>
+                  </button>
+                {/each}
+              </div>
+            {/if}
           </div>
         {/if}
 
@@ -2802,32 +2961,18 @@
                   <Icon name="flag" size={14} /> {t("conquest_title")} — {t("conquest_prompt")}
                 </h4>
               </div>
-              <div class="slider-row">
-                <button
-                  class="preset-btn"
-                  onclick={() => (sliderArmies = game!.pendingConquest!.minMove)}
-                >
-                  Min ({game.pendingConquest.minMove})
-                </button>
-                <input
-                  type="range"
-                  min={game.pendingConquest.minMove}
-                  max={game.pendingConquest.maxMove}
-                  bind:value={sliderArmies}
-                />
-                <button
-                  class="preset-btn"
-                  onclick={() => (sliderArmies = game!.pendingConquest!.maxMove)}
-                >
-                  Max ({game.pendingConquest.maxMove})
-                </button>
-                <button
-                  class="btn primary-gold"
-                  onclick={() => sendAction({ type: "occupy", armies: sliderArmies })}
-                >
-                  {t("conquest_advance", { count: sliderArmies })}
-                </button>
-              </div>
+              <UnitSelector
+                available={getOccupationAvailable()}
+                bind:selection={selectedUnits}
+                maxTotal={game.pendingConquest.maxMove}
+              />
+              <button
+                class="btn primary-gold"
+                disabled={selectedUnitTotal < game.pendingConquest.minMove}
+                onclick={confirmOccupy}
+              >
+                {t("conquest_advance", { count: selectedUnitTotal })}
+              </button>
             </div>
 
           {:else if game.phase === "deploy"}
@@ -2881,6 +3026,12 @@
                     {t("combat_target", { territory: getTerritoryName(selectedToId) })} ({game.territories[selectedToId].armies})
                   </span>
                 </div>
+
+                <UnitSelector
+                  available={getTerritoryUnits(game.territories[selectedFromId])}
+                  bind:selection={selectedUnits}
+                  maxTotal={game.territories[selectedFromId].armies - 1}
+                />
 
                 <div class="attack-controls-row">
                   <div class="dice-selector">
@@ -2937,7 +3088,12 @@
                   >
                     {t("cancel")}
                   </button>
-                  <button class="btn btn-attack" style="flex: 1;" onclick={confirmAttack}>
+                  <button
+                    class="btn btn-attack"
+                    style="flex: 1;"
+                    disabled={selectedUnitTotal < 1}
+                    onclick={confirmAttack}
+                  >
                     <Icon name="swords" size={15} /> {t("combat_execute")}
                   </button>
                 </div>
@@ -2948,11 +3104,12 @@
             {#if selectedFromId && selectedToId}
               {@const fromT = game.territories[selectedFromId]}
               {@const toT = game.territories[selectedToId]}
-              {@const maxM = Math.max(1, fromT.armies - fromT.movedInArmies - 1)}
+              {@const availableUnits = subtractUnits(getTerritoryUnits(fromT), getMovedInUnits(fromT))}
               {@const isAirlift =
                 !territoryById.get(selectedFromId)?.neighbors.includes(selectedToId) &&
                 hasTerritoryBuilding(fromT, "airfield") &&
                 hasTerritoryBuilding(toT, "airfield")}
+              {@const maxM = Math.min(availableUnits.infantry, Math.max(0, totalUnits(availableUnits) - 1))}
               <div class="action-popup">
                 <div class="popup-head">
                   <h4>
@@ -2963,8 +3120,10 @@
                     {/if}
                   </h4>
                   <div class="quick-presets">
-                    <button class="preset-btn" onclick={() => (sliderArmies = 1)}>Min (1)</button>
-                    <button class="preset-btn" onclick={() => (sliderArmies = maxM)}>Max ({maxM})</button>
+                    {#if isAirlift}
+                      <button class="preset-btn" disabled={maxM < 1} onclick={() => (sliderArmies = 1)}>Min (1)</button>
+                      <button class="preset-btn" disabled={maxM < 1} onclick={() => (sliderArmies = maxM)}>Max ({maxM})</button>
+                    {/if}
                     <button
                       class="preset-btn"
                       onclick={() => {
@@ -2976,16 +3135,27 @@
                     </button>
                   </div>
                 </div>
-                <div class="slider-row">
-                  <input type="range" min="1" max={maxM} bind:value={sliderArmies} />
-                  <button class="btn primary-gold" onclick={confirmManeuver}>
-                    {#if isAirlift}
+                {#if isAirlift}
+                  <div class="slider-row">
+                    <input type="range" min="1" max={maxM} disabled={maxM < 1} bind:value={sliderArmies} />
+                    <button class="btn primary-gold" disabled={maxM < 1} onclick={confirmManeuver}>
                       <Icon name="airfield" size={14} /> {t("airlift_btn_label")} ({sliderArmies})
-                    {:else}
-                      {t("maneuver_transfer", { count: sliderArmies })}
-                    {/if}
+                    </button>
+                  </div>
+                {:else}
+                  <UnitSelector
+                    available={availableUnits}
+                    bind:selection={selectedUnits}
+                    maxTotal={Math.max(0, totalUnits(availableUnits) - 1)}
+                  />
+                  <button
+                    class="btn primary-gold"
+                    disabled={selectedUnitTotal < 1}
+                    onclick={confirmManeuver}
+                  >
+                    {t("maneuver_transfer", { count: selectedUnitTotal })}
                   </button>
-                </div>
+                {/if}
               </div>
             {/if}
           {/if}
@@ -4681,6 +4851,35 @@
     gap: 0.35rem;
     font-size: 0.68rem;
     color: #94a3b8;
+  }
+  .recon-unit-composition {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    padding: 0.3rem 0;
+  }
+  .recon-unit-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem;
+  }
+  .recon-unit-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0.15rem 0.35rem;
+    border: 1px solid rgba(148, 163, 184, 0.25);
+    border-radius: 3px;
+    background: rgba(15, 23, 42, 0.72);
+    color: #cbd5e1;
+    font-family: var(--font-mono);
+    font-size: 0.62rem;
+  }
+  .recon-recruit-header {
+    margin-top: 0.25rem;
+  }
+  .recruit-option {
+    min-height: 2.5rem;
   }
   .bottom-left-hint {
     display: flex;
