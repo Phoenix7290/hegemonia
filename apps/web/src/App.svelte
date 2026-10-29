@@ -455,19 +455,19 @@
 
   // Direct Intra-Tile Sea Links
   const DIRECT_SEA_LINKS: [string, string][] = [
-    ["brasil", "argelia"],
-    ["argentina", "africa_do_sul"],
+    ["brasil", "nigeria"],
+    ["patagonia", "africa_do_sul"],
     ["california", "havai"],
     ["groenlandia", "islandia"],
     ["inglaterra", "islandia"],
     ["inglaterra", "suecia"],
     ["inglaterra", "franca"],
     ["inglaterra", "alemanha"],
-    ["franca", "argelia"],
-    ["franca", "egito"],
+    ["espanha", "argelia"],
+    ["italia", "egito"],
     ["balcas", "egito"],
     ["sudao", "madagascar"],
-    ["africa_do_sul", "madagascar"],
+    ["africa_do_sul", "madagascar"], ["madagascar", "mocambique"], ["madagascar", "india"],
     ["india", "sumatra"],
     ["sumatra", "australia"],
     ["vietna", "borneu"],
@@ -483,7 +483,7 @@
     ["alasca", "vladivostok"],
     ["havai", "japao"],
     ["havai", "nova_guine"],
-    ["argentina", "australia"],
+    ["patagonia", "australia"],
   ];
 
   function wrapCamX(x: number): number {
