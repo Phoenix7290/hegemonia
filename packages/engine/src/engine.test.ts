@@ -1774,16 +1774,19 @@ describe("Military Supply Lines, Fuel Starvation & Encirclement (HEGEM-35)", () 
       ],
     });
     const p1 = state.players.find((p) => p.id === "p1")!;
-    p1.capitalTerritoryId = "china";
-    state.territories["china"].ownerId = p1.id;
+    p1.capitalTerritoryId = "brasil";
+    state.territories["brasil"].ownerId = p1.id;
 
-    // Japão is connected to China via direct sea link ("china" <-> "japao")
-    state.territories["japao"].ownerId = p1.id;
-    // Without enemy blockade, Japão is supplied naturally
+    // Connect Brasil -> Venezuela -> Mexico -> California -> Havai -> Japão and China
+    for (const t of ["venezuela", "mexico", "california", "havai", "china", "japao"]) {
+      state.territories[t].ownerId = p1.id;
+    }
+
+    // Direct sea link China <-> Japan is unblockaded: Japão is supplied by default without ports!
     updateSupplyAndEncirclement(state, CLASSIC_MAP);
     expect(state.territories["japao"].isEncircled).toBe(false);
 
-    // If severed from Capital (e.g. enemy conquers China), Japão becomes encircled
+    // If severed from Capital (all neighbors of Japan owned by enemy p2):
     state.territories["china"].ownerId = "p2";
     state.territories["vladivostok"].ownerId = "p2";
     state.territories["havai"].ownerId = "p2";
