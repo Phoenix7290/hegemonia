@@ -9,8 +9,10 @@ import {
   createPlayerView,
   createSeededRng,
   damageTerritoryFortification,
+  getMovedInUnits,
   getTerritoryBuildingLevel,
   getTerritoryMaxBuildingSlots,
+  getTerritoryUnits,
   getTradeBonusArmies,
   isValidCardSet,
 } from "./index.js";
@@ -1294,5 +1296,315 @@ describe("Territorial Infrastructure & Building System (HEGEM-32)", () => {
 
     // Global market price remains untouched (zero inflation from border trade)
     expect(state.marketPrices.steel.buyPrice).toBe(initialSteelBuyPrice);
+  });
+});
+
+describe("Combined Arms and Infantry Escort (HEGEM-27)", () => {
+  const unitCounts = (
+    infantry = 0,
+    tank = 0,
+    artillery = 0,
+    aircraft = 0,
+    navy = 0
+  ) => ({ infantry, tank, artillery, aircraft, navy });
+
+  const createUnitTestState = (phase: "deploy" | "attack" | "maneuver") => {
+    const state = createGame({
+      id: `g_units_${phase}`,
+      seed: `units-${phase}`,
+      players: [
+        { id: "p1", name: "Alice", color: "blue" },
+        { id: "p2", name: "Bob", color: "red" },
+      ],
+    });
+    state.round = 2;
+    state.phase = phase;
+    return {
+      state,
+      activeId: state.players[state.turnIndex].id,
+      defenderId: state.players.find((p) => p.id !== state.players[state.turnIndex].id)!.id,
+    };
+  };
+
+  const combatRng = (rolls: number[]) => {
+    const rng = createSeededRng("hegem-27-fixed-combat");
+    rng.rollD6 = () => rolls.shift() ?? 6;
+    return rng;
+  };
+
+  it("initializes infantry and reconciles legacy totals with unit compositions", () => {
+    const { state } = createUnitTestState("deploy");
+    for (const territory of Object.values(state.territories)) {
+      expect(territory.armies).toBe(1);
+      expect(getTerritoryUnits(territory)).toEqual(unitCounts(1));
+      expect(getMovedInUnits(territory)).toEqual(unitCounts());
+    }
+
+    const territory = state.territories["brasil"];
+    delete territory.units;
+    territory.armies = 4;
+    expect(getTerritoryUnits(territory)).toEqual(unitCounts(4));
+
+    territory.units = unitCounts(1, 1);
+    expect(getTerritoryUnits(territory)).toEqual(unitCounts(3, 1));
+    territory.armies = 1;
+    expect(getTerritoryUnits(territory)).toEqual(unitCounts(0, 1));
+  });
+
+  it("recruits all unit categories with their costs and infrastructure requirements", () => {
+    const rng = createSeededRng("hegem-27-recruit");
+    let { state } = createUnitTestState("deploy");
+    const activeId = state.players[state.turnIndex].id;
+    const player = state.players[state.turnIndex];
+    player.resources = { money: 50, steel: 10, oil: 5, gold: 0 };
+    state.territories["brasil"].ownerId = activeId;
+    state.territories["brasil"].buildings = [];
+
+    expect(() =>
+      applyAction(
+        state,
+        activeId,
+        { type: "recruit_unit", territoryId: "brasil", unitType: "tank", quantity: 1 },
+        rng
+      )
+    ).toThrow(/Indústria/);
+
+    state.territories["brasil"].buildings = [
+      { type: "industry", level: 1 },
+      { type: "airfield", level: 1 },
+      { type: "port", level: 1 },
+    ];
+
+    for (const unitType of ["infantry", "tank", "artillery", "aircraft", "navy"] as const) {
+      state = applyAction(
+        state,
+        activeId,
+        { type: "recruit_unit", territoryId: "brasil", unitType, quantity: 1 },
+        rng
+      );
+    }
+
+    expect(getTerritoryUnits(state.territories["brasil"])).toEqual(unitCounts(2, 1, 1, 1, 1));
+    expect(state.territories["brasil"].armies).toBe(6);
+    expect(state.players[state.turnIndex].resources).toEqual({
+      money: 29,
+      steel: 3,
+      oil: 3,
+      gold: 0,
+    });
+  });
+
+  it("validates task forces and applies attacker casualties to infantry before specials", () => {
+    let { state, activeId, defenderId } = createUnitTestState("attack");
+    state.territories["brasil"].ownerId = activeId;
+    state.territories["brasil"].units = unitCounts(2, 1);
+    state.territories["brasil"].armies = 3;
+    state.territories["argentina"].ownerId = defenderId;
+    state.territories["argentina"].units = unitCounts(1);
+    state.territories["argentina"].armies = 1;
+
+    expect(() =>
+      applyAction(
+        state,
+        activeId,
+        {
+          type: "attack",
+          fromTerritoryId: "brasil",
+          toTerritoryId: "argentina",
+          units: unitCounts(0, 2),
+        },
+        combatRng([6, 1])
+      )
+    ).toThrow(/excede as unidades disponíveis/);
+
+    state = applyAction(
+      state,
+      activeId,
+      {
+        type: "attack",
+        fromTerritoryId: "brasil",
+        toTerritoryId: "argentina",
+        diceCount: 3,
+        units: unitCounts(1, 1),
+      },
+      combatRng([1, 6])
+    );
+
+    expect(state.lastCombat?.attackerDice).toHaveLength(2);
+    expect(state.lastCombat?.attackerLossUnits).toEqual(unitCounts(1));
+    expect(getTerritoryUnits(state.territories["brasil"])).toEqual(unitCounts(1, 1));
+
+    ({ state, activeId, defenderId } = createUnitTestState("attack"));
+    state.territories["brasil"].ownerId = activeId;
+    state.territories["brasil"].units = unitCounts(0, 2);
+    state.territories["brasil"].armies = 2;
+    state.territories["argentina"].ownerId = defenderId;
+    state = applyAction(
+      state,
+      activeId,
+      {
+        type: "attack",
+        fromTerritoryId: "brasil",
+        toTerritoryId: "argentina",
+        diceCount: 1,
+        units: unitCounts(0, 1),
+      },
+      combatRng([1, 6])
+    );
+
+    expect(state.lastCombat?.attackerLossUnits).toEqual(unitCounts(0, 1));
+    expect(getTerritoryUnits(state.territories["brasil"])).toEqual(unitCounts(0, 1));
+  });
+
+  it("applies defender casualties to infantry before specials and records special losses", () => {
+    let { state, activeId, defenderId } = createUnitTestState("attack");
+    state.territories["brasil"].ownerId = activeId;
+    state.territories["brasil"].armies = 3;
+    state.territories["argentina"].ownerId = defenderId;
+    state.territories["argentina"].units = unitCounts(1, 1);
+    state.territories["argentina"].armies = 2;
+
+    state = applyAction(
+      state,
+      activeId,
+      {
+        type: "attack",
+        fromTerritoryId: "brasil",
+        toTerritoryId: "argentina",
+        diceCount: 1,
+        units: unitCounts(1),
+      },
+      combatRng([6, 1, 1])
+    );
+
+    expect(state.lastCombat?.defenderLossUnits).toEqual(unitCounts(1));
+    expect(getTerritoryUnits(state.territories["argentina"])).toEqual(unitCounts(0, 1));
+
+    state = applyAction(
+      state,
+      activeId,
+      {
+        type: "attack",
+        fromTerritoryId: "brasil",
+        toTerritoryId: "argentina",
+        diceCount: 1,
+        units: unitCounts(1),
+      },
+      combatRng([6, 1])
+    );
+
+    expect(state.lastCombat?.defenderLossUnits).toEqual(unitCounts(0, 1));
+    expect(state.lastCombat?.conquered).toBe(true);
+    expect(getTerritoryUnits(state.territories["argentina"])).toEqual(unitCounts(1));
+  });
+
+  it("moves only surviving task-force units during conquest and composed occupation", () => {
+    let { state, activeId, defenderId } = createUnitTestState("attack");
+    state.territories["brasil"].ownerId = activeId;
+    state.territories["brasil"].units = unitCounts(2, 2);
+    state.territories["brasil"].armies = 4;
+    state.territories["argentina"].ownerId = defenderId;
+    state.territories["argentina"].units = unitCounts(1);
+    state.territories["argentina"].armies = 1;
+
+    state = applyAction(
+      state,
+      activeId,
+      {
+        type: "attack",
+        fromTerritoryId: "brasil",
+        toTerritoryId: "argentina",
+        diceCount: 3,
+        units: unitCounts(2, 1),
+      },
+      combatRng([6, 5, 4, 1])
+    );
+
+    expect(state.pendingConquest?.maxMove).toBe(3);
+    expect(state.pendingConquest?.occupyingUnits).toEqual(unitCounts(1));
+    expect(state.pendingConquest?.remainingAttackers).toEqual(unitCounts(1, 1));
+    expect(getTerritoryUnits(state.territories["brasil"])).toEqual(unitCounts(1, 2));
+
+    state = applyAction(
+      state,
+      activeId,
+      { type: "occupy", armies: 3, units: unitCounts(2, 1) },
+      combatRng([])
+    );
+
+    expect(state.pendingConquest).toBeNull();
+    expect(getTerritoryUnits(state.territories["brasil"])).toEqual(unitCounts(0, 1));
+    expect(getTerritoryUnits(state.territories["argentina"])).toEqual(unitCounts(2, 1));
+    expect(state.territories["brasil"].armies).toBe(1);
+    expect(state.territories["argentina"].armies).toBe(3);
+  });
+
+  it("preserves compositions in maneuver, blocks second movement, and restricts airlift to infantry", () => {
+    let { state, activeId } = createUnitTestState("maneuver");
+    for (const territoryId of ["brasil", "argentina", "peru", "japao"]) {
+      state.territories[territoryId].ownerId = activeId;
+    }
+    state.territories["brasil"].units = unitCounts(2, 1);
+    state.territories["brasil"].armies = 3;
+
+    expect(() =>
+      applyAction(
+        state,
+        activeId,
+        {
+          type: "maneuver",
+          fromTerritoryId: "brasil",
+          toTerritoryId: "argentina",
+          armies: 2,
+          units: unitCounts(1),
+        },
+        createSeededRng("hegem-27-invalid-maneuver")
+      )
+    ).toThrow(/corresponder ao total/);
+
+    state = applyAction(
+      state,
+      activeId,
+      {
+        type: "maneuver",
+        fromTerritoryId: "brasil",
+        toTerritoryId: "argentina",
+        armies: 1,
+        units: unitCounts(0, 1),
+      },
+      createSeededRng("hegem-27-maneuver")
+    );
+
+    expect(getTerritoryUnits(state.territories["brasil"])).toEqual(unitCounts(2));
+    expect(getTerritoryUnits(state.territories["argentina"])).toEqual(unitCounts(1, 1));
+    expect(getMovedInUnits(state.territories["argentina"])).toEqual(unitCounts(0, 1));
+
+    expect(() =>
+      applyAction(
+        state,
+        activeId,
+        {
+          type: "maneuver",
+          fromTerritoryId: "argentina",
+          toTerritoryId: "peru",
+          armies: 1,
+          units: unitCounts(0, 1),
+        },
+        createSeededRng("hegem-27-second-movement")
+      )
+    ).toThrow(/Apenas 0/);
+
+    state.territories["brasil"].units = unitCounts(0, 2);
+    state.territories["brasil"].armies = 2;
+    state.territories["brasil"].buildings = [{ type: "airfield", level: 1 }];
+    state.territories["japao"].buildings = [{ type: "airfield", level: 1 }];
+    expect(() =>
+      applyAction(
+        state,
+        activeId,
+        { type: "airlift", fromTerritoryId: "brasil", toTerritoryId: "japao", armies: 1 },
+        createSeededRng("hegem-27-airlift-infantry")
+      )
+    ).toThrow(/infantaria/);
   });
 });

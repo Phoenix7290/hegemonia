@@ -34,6 +34,16 @@
     <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
   {:else if name === "swords"}
     <path d="m14.5 17.5-11-11V3h3l11 11M13 19l6-6M16 16l4 4M9.5 17.5l11-11V3h-3l-11 11M5 13l6 6M4 20l4-4" />
+  {:else if name === "infantry"}
+    <circle cx="12" cy="5" r="2.5" />
+    <path d="M8 21v-5l-2-3 2-5h8l2 5-2 3v5M10 21l2-7 2 7M7 11h10" />
+  {:else if name === "tank"}
+    <path d="M3 15h18v4H3zM5 15l2-5h8l3 5M9 10V7h5v3M14 8h7" />
+    <circle cx="7" cy="19" r="2" />
+    <circle cx="17" cy="19" r="2" />
+  {:else if name === "artillery"}
+    <circle cx="8" cy="18" r="3" />
+    <path d="M8 15l5-7 8 3-1 3-8-2M3 21h18M13 8l2-4 5 2" />
   {:else if name === "crown"}
     <path d="m2 18 3-11 4.5 5L12 5l2.5 7L19 7l3 11zM4 22h16" />
   {:else if name === "star"}
@@ -156,7 +166,7 @@
     <polygon points="6 14 9 8 15 8 18 14 6 14" />
     <polygon points="3 20 6 14 12 14 15 20 3 20" />
     <polygon points="12 14 18 14 21 20 15 20 12 14" />
-  {:else if name === "anchor" || name === "port"}
+  {:else if name === "anchor" || name === "port" || name === "navy"}
     <circle cx="12" cy="5" r="3" />
     <line x1="12" y1="22" x2="12" y2="8" />
     <path d="M5 12H2a10 10 0 0 0 20 0h-3" />
@@ -174,7 +184,7 @@
   {:else if name === "fortification" || name === "fortress"}
     <path d="M3 20h18v-8l-3-2V5h-3v3h-2V5h-2v3H9V5H6v5l-3 2z" />
     <path d="M10 20v-4a2 2 0 0 1 4 0v4" />
-  {:else if name === "airfield"}
+  {:else if name === "airfield" || name === "aircraft"}
     <path d="M17.8 19.2 16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2z" />
   {:else}
     <circle cx="12" cy="12" r="9" />

@@ -54,7 +54,9 @@
           "id": "epic_units_tier",
           "title": "3-Tier Combat Units (Infantry, Armor, Artillery)",
           "priority": "P2",
-          "tasks": ["armor_reroll_mechanic", "artillery_pre_combat_barrage", "unit_composition_state"]
+          "status": "in_progress",
+          "delivered": ["unit_composition_state"],
+          "tasks": ["armor_reroll_mechanic", "artillery_pre_combat_barrage"]
         },
         {
           "id": "epic_navy",
