@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+export const SESSION_REPLACED_CLOSE_CODE = 4001;
+
 export const PlayerColorSchema = z.enum([
   "blue",
   "red",

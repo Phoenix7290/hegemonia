@@ -3,6 +3,7 @@ import { randomBytes } from "node:crypto";
 import {
   GameActionSchema,
   PlayerColorSchema,
+  SESSION_REPLACED_CLOSE_CODE,
   type GameAction,
   type GameState,
   type PlayerColor,
@@ -21,6 +22,7 @@ import {
 } from "@hegemonia/engine";
 import { appendMatchEvent, createMatch, startMatch } from "./db.js";
 import { RoomCommunications } from "./communications.js";
+import { synchronizeHumanHost } from "./room-membership.js";
 
 interface LobbyPlayer {
   token: string;
@@ -68,11 +70,7 @@ export class HegemoniaRoom extends Room {
     this.secretSeed = randomBytes(16).toString("hex");
     this.rng = createSeededRng(this.secretSeed);
 
-    this.setMetadata({
-      roomCode: this.roomCode,
-      status: "lobby",
-      playersCount: 0,
-    });
+    this.syncMetadata();
 
     // Lobby messages
     this.onMessage("choose_color", (client, payload: { color: string }) => {
@@ -114,6 +112,7 @@ export class HegemoniaRoom extends Room {
         isBot: true,
         connected: true,
       });
+      this.syncMetadata();
       this.broadcastRoomState();
     });
 
@@ -124,6 +123,7 @@ export class HegemoniaRoom extends Room {
       this.lobbyPlayers = this.lobbyPlayers.filter(
         (p) => !(p.isBot && p.token === payload?.token)
       );
+      this.syncMetadata();
       this.broadcastRoomState();
     });
 
@@ -167,6 +167,7 @@ export class HegemoniaRoom extends Room {
           );
           this.gameState = nextState;
           this.resetTurnTimer();
+          this.syncMetadata();
           this.broadcastRoomState();
           this.checkAndRunBotTurn();
         } catch (error) {
@@ -192,11 +193,7 @@ export class HegemoniaRoom extends Room {
         this.secretSeed = randomBytes(16).toString("hex");
         this.rng = createSeededRng(this.secretSeed);
         this.turnDeadline = 0;
-        this.setMetadata({
-          roomCode: this.roomCode,
-          status: "lobby",
-          playersCount: this.lobbyPlayers.length,
-        });
+        this.syncMetadata();
         this.broadcastRoomState();
       });
     });
@@ -268,6 +265,9 @@ export class HegemoniaRoom extends Room {
     const name = authUser?.displayName ?? (String(options?.name || "General").trim().slice(0, 24) || "General");
 
     if (existing) {
+      const previousClient = existing.connected && existing.sessionId !== client.sessionId
+        ? [...this.clients].find((candidate) => candidate.sessionId === existing.sessionId)
+        : undefined;
       const pendingTimer = this.disconnectTimeouts.get(existing.token);
       if (pendingTimer) {
         clearTimeout(pendingTimer);
@@ -290,6 +290,9 @@ export class HegemoniaRoom extends Room {
         const gp = this.gameState.players.find((p) => p.id === token);
         if (gp) gp.connected = true;
       }
+      synchronizeHumanHost(this.lobbyPlayers);
+      this.syncMetadata();
+      previousClient?.leave(SESSION_REPLACED_CLOSE_CODE, "Sessão substituída por uma nova conexão.");
       this.broadcastRoomState();
       return;
     }
@@ -317,11 +320,8 @@ export class HegemoniaRoom extends Room {
       avatarUrl: authUser?.avatarUrl,
     });
 
-    this.setMetadata({
-      roomCode: this.roomCode,
-      status: this.gameState ? "playing" : "lobby",
-      playersCount: this.lobbyPlayers.length,
-    });
+    synchronizeHumanHost(this.lobbyPlayers);
+    this.syncMetadata();
     this.broadcastRoomState();
   }
 
@@ -332,41 +332,42 @@ export class HegemoniaRoom extends Room {
 
     if (consented) {
       this.purgePlayer(player);
-    } else {
-      player.connected = false;
-      if (this.gameState) {
-        const gp = this.gameState.players.find((p) => p.id === player.token);
-        if (gp) gp.connected = false;
-      }
-
-      const existingTimer = this.disconnectTimeouts.get(player.token);
-      if (existingTimer) clearTimeout(existingTimer);
-
-      const timer = setTimeout(() => {
-        this.disconnectTimeouts.delete(player.token);
-        if (!player.connected) {
-          this.purgePlayer(player);
-        }
-      }, 60000);
-      this.disconnectTimeouts.set(player.token, timer);
+      return;
     }
 
+    player.connected = false;
+    if (this.gameState) {
+      const gp = this.gameState.players.find((p) => p.id === player.token);
+      if (gp) gp.connected = false;
+    }
+
+    const existingTimer = this.disconnectTimeouts.get(player.token);
+    if (existingTimer) clearTimeout(existingTimer);
+
+    const timer = setTimeout(() => {
+      this.disconnectTimeouts.delete(player.token);
+      if (!player.connected) {
+        this.purgePlayer(player);
+      }
+    }, 60000);
+    this.disconnectTimeouts.set(player.token, timer);
+
+    this.syncMetadata();
     this.checkAutoDispose();
     this.broadcastRoomState();
   }
 
   private purgePlayer(player: LobbyPlayer) {
+    player.connected = false;
+    player.isHost = false;
     if (!this.gameState) {
       this.lobbyPlayers = this.lobbyPlayers.filter((p) => p.token !== player.token);
-      if (player.isHost && this.lobbyPlayers.length > 0) {
-        const nextHuman = this.lobbyPlayers.find((p) => !p.isBot) ?? this.lobbyPlayers[0];
-        if (nextHuman) nextHuman.isHost = true;
-      }
     } else {
-      player.connected = false;
       const gp = this.gameState.players.find((p) => p.id === player.token);
       if (gp) gp.connected = false;
     }
+    synchronizeHumanHost(this.lobbyPlayers);
+    this.syncMetadata();
     this.checkAutoDispose();
     this.broadcastRoomState();
   }
@@ -404,6 +405,14 @@ export class HegemoniaRoom extends Room {
   private enqueueAction(operation: () => Promise<void>): void {
     this.actionQueue = this.actionQueue.then(operation).catch((error: unknown) => {
       console.error(`Falha na fila da sala ${this.roomCode}:`, error);
+    });
+  }
+
+  private syncMetadata() {
+    this.setMetadata({
+      roomCode: this.roomCode,
+      status: this.gameState ? "playing" : "lobby",
+      playersCount: this.lobbyPlayers.length,
     });
   }
 
