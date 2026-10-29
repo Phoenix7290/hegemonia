@@ -3,9 +3,12 @@
   import {
     ASIA_SUBREGIONS,
     CLASSIC_MAP,
+    DIRECT_SEA_LINKS,
     GRATICULE_SVG_PATH,
     MAP_HEIGHT,
     MAP_WIDTH,
+    PACIFIC_WRAP_LINKS,
+    isSeaLink,
   } from "@hegemonia/maps";
   import {
     BUILDING_COSTS,
@@ -15,7 +18,9 @@
     UNIT_TYPES,
     addUnits,
     calculateTurnEconomy,
+    checkNavalBlockade,
     emptyUnitCounts,
+    findAirMissionTargets,
     findValidTradeTriplet,
     getMovedInUnits,
     getTerritoryBuildingLevel,
@@ -30,6 +35,7 @@
   } from "@hegemonia/engine";
   import { SESSION_REPLACED_CLOSE_CODE } from "@hegemonia/shared";
   import type {
+    AirMissionType,
     BuildingType,
     GameState,
     PlayerColor,
@@ -452,39 +458,6 @@
         : `${getContinentName(def.continent)} (+${cont?.bonus ?? 0})`,
     };
   });
-
-  // Direct Intra-Tile Sea Links
-  const DIRECT_SEA_LINKS: [string, string][] = [
-    ["brasil", "argelia"],
-    ["argentina", "africa_do_sul"],
-    ["california", "havai"],
-    ["groenlandia", "islandia"],
-    ["inglaterra", "islandia"],
-    ["inglaterra", "suecia"],
-    ["inglaterra", "franca"],
-    ["inglaterra", "alemanha"],
-    ["franca", "argelia"],
-    ["franca", "egito"],
-    ["balcas", "egito"],
-    ["sudao", "madagascar"],
-    ["africa_do_sul", "madagascar"],
-    ["india", "sumatra"],
-    ["sumatra", "australia"],
-    ["vietna", "borneu"],
-    ["borneu", "australia"],
-    ["borneu", "nova_guine"],
-    ["nova_guine", "australia"],
-    ["vladivostok", "japao"],
-    ["china", "japao"],
-  ];
-
-  // Trans-Pacific Wraparound Sea Links (westTerritoryId on left edge -> eastTerritoryId on right edge - MAP_WIDTH)
-  const PACIFIC_WRAP_LINKS: [string, string][] = [
-    ["alasca", "vladivostok"],
-    ["havai", "japao"],
-    ["havai", "nova_guine"],
-    ["argentina", "australia"],
-  ];
 
   function wrapCamX(x: number): number {
     const half = MAP_WIDTH / 2;
@@ -1076,6 +1049,25 @@
     sendAction(payload);
   }
 
+  function confirmArtilleryBarrage() {
+    if (!selectedFromId || !selectedToId) return;
+    sendAction({
+      type: "artillery_barrage",
+      fromTerritoryId: selectedFromId,
+      toTerritoryId: selectedToId,
+    });
+  }
+
+  function confirmAirMission(missionType: AirMissionType) {
+    if (!selectedFromId || !selectedToId) return;
+    sendAction({
+      type: "air_mission",
+      fromTerritoryId: selectedFromId,
+      toTerritoryId: selectedToId,
+      missionType,
+    });
+  }
+
   function confirmOccupy() {
     if (!game?.pendingConquest) return;
     if (
@@ -1083,6 +1075,9 @@
       selectedUnitTotal > game.pendingConquest.maxMove
     ) return;
     sendAction({ type: "occupy", armies: selectedUnitTotal, units: selectedUnits });
+    selectedFromId = null;
+    selectedToId = null;
+    selectedUnits = emptyUnitCounts();
   }
 
   function confirmManeuver() {
@@ -1692,6 +1687,30 @@
                         <g transform="translate(13.5, -4.5)">
                           <circle cx="0" cy="0" r="3.4" fill="#090e1a" stroke={fortLevel === 2 ? "#38bdf8" : "#94a3b8"} stroke-width="1.1" />
                           <polygon points="0,-1.8 1.4,-0.8 1.4,1 0,1.8 -1.4,1 -1.4,-0.8" fill={fortLevel === 2 ? "#38bdf8" : "#cbd5e1"} />
+                        </g>
+                      {/if}
+
+                      <!-- Encirclement / Out of Supply Badge (HEGEM-35) -->
+                      {#if tState.isEncircled}
+                        <g transform="translate(-13.5, -4.5)" pointer-events="none">
+                          <circle cx="0" cy="0" r="3.6" fill="#450a0a" stroke="#ef4444" stroke-width="1.1" />
+                          <text x="0" y="0.8" text-anchor="middle" dominant-baseline="central" font-size="4.5" fill="#fca5a5" font-weight="900">📦</text>
+                        </g>
+                      {/if}
+
+                      <!-- Fuel Starvation Badge (HEGEM-35) -->
+                      {#if tState.outOfFuel}
+                        <g transform="translate(-13.5, 4.5)" pointer-events="none">
+                          <circle cx="0" cy="0" r="3.6" fill="#451a03" stroke="#f97316" stroke-width="1.1" />
+                          <text x="0" y="0.8" text-anchor="middle" dominant-baseline="central" font-size="4.5" fill="#fdba74" font-weight="900">⛽</text>
+                        </g>
+                      {/if}
+
+                      <!-- Blitzkrieg Spearhead Indicator (HEGEM-25) -->
+                      {#if tState.blitzkriegAvailable}
+                        <g transform="translate(13.5, 4.5)" pointer-events="none">
+                          <circle cx="0" cy="0" r="3.6" fill="#422006" stroke="#eab308" stroke-width="1.1" />
+                          <text x="0" y="0.8" text-anchor="middle" dominant-baseline="central" font-size="5" fill="#fef08a" font-weight="900">⚡</text>
                         </g>
                       {/if}
 
@@ -3083,6 +3102,7 @@
 
           {:else if game.phase === "deploy"}
             {#if selectedFromId}
+              {@const fromTerr = game.territories[selectedFromId]}
               {@const maxD = myPlayerState?.unplacedArmies ?? 1}
               <div class="action-popup">
                 <div class="popup-head">
@@ -3102,8 +3122,13 @@
                     <button class="preset-btn" onclick={() => (selectedFromId = null)}>✕</button>
                   </div>
                 </div>
+                {#if fromTerr?.isEncircled}
+                  <div style="margin: 4px 0 8px; font-size: 0.8rem; color: #f87171; background: rgba(220, 38, 38, 0.2); padding: 4px 8px; border-radius: 4px; border: 1px solid rgba(239, 68, 68, 0.4);">
+                    📦❌ <strong>Território sob Cerco Militar:</strong> Sem conexão com a Capital. Reforços bloqueados!
+                  </div>
+                {/if}
                 <div class="slider-row">
-                  <input type="range" min="1" max={maxD} bind:value={sliderArmies} />
+                  <input type="range" min="1" max={maxD} disabled={fromTerr?.isEncircled} bind:value={sliderArmies} />
                   {#if !myPlayerState?.capitalTerritoryId}
                     <button
                       class="btn secondary-btn select-cap-btn"
@@ -3113,7 +3138,7 @@
                       {t("capital_select_btn")}
                     </button>
                   {/if}
-                  <button class="btn primary-gold" onclick={confirmDeploy}>
+                  <button class="btn primary-gold" disabled={fromTerr?.isEncircled} onclick={confirmDeploy}>
                     {t("deploy_confirm", { count: sliderArmies })}
                   </button>
                 </div>
@@ -3122,6 +3147,13 @@
 
           {:else if game.phase === "attack"}
             {#if selectedFromId && selectedToId}
+              {@const fromTerr = game.territories[selectedFromId]}
+              {@const toTerr = game.territories[selectedToId]}
+              {@const fromUnits = getTerritoryUnits(fromTerr)}
+              {@const isSea = isSeaLink(selectedFromId, selectedToId)}
+              {@const navalCheck = isSea && myPlayerId ? checkNavalBlockade(game, selectedFromId, selectedToId, myPlayerId) : null}
+              {@const canArtillery = fromUnits.artillery > 0 && !fromTerr.artilleryBarrageFiredThisTurn}
+              {@const canAir = hasTerritoryBuilding(fromTerr, "airfield") && fromUnits.aircraft > 0 && !fromTerr.airMissionFlownThisTurn && (myPlayerState?.resources?.oil ?? 0) > 0}
               <div class="action-popup attack-popup">
                 <div class="attack-matchup">
                   <span>
@@ -3132,6 +3164,32 @@
                     {t("combat_target", { territory: getTerritoryName(selectedToId) })} ({game.territories[selectedToId].armies})
                   </span>
                 </div>
+
+                <!-- Tactical Logistics & Support Intel -->
+                {#if toTerr.isEncircled}
+                  <div style="margin: 4px 0; font-size: 0.8rem; color: #fca5a5; background: rgba(185, 28, 28, 0.25); padding: 4px 8px; border-radius: 4px; border: 1px solid rgba(239, 68, 68, 0.35);">
+                    📦 <strong>Defensor Sob Cerco:</strong> Penalidade de -{(toTerr.encircledRounds ?? 1) >= 2 ? 2 : 1} no dado de defesa.
+                  </div>
+                {/if}
+                {#if fromTerr.outOfFuel}
+                  <div style="margin: 4px 0; font-size: 0.8rem; color: #fdba74; background: rgba(194, 65, 12, 0.25); padding: 4px 8px; border-radius: 4px; border: 1px solid rgba(249, 115, 22, 0.35);">
+                    ⛽ <strong>Sem Petróleo:</strong> Blindados imobilizados e sem re-rolagem de 1s.
+                  </div>
+                {/if}
+                {#if fromTerr.blitzkriegAvailable}
+                  <div style="margin: 4px 0; font-size: 0.8rem; color: #fde047; background: rgba(202, 138, 4, 0.25); padding: 4px 8px; border-radius: 4px; border: 1px solid rgba(234, 179, 8, 0.35);">
+                    ⚡ <strong>Blitzkrieg Ativo:</strong> Blindados sobreviventes podem liderar este segundo ataque imediato!
+                  </div>
+                {/if}
+                {#if navalCheck?.isBlockaded}
+                  <div style="margin: 4px 0; font-size: 0.8rem; color: #f87171; background: rgba(220, 38, 38, 0.25); padding: 4px 8px; border-radius: 4px; border: 1px solid rgba(239, 68, 68, 0.45);">
+                    🚫 <strong>Bloqueio Naval:</strong> Frota inimiga ({navalCheck.defenderNavy} vs {navalCheck.attackerNavy}) impede o desembarque anfíbio.
+                  </div>
+                {:else if navalCheck && navalCheck.attackerNavy > 0}
+                  <div style="margin: 4px 0; font-size: 0.8rem; color: #38bdf8; background: rgba(2, 132, 199, 0.25); padding: 4px 8px; border-radius: 4px; border: 1px solid rgba(56, 189, 248, 0.35);">
+                    ⚓ <strong>Bombardeio Costeiro:</strong> Frotas aliadas no Porto concedem +1 ao dado mais alto!
+                  </div>
+                {/if}
 
                 <UnitSelector
                   available={getTerritoryUnits(game.territories[selectedFromId])}
@@ -3184,6 +3242,47 @@
                   </div>
                 {/if}
 
+                {#if canArtillery || canAir}
+                  <div style="display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px;">
+                    {#if canArtillery}
+                      <button
+                        class="btn secondary-btn"
+                        style="font-size: 0.78rem; padding: 4px 8px;"
+                        title="Disparo de saturação sem contra-ataque: 4+ degrada fortaleza ou destrói unidades"
+                        onclick={confirmArtilleryBarrage}
+                      >
+                        🎯 Barragem de Artilharia ({fromUnits.artillery})
+                      </button>
+                    {/if}
+                    {#if canAir}
+                      <button
+                        class="btn secondary-btn"
+                        style="font-size: 0.78rem; padding: 4px 8px;"
+                        title="Apoio Aéreo Aproximado: +1 dado no próximo ataque a este território"
+                        onclick={() => confirmAirMission("cas")}
+                      >
+                        ✈️ Apoio Aéreo (CAS)
+                      </button>
+                      <button
+                        class="btn secondary-btn"
+                        style="font-size: 0.78rem; padding: 4px 8px;"
+                        title="Bombardeio Estratégico: 5+ degrada construções inimigas"
+                        onclick={() => confirmAirMission("bombardment")}
+                      >
+                        💣 Bombardeio Estratégico
+                      </button>
+                      <button
+                        class="btn secondary-btn"
+                        style="font-size: 0.78rem; padding: 4px 8px;"
+                        title="Reconhecimento Aéreo: revela dados secretos e espionagem"
+                        onclick={() => confirmAirMission("recon")}
+                      >
+                        🔭 Reconhecimento
+                      </button>
+                    {/if}
+                  </div>
+                {/if}
+
                 <div class="attack-cta-row">
                   <button
                     class="btn secondary"
@@ -3197,7 +3296,7 @@
                   <button
                     class="btn btn-attack"
                     style="flex: 1;"
-                    disabled={selectedUnitTotal < 1}
+                    disabled={selectedUnitTotal < 1 || (navalCheck?.isBlockaded ?? false)}
                     onclick={confirmAttack}
                   >
                     <Icon name="swords" size={15} /> {t("combat_execute")}

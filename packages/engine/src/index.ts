@@ -1,6 +1,7 @@
 import {
   type BorderTradeDeal,
   type BuildingType,
+  createInitialPlayerAnalytics,
   type GameAction,
   type GameMapDef,
   type GameState,
@@ -9,6 +10,7 @@ import {
   type MarketResourcePrice,
   type ObjectiveCard,
   type PlayerColor,
+  type PlayerMatchAnalytics,
   type PlayerState,
   type ResourceType,
   type TerritoryCard,
@@ -16,7 +18,17 @@ import {
   type UnitCounts,
   type UnitType,
 } from "@hegemonia/shared";
-import { ALL_OBJECTIVES, ASIA_SUBREGIONS, CLASSIC_MAP, CLASSIC_OBJECTIVES, ROLEPLAY_OBJECTIVES } from "@hegemonia/maps";
+import {
+  ALL_OBJECTIVES,
+  ALL_SEA_LINKS,
+  ASIA_SUBREGIONS,
+  CLASSIC_MAP,
+  CLASSIC_OBJECTIVES,
+  DIRECT_SEA_LINKS,
+  isSeaLink,
+  PACIFIC_WRAP_LINKS,
+  ROLEPLAY_OBJECTIVES,
+} from "@hegemonia/maps";
 import { createSeededRng, hashSeed, type SeededRng } from "./rng.js";
 import {
   addUnits,
@@ -31,6 +43,7 @@ import {
   singleUnitCount,
   subtractUnits,
   totalUnits,
+  UNIT_TYPES,
 } from "./units.js";
 
 export * from "./rng.js";
@@ -259,6 +272,179 @@ export function damageTerritoryFortification(
   return "destroyed";
 }
 
+export interface NavalBlockadeCheck {
+  isBlockaded: boolean;
+  reason?: string;
+  attackerNavy: number;
+  defenderNavy: number;
+}
+
+/**
+ * Checks asymmetric naval blockade over strategic maritime links (HEGEM-57).
+ * If the defender has strictly more naval units in connected ports than the attacker,
+ * the maritime passage is blockaded.
+ */
+export function checkNavalBlockade(
+  state: GameState,
+  fromTerritoryId: string,
+  toTerritoryId: string,
+  actingPlayerId: string
+): NavalBlockadeCheck {
+  if (!isSeaLink(fromTerritoryId, toTerritoryId)) {
+    return { isBlockaded: false, attackerNavy: 0, defenderNavy: 0 };
+  }
+
+  const fromTerr = state.territories[fromTerritoryId];
+  const toTerr = state.territories[toTerritoryId];
+  if (!fromTerr || !toTerr) {
+    return { isBlockaded: false, attackerNavy: 0, defenderNavy: 0 };
+  }
+
+  const attackerPlayer = state.players.find((p) => p.id === actingPlayerId);
+  const defenderPlayer = state.players.find((p) => p.id === toTerr.ownerId);
+
+  const attackerHasOil = (attackerPlayer?.resources?.oil ?? 0) > 0;
+  const defenderHasOil = (defenderPlayer?.resources?.oil ?? 0) > 0;
+
+  let attackerNavy = 0;
+  if (fromTerr.ownerId === actingPlayerId && hasTerritoryBuilding(fromTerr, "port") && attackerHasOil) {
+    attackerNavy = getTerritoryUnits(fromTerr).navy;
+  }
+
+  let defenderNavy = 0;
+  if (toTerr.ownerId !== actingPlayerId && hasTerritoryBuilding(toTerr, "port") && defenderHasOil) {
+    defenderNavy = getTerritoryUnits(toTerr).navy;
+  }
+
+  const isBlockaded = defenderNavy > attackerNavy;
+  return {
+    isBlockaded,
+    reason: isBlockaded ? `Bloqueio naval inimigo (${defenderNavy} vs ${attackerNavy} frotas)` : undefined,
+    attackerNavy,
+    defenderNavy,
+  };
+}
+
+/**
+ * Evaluates graph supply connectivity from national Capitals and flags encircled / out-of-supply territories (HEGEM-35).
+ * Also flags out-of-fuel status for mechanized units if national oil <= 0.
+ */
+export function updateSupplyAndEncirclement(
+  state: GameState,
+  map: GameMapDef = CLASSIC_MAP
+): void {
+  const mapById = new Map(map.territories.map((t) => [t.id, t]));
+
+  for (const player of state.players) {
+    if (player.eliminated) continue;
+
+    const playerHasOil = (player.resources?.oil ?? 0) > 0;
+    const playerTerritories = Object.values(state.territories).filter(
+      (t) => t.ownerId === player.id
+    );
+
+    // Flag out of fuel
+    for (const t of playerTerritories) {
+      const units = getTerritoryUnits(t);
+      const hasMechanized = units.tank > 0 || units.aircraft > 0 || units.navy > 0;
+      t.outOfFuel = !playerHasOil && hasMechanized;
+    }
+
+    const capId = player.capitalTerritoryId;
+    const hasValidCapital =
+      capId &&
+      state.territories[capId]?.ownerId === player.id &&
+      !player.isCapitalLost;
+
+    if (!hasValidCapital) {
+      for (const t of playerTerritories) {
+        t.isEncircled = false;
+        t.encircledRounds = 0;
+      }
+      continue;
+    }
+
+    const suppliedIds = new Set<string>();
+    const queue: string[] = [capId];
+    suppliedIds.add(capId);
+
+    while (queue.length > 0) {
+      const currId = queue.shift()!;
+      const currDef = mapById.get(currId);
+      if (!currDef) continue;
+      const currTerr = state.territories[currId];
+
+      for (const nbrId of currDef.neighbors) {
+        if (suppliedIds.has(nbrId)) continue;
+        const nbrTerr = state.territories[nbrId];
+        if (!nbrTerr || nbrTerr.ownerId !== player.id) continue;
+
+        if (isSeaLink(currId, nbrId)) {
+          const blockade = checkNavalBlockade(state, currId, nbrId, player.id);
+          if (blockade.isBlockaded) continue;
+        }
+
+        suppliedIds.add(nbrId);
+        queue.push(nbrId);
+      }
+    }
+
+    for (const t of playerTerritories) {
+      if (suppliedIds.has(t.id)) {
+        t.isEncircled = false;
+        t.encircledRounds = 0;
+      } else {
+        t.isEncircled = true;
+        t.encircledRounds = Math.max(1, t.encircledRounds ?? 1);
+      }
+    }
+  }
+}
+
+/**
+ * Finds all territories within an Airfield's operational range:
+ * BFS distance <= 2, with at most 1 maritime sea link crossing (HEGEM-30).
+ */
+export function findAirMissionTargets(
+  state: GameState,
+  fromTerritoryId: string,
+  map: GameMapDef = CLASSIC_MAP
+): string[] {
+  const mapById = new Map(map.territories.map((t) => [t.id, t]));
+  const fromDef = mapById.get(fromTerritoryId);
+  if (!fromDef) return [];
+
+  const targets = new Set<string>();
+  type QueueItem = { id: string; distance: number; seaCrossings: number };
+  const queue: QueueItem[] = [{ id: fromTerritoryId, distance: 0, seaCrossings: 0 }];
+  const visited = new Map<string, number>();
+  visited.set(fromTerritoryId, 0);
+
+  while (queue.length > 0) {
+    const { id, distance, seaCrossings } = queue.shift()!;
+    if (distance > 0) {
+      targets.add(id);
+    }
+    if (distance >= 2) continue;
+
+    const def = mapById.get(id);
+    if (!def) continue;
+
+    for (const nbrId of def.neighbors) {
+      const isSea = isSeaLink(id, nbrId);
+      const nextCrossings = seaCrossings + (isSea ? 1 : 0);
+      if (nextCrossings > 1) continue;
+
+      const prevCrossings = visited.get(nbrId);
+      if (prevCrossings !== undefined && prevCrossings <= nextCrossings) continue;
+      visited.set(nbrId, nextCrossings);
+      queue.push({ id: nbrId, distance: distance + 1, seaCrossings: nextCrossings });
+    }
+  }
+
+  return Array.from(targets);
+}
+
 export interface TurnEconomyBreakdown {
   capitalMoney: number;
   tradeHubMoney: number;
@@ -391,6 +577,9 @@ function collectTurnEconomy(
   player.resources.oil += econ.oil;
   player.resources.gold += econ.gold;
 
+  player.analytics = player.analytics ?? createInitialPlayerAnalytics();
+  player.analytics.totalMoneyEarned += econ.netMoney;
+
   const parts: string[] = [];
   if (econ.netMoney > 0) parts.push(`+$${econ.netMoney}`);
   if (econ.steel > 0) parts.push(`+${econ.steel} Aço`);
@@ -498,6 +687,7 @@ export function createGame(opts: CreateGameOptions): GameState {
       infamy: 0,
       resources: { money: 0, steel: 0, oil: 0, gold: 0 },
       boughtCardWithGoldThisTurn: false,
+      analytics: createInitialPlayerAnalytics(),
     };
   });
 
@@ -917,6 +1107,9 @@ export function applyAction(
           currentPlayer.resources.money -= upgradeCost.money;
           currentPlayer.resources.steel -= upgradeCost.steel;
           existing.level = 2;
+          currentPlayer.analytics = currentPlayer.analytics ?? createInitialPlayerAnalytics();
+          currentPlayer.analytics.buildingsConstructed.fortification =
+            (currentPlayer.analytics.buildingsConstructed.fortification || 0) + 1;
           state.log.push(
             `🏰 ${currentPlayer.name} evoluiu a Casamata em ${def.namePt} para Fortaleza Nv. 2 (-$${upgradeCost.money}, -${upgradeCost.steel} Aço).`
           );
@@ -951,6 +1144,13 @@ export function applyAction(
       currentPlayer.resources.money -= cost.money;
       currentPlayer.resources.steel -= cost.steel;
       terr.buildings.push({ type: action.buildingType, level: 1 });
+
+      currentPlayer.analytics = currentPlayer.analytics ?? createInitialPlayerAnalytics();
+      currentPlayer.analytics.buildingsConstructed[action.buildingType] =
+        (currentPlayer.analytics.buildingsConstructed[action.buildingType] || 0) + 1;
+      if (action.buildingType === "port") {
+        updateSupplyAndEncirclement(state, map);
+      }
 
       const buildingNamesPt: Record<BuildingType, string> = {
         market: "Mercado",
@@ -1027,6 +1227,10 @@ export function applyAction(
           singleUnitCount(action.unitType, action.quantity)
         )
       );
+
+      currentPlayer.analytics = currentPlayer.analytics ?? createInitialPlayerAnalytics();
+      currentPlayer.analytics.unitsRecruited[action.unitType] += action.quantity;
+      updateSupplyAndEncirclement(state, map);
 
       const unitNames: Record<UnitType, string> = {
         infantry: "Infantaria",
@@ -1127,7 +1331,13 @@ export function applyAction(
       if (!hadCapitalBefore) {
         currentPlayer.resources.money += 3;
       }
-      const tName = mapById.get(terr.id)?.namePt ?? terr.id;
+      const capDef = mapById.get(terr.id);
+      if (capDef) {
+        currentPlayer.analytics = currentPlayer.analytics ?? createInitialPlayerAnalytics();
+        currentPlayer.analytics.capitalContinentId = capDef.continent;
+      }
+      updateSupplyAndEncirclement(state, map);
+      const tName = capDef?.namePt ?? terr.id;
       state.log.push(`⭐ ${currentPlayer.name} estabeleceu ${tName} como sua Capital Nacional!`);
       break;
     }
@@ -1143,6 +1353,11 @@ export function applyAction(
       if (!terr || terr.ownerId !== playerId) {
         throw new Error("Você só pode posicionar exércitos em territórios seus.");
       }
+      if (terr.isEncircled) {
+        throw new Error(
+          "Território sob cerco militar (sem linha de suprimento com a Capital) não pode receber reforços."
+        );
+      }
       if (action.armies > currentPlayer.unplacedArmies) {
         throw new Error("Quantidade de exércitos superior ao disponível para posicionar.");
       }
@@ -1152,7 +1367,13 @@ export function applyAction(
         currentPlayer.capitalTerritoryId = terr.id;
         currentPlayer.isCapitalLost = false;
         currentPlayer.resources.money += 3;
-        const capName = mapById.get(terr.id)?.namePt ?? terr.id;
+        const capDef = mapById.get(terr.id);
+        if (capDef) {
+          currentPlayer.analytics = currentPlayer.analytics ?? createInitialPlayerAnalytics();
+          currentPlayer.analytics.capitalContinentId = capDef.continent;
+        }
+        updateSupplyAndEncirclement(state, map);
+        const capName = capDef?.namePt ?? terr.id;
         state.log.push(`⭐ ${currentPlayer.name} estabeleceu ${capName} como sua Capital Nacional!`);
       }
 
@@ -1172,6 +1393,212 @@ export function applyAction(
         } else {
           state.phase = "attack";
         }
+      }
+      break;
+    }
+
+    case "artillery_barrage": {
+      if (state.phase !== "attack") {
+        throw new Error("Barragem de artilharia só pode ser disparada durante a fase de combate.");
+      }
+      if (state.round === 1) {
+        throw new Error("Ações de combate não são permitidas na primeira rodada.");
+      }
+      if (state.pendingConquest) {
+        throw new Error("Mova tropas para o território recém-conquistado antes de continuar.");
+      }
+
+      const fromTerr = state.territories[action.fromTerritoryId];
+      const toTerr = state.territories[action.toTerritoryId];
+      if (!fromTerr || !toTerr) throw new Error("Território inválido.");
+      if (fromTerr.ownerId !== playerId) throw new Error("Território de artilharia não é seu.");
+      if (toTerr.ownerId === playerId) throw new Error("Você não pode bombardear seu próprio território.");
+
+      const fromDef = mapById.get(fromTerr.id)!;
+      if (!fromDef.neighbors.includes(toTerr.id)) {
+        throw new Error("A artilharia possui alcance máximo de 1 fronteira adjacente.");
+      }
+
+      if (fromTerr.artilleryBarrageFiredThisTurn) {
+        throw new Error("A artilharia desta base já realizou uma barragem de saturação neste turno.");
+      }
+
+      const fromUnits = getTerritoryUnits(fromTerr);
+      if (fromUnits.artillery <= 0) {
+        throw new Error("Não há baterias de artilharia estacionadas neste território.");
+      }
+
+      // Check active diplomatic treaties (NAP or Alliance)
+      const hasActiveTreaty = state.treaties?.some(
+        (t) =>
+          t.status === "active" &&
+          ((t.fromPlayerId === playerId && t.toPlayerId === toTerr.ownerId) ||
+            (t.fromPlayerId === toTerr.ownerId && t.toPlayerId === playerId))
+      );
+      if (hasActiveTreaty) {
+        throw new Error("Você possui um tratado ativo com este general.");
+      }
+
+      fromTerr.artilleryBarrageFiredThisTurn = true;
+      const rolls = Array.from({ length: fromUnits.artillery }, () => rng.rollD6());
+      const hits = rolls.filter((r) => r >= 4).length;
+
+      const fromName = fromDef.namePt;
+      const toName = mapById.get(toTerr.id)!.namePt;
+
+      if (hits === 0) {
+        state.log.push(
+          `🎯 BARRAGEM DE ARTILHARIA: Baterias em ${fromName} dispararam contra ${toName} [${rolls.join(",")}], mas os projéteis erraram o alvo.`
+        );
+        break;
+      }
+
+      let remainingHits = hits;
+      const fort = toTerr.buildings?.find((b) => b.type === "fortification");
+      if (fort && remainingHits > 0) {
+        if (fort.level >= 2) {
+          fort.level = 1;
+          remainingHits--;
+          state.log.push(
+            `🎯 BARRAGEM DE ARTILHARIA: Disparos de ${fromName} [${rolls.join(",")}] danificaram a Fortaleza em ${toName}, degradando-a para Casamata Nv. 1!`
+          );
+        } else if (fort.level === 1) {
+          toTerr.buildings = toTerr.buildings?.filter((b) => b.type !== "fortification");
+          remainingHits--;
+          state.log.push(
+            `🎯 BARRAGEM DE ARTILHARIA: Disparos de ${fromName} [${rolls.join(",")}] destruíram a Casamata defensiva em ${toName}!`
+          );
+        }
+      }
+
+      let unitsDestroyed = 0;
+      if (remainingHits > 0 && toTerr.armies > 1) {
+        const killCount = Math.min(remainingHits, toTerr.armies - 1);
+        const defenderCombat = removeCasualties(getTerritoryUnits(toTerr), killCount);
+        setTerritoryUnits(toTerr, defenderCombat.remaining);
+        unitsDestroyed = killCount;
+
+        const defenderPlayer = state.players.find((p) => p.id === toTerr.ownerId);
+        if (defenderPlayer) {
+          defenderPlayer.analytics = defenderPlayer.analytics ?? createInitialPlayerAnalytics();
+          const defAnalytics = defenderPlayer.analytics;
+          for (const u of UNIT_TYPES) {
+            defAnalytics.unitsLost[u] += defenderCombat.losses[u];
+          }
+        }
+
+        state.log.push(
+          `🎯 BARRAGEM DE ARTILHARIA: Disparos de ${fromName} [${rolls.join(",")}] destruíram ${killCount} divisão(ões) inimiga(s) em ${toName}!`
+        );
+      } else if (unitsDestroyed === 0 && !fort) {
+        state.log.push(
+          `🎯 BARRAGEM DE ARTILHARIA: Disparos de ${fromName} [${rolls.join(",")}] atingiram ${toName}, mas a última guarnição sobreviveu entrincheirada!`
+        );
+      }
+      break;
+    }
+
+    case "air_mission": {
+      if (state.phase !== "attack") {
+        throw new Error("Missões aéreas só podem ser executadas durante a fase de combate.");
+      }
+      if (state.round === 1) {
+        throw new Error("Ações de combate não são permitidas na primeira rodada.");
+      }
+      if (state.pendingConquest) {
+        throw new Error("Mova tropas para o território recém-conquistado antes de continuar.");
+      }
+
+      const fromTerr = state.territories[action.fromTerritoryId];
+      const toTerr = state.territories[action.toTerritoryId];
+      if (!fromTerr || !toTerr) throw new Error("Território inválido.");
+      if (fromTerr.ownerId !== playerId) throw new Error("Aeródromo de origem não pertence a você.");
+
+      const fromUnits = getTerritoryUnits(fromTerr);
+      if (fromUnits.aircraft <= 0) {
+        throw new Error("Não há aeronaves baseadas neste território.");
+      }
+      if (!hasTerritoryBuilding(fromTerr, "airfield")) {
+        throw new Error("Operações aéreas exigem um Aeródromo no território de origem.");
+      }
+      if (fromTerr.airMissionFlownThisTurn) {
+        throw new Error("As esquadrilhas deste aeródromo já executaram uma surtida de combate neste turno.");
+      }
+
+      if ((currentPlayer.resources?.oil ?? 0) < 1) {
+        throw new Error("Combustível insuficiente: surtidas aéreas exigem 1 Petróleo.");
+      }
+
+      const fromDef = mapById.get(fromTerr.id)!;
+      const toDef = mapById.get(toTerr.id)!;
+
+      // Range check
+      if (action.missionType === "cas") {
+        if (!fromDef.neighbors.includes(toTerr.id)) {
+          throw new Error("Apoio Aéreo Aproximado (CAS) exige que o alvo seja adjacente (alcance 1).");
+        }
+      } else {
+        const validTargets = findAirMissionTargets(state, fromTerr.id, map);
+        if (!validTargets.includes(toTerr.id)) {
+          throw new Error("O alvo está fora do alcance operacional de 2 territórios (com no máx. 1 travessia marítima).");
+        }
+      }
+
+      // Check active diplomatic treaties (NAP or Alliance)
+      const hasActiveTreaty = state.treaties?.some(
+        (t) =>
+          t.status === "active" &&
+          ((t.fromPlayerId === playerId && t.toPlayerId === toTerr.ownerId) ||
+            (t.fromPlayerId === toTerr.ownerId && t.toPlayerId === playerId))
+      );
+      if (hasActiveTreaty) {
+        throw new Error("Você possui um tratado ativo com este general.");
+      }
+
+      // Deduct 1 oil for flight sortie
+      currentPlayer.resources.oil -= 1;
+      fromTerr.airMissionFlownThisTurn = true;
+
+      if (action.missionType === "cas") {
+        toTerr.casBonusAttackerId = playerId;
+        state.log.push(
+          `✈️ MISSÃO AÉREA (CAS): Esquadrilha de ${fromDef.namePt} estabeleceu Apoio Aéreo sobre ${toDef.namePt}! (+1 dado de ataque no assalto terrestre)`
+        );
+      } else if (action.missionType === "bombardment") {
+        const bombRoll = rng.rollD6();
+        if (bombRoll >= 5 && toTerr.buildings && toTerr.buildings.length > 0) {
+          const targetBuilding = toTerr.buildings[0];
+          const bNames: Record<BuildingType, string> = {
+            market: "Mercado",
+            industry: "Indústria",
+            fortification: "Fortificação",
+            airfield: "Aeródromo",
+            port: "Porto Naval",
+          };
+          if (targetBuilding.level > 1) {
+            targetBuilding.level -= 1;
+          } else {
+            toTerr.buildings.shift();
+          }
+          state.log.push(
+            `💥 BOMBARDEIO ESTRATÉGICO: Aeronaves bombardearam ${toDef.namePt} [dado: ${bombRoll}] e destruíram a estrutura de ${bNames[targetBuilding.type]}!`
+          );
+        } else {
+          state.log.push(
+            `✈️ BOMBARDEIO ESTRATÉGICO: Bombardeiros sobre ${toDef.namePt} [dado: ${bombRoll}] não conseguiram atingir infraestruturas críticas.`
+          );
+        }
+      } else if (action.missionType === "recon") {
+        if (fromTerr.isEncircled) {
+          throw new Error("Aeronaves em territórios cercados não conseguem transmitir dados de inteligência para a Capital.");
+        }
+        const targetPlayer = state.players.find((p) => p.id === toTerr.ownerId);
+        const progress = targetPlayer ? calculateObjectiveProgress(state, targetPlayer.id, map) : null;
+        state.log.push(
+          `📡 RECONHECIMENTO AÉREO: Voo de inteligência sobre ${toDef.namePt} (${targetPlayer?.name ?? "Inimigo"}): ${toTerr.armies} divisões guarnecidas${
+            progress ? `, objetivo: ${progress.held}/${progress.total} (${progress.completionPct}%)` : ""
+          }.`
+        );
       }
       break;
     }
@@ -1213,6 +1640,35 @@ export function applyAction(
       }
       if (!canSubtractUnits(fromUnits, attackingUnits)) {
         throw new Error("A força-tarefa selecionada excede as unidades disponíveis na origem.");
+      }
+
+      // Check infantry assault fatigue vs Blitzkrieg capability (HEGEM-25)
+      if (fromTerr.conqueredTurnRound === state.round) {
+        if (!fromTerr.blitzkriegAvailable) {
+          throw new Error(
+            "A infantaria que ocupou este território sofre fadiga de combate e não pode realizar novos ataques no mesmo turno."
+          );
+        }
+        if (attackingUnits.infantry > 0) {
+          throw new Error(
+            "Apenas blindados (tanques) abastecidos podem avançar em Blitzkrieg; a infantaria ocupante sofre fadiga."
+          );
+        }
+      }
+
+      // Check asymmetric naval blockade over maritime crossings (HEGEM-57)
+      const isMaritimeAttack = isSeaLink(fromTerr.id, toTerr.id);
+      let coastalBombardment = false;
+      if (isMaritimeAttack) {
+        const blockade = checkNavalBlockade(state, fromTerr.id, toTerr.id, playerId);
+        if (blockade.isBlockaded) {
+          throw new Error(
+            `A travessia marítima para ${mapById.get(toTerr.id)?.namePt ?? toTerr.id} está bloqueada por frotas inimigas ancoradas no Porto.`
+          );
+        }
+        if (blockade.attackerNavy > 0) {
+          coastalBombardment = true;
+        }
       }
 
       // Check active diplomatic treaties (NAP or Alliance)
@@ -1276,7 +1732,8 @@ export function applyAction(
         }
       }
 
-      const maxAttackerDice = Math.min(3, attackingCount);
+      const hasCasBonus = toTerr.casBonusAttackerId === playerId;
+      const maxAttackerDice = Math.min(hasCasBonus ? 4 : 3, attackingCount);
       const attackerDiceCount = action.diceCount
         ? Math.min(action.diceCount, maxAttackerDice)
         : maxAttackerDice;
@@ -1289,11 +1746,40 @@ export function applyAction(
         (a, b) => b - a
       );
 
+      // Tank re-roll 1s (Ponta de Lança Couraçada) if attacker has oil (HEGEM-25)
+      let blitzkriegBonus = false;
+      if (attackingUnits.tank > 0 && (currentPlayer.resources?.oil ?? 0) > 0) {
+        let reRolledAny = false;
+        for (let i = 0; i < attackerDice.length; i++) {
+          if (attackerDice[i] === 1) {
+            attackerDice[i] = rng.rollD6();
+            reRolledAny = true;
+          }
+        }
+        if (reRolledAny) {
+          attackerDice.sort((a, b) => b - a);
+          blitzkriegBonus = true;
+        }
+      }
+
       if (attackerModifier > 0 && attackerDice.length > 0) {
         attackerDice[0] += attackerModifier;
       }
+      if (coastalBombardment && attackerDice.length > 0) {
+        attackerDice[0] += 1;
+      }
       if (defenderModifier > 0 && defenderDice.length > 0) {
         defenderDice[0] += defenderModifier;
+      }
+
+      // Encirclement defender penalty (HEGEM-35: -1, or -2 after 2 rounds)
+      let encircledDefenderPenalty: number | undefined;
+      if (toTerr.isEncircled) {
+        const pen = (toTerr.encircledRounds ?? 1) >= 2 ? 2 : 1;
+        encircledDefenderPenalty = pen;
+        if (defenderDice.length > 0) {
+          defenderDice[0] = Math.max(1, defenderDice[0] - pen);
+        }
       }
 
       // HEGEM-32: Territorial Fortification combat modifiers
@@ -1332,6 +1818,19 @@ export function applyAction(
       );
       setTerritoryUnits(toTerr, defenderCombat.remaining);
 
+      // Track combat losses in player match analytics (HEGEM-59)
+      currentPlayer.analytics = currentPlayer.analytics ?? createInitialPlayerAnalytics();
+      for (const u of UNIT_TYPES) {
+        currentPlayer.analytics.unitsLost[u] += attackerCombat.losses[u];
+      }
+      if (defenderPlayer) {
+        defenderPlayer.analytics = defenderPlayer.analytics ?? createInitialPlayerAnalytics();
+        const defAnalytics = defenderPlayer.analytics;
+        for (const u of UNIT_TYPES) {
+          defAnalytics.unitsLost[u] += defenderCombat.losses[u];
+        }
+      }
+
       const defenderId = toTerr.ownerId;
       const conquered = toTerr.armies === 0;
 
@@ -1349,6 +1848,10 @@ export function applyAction(
         defenderModifier,
         lastStandBonus,
         fortificationLevel: fortLevel > 0 ? fortLevel : undefined,
+        casBonus: hasCasBonus ? true : undefined,
+        blitzkriegBonus: blitzkriegBonus ? true : undefined,
+        encircledDefenderPenalty,
+        coastalBombardmentBonus: coastalBombardment ? true : undefined,
       };
 
       const fromName = fromDef.namePt;
@@ -1365,13 +1868,21 @@ export function applyAction(
       const lastStandTag = lastStandBonus
         ? ` [⭐ Mobilização Total +${attackerModifier || defenderModifier}]`
         : "";
+      const casTag = hasCasBonus ? " [✈️ CAS +1 Dado]" : "";
+      const coastalTag = coastalBombardment ? " [⚓ Bombardeio Costeiro +1]" : "";
+      const encircledTag = encircledDefenderPenalty ? ` [📦 Cerco -${encircledDefenderPenalty} DEF]` : "";
       state.log.push(
-        `Combate ${fromName} [${attackerDice.join(",")}] vs ${toName}${capitalCombatTag}${fortCombatTag}${lastStandTag} [${defenderDice.join(",")}] → baixas ATQ:${attackerLosses} DEF:${defenderLosses}`
+        `Combate ${fromName} [${attackerDice.join(",")}] vs ${toName}${capitalCombatTag}${fortCombatTag}${lastStandTag}${casTag}${coastalTag}${encircledTag} [${defenderDice.join(",")}] → baixas ATQ:${attackerLosses} DEF:${defenderLosses}`
       );
 
       if (conquered) {
         toTerr.ownerId = playerId;
         currentPlayer.conqueredThisTurn = true;
+        toTerr.conqueredTurnRound = state.round;
+        toTerr.infantryAssaultFatigued = true;
+        toTerr.blitzkriegAvailable =
+          attackerCombat.remaining.tank > 0 && (currentPlayer.resources?.oil ?? 0) > 0;
+        toTerr.casBonusAttackerId = undefined;
         state.worldTension = Math.min(100, (state.worldTension ?? 0) + 0.5);
 
         // HEGEM-32: If conquered territory had a Level 2 Fortress, it degrades to Level 1 Casamata
@@ -1507,6 +2018,11 @@ export function applyAction(
 
       setTerritoryUnits(fromTerr, subtractUnits(getTerritoryUnits(fromTerr), additionalUnits));
       setTerritoryUnits(toTerr, addUnits(getTerritoryUnits(toTerr), additionalUnits));
+      if (toTerr.blitzkriegAvailable) {
+        const finalUnits = getTerritoryUnits(toTerr);
+        toTerr.blitzkriegAvailable = finalUnits.tank > 0 && (currentPlayer.resources?.oil ?? 0) > 0;
+      }
+      updateSupplyAndEncirclement(state, map);
       state.pendingConquest = null;
       break;
     }
@@ -1522,6 +2038,10 @@ export function applyAction(
       for (const t of Object.values(state.territories)) {
         setMovedInUnits(t, emptyUnitCounts());
         t.airliftedThisTurn = false;
+        t.casBonusAttackerId = undefined;
+        t.blitzkriegAvailable = false;
+        t.infantryAssaultFatigued = false;
+        t.conqueredTurnRound = undefined;
       }
       break;
     }
@@ -1600,9 +2120,20 @@ export function applyAction(
         throw new Error("A composição inclui unidades indisponíveis ou que já se moveram neste turno.");
       }
 
+      if (isSeaLink(fromTerr.id, toTerr.id)) {
+        const blockade = checkNavalBlockade(state, fromTerr.id, toTerr.id, playerId);
+        if (blockade.isBlockaded) {
+          throw new Error("A rota marítima está bloqueada por frotas inimigas.");
+        }
+        if (movedUnits.navy > 0 && !hasTerritoryBuilding(toTerr, "port")) {
+          throw new Error("Unidades navais só podem ser manobradas para portos costeiros aliados.");
+        }
+      }
+
       setTerritoryUnits(fromTerr, subtractUnits(getTerritoryUnits(fromTerr), movedUnits));
       setTerritoryUnits(toTerr, addUnits(getTerritoryUnits(toTerr), movedUnits));
       setMovedInUnits(toTerr, addUnits(getMovedInUnits(toTerr), movedUnits));
+      updateSupplyAndEncirclement(state, map);
 
       state.log.push(
         `${currentPlayer.name} moveu ${action.armies} de ${fromDef.namePt} para ${
@@ -2082,6 +2613,12 @@ function advanceTurn(state: GameState, rng: SeededRng, map: GameMapDef): void {
   for (const t of Object.values(state.territories)) {
     setMovedInUnits(t, emptyUnitCounts());
     t.airliftedThisTurn = false;
+    t.artilleryBarrageFiredThisTurn = false;
+    t.airMissionFlownThisTurn = false;
+    t.casBonusAttackerId = undefined;
+    t.conqueredTurnRound = undefined;
+    t.blitzkriegAvailable = false;
+    t.infantryAssaultFatigued = false;
   }
 
   // Advance to next non-eliminated player
@@ -2154,6 +2691,33 @@ function advanceTurn(state: GameState, rng: SeededRng, map: GameMapDef): void {
         `Turno de ${candidate.name} (Rodada ${state.round}): +${reinf.total} exércitos${capTag}${penTag}.`
       );
       collectTurnEconomy(state, candidate.id, map);
+
+      updateSupplyAndEncirclement(state, map);
+
+      // Track geoeconomic metrics (HEGEM-59)
+      for (const p of state.players) {
+        if (!p.eliminated) {
+          p.analytics = p.analytics ?? createInitialPlayerAnalytics();
+          const pTerrs = Object.values(state.territories).filter((t) => t.ownerId === p.id);
+          const ownsMechanized = pTerrs.some((t) => {
+            const u = getTerritoryUnits(t);
+            return u.tank > 0 || u.aircraft > 0 || u.navy > 0;
+          });
+          if (ownsMechanized && (p.resources?.oil ?? 0) <= 0) {
+            p.analytics.fuelStarvationTurns += 1;
+          }
+          for (const continent of map.continents) {
+            const contTerrs = map.territories.filter((t) => t.continent === continent.id);
+            const holdsAll = contTerrs.every((t) => state.territories[t.id]?.ownerId === p.id);
+            if (holdsAll && p.analytics.unificationRounds[continent.id] === undefined) {
+              p.analytics.unificationRounds[continent.id] = state.round;
+            }
+          }
+          if (pTerrs.some((t) => t.isEncircled)) {
+            p.analytics.encircledRoundsCount += 1;
+          }
+        }
+      }
       break;
     }
   }
