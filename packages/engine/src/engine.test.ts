@@ -4,17 +4,21 @@ import {
   applyAction,
   calculateTurnEconomy,
   calculateTurnReinforcements,
+  checkNavalBlockade,
   checkPlayerVictory,
   createGame,
   createPlayerView,
   createSeededRng,
   damageTerritoryFortification,
+  findAirMissionTargets,
   getMovedInUnits,
   getTerritoryBuildingLevel,
   getTerritoryMaxBuildingSlots,
   getTerritoryUnits,
   getTradeBonusArmies,
   isValidCardSet,
+  setTerritoryUnits,
+  updateSupplyAndEncirclement,
 } from "./index.js";
 
 describe("Classic Map Graph Integrity", () => {
@@ -1608,3 +1612,563 @@ describe("Combined Arms and Infantry Escort (HEGEM-27)", () => {
     ).toThrow(/infantaria/);
   });
 });
+
+describe("Geoeconomic Telemetry & Continental Balance Analytics (HEGEM-59)", () => {
+  const unitCounts = (
+    infantry = 0,
+    tank = 0,
+    artillery = 0,
+    aircraft = 0,
+    navy = 0
+  ) => ({ infantry, tank, artillery, aircraft, navy });
+
+  it("initializes player analytics and tracks capital continent, economy, buildings, and recruitment", () => {
+    let state = createGame({
+      id: "g_telemetry_1",
+      seed: "telemetry-seed",
+      players: [
+        { id: "p1", name: "Alice", color: "blue" },
+        { id: "p2", name: "Bob", color: "red" },
+      ],
+    });
+    let p1 = state.players.find((p) => p.id === "p1")!;
+    expect(p1.analytics).toBeDefined();
+    expect(p1.analytics?.totalMoneyEarned).toBe(0);
+    expect(p1.analytics?.fuelStarvationTurns).toBe(0);
+
+    // Give p1 Brasil and select capital
+    state.phase = "deploy";
+    state.turnIndex = state.players.findIndex((p) => p.id === "p1");
+    state.territories["brasil"].ownerId = "p1";
+    state = applyAction(
+      state,
+      "p1",
+      { type: "select_capital", territoryId: "brasil" },
+      createSeededRng("seed_cap")
+    );
+    p1 = state.players.find((p) => p.id === "p1")!;
+    expect(p1.analytics?.capitalContinentId).toBe("south_america");
+
+    // Build structure
+    p1.resources.money = 20;
+    p1.resources.steel = 10;
+    state = applyAction(
+      state,
+      "p1",
+      { type: "build_structure", territoryId: "brasil", buildingType: "industry" },
+      createSeededRng("seed_b1")
+    );
+    p1 = state.players.find((p) => p.id === "p1")!;
+    expect(p1.analytics?.buildingsConstructed.industry).toBe(1);
+
+    // Recruit units
+    state = applyAction(
+      state,
+      "p1",
+      { type: "recruit_unit", territoryId: "brasil", unitType: "tank", quantity: 2 },
+      createSeededRng("seed_r1")
+    );
+    p1 = state.players.find((p) => p.id === "p1")!;
+    expect(p1.analytics?.unitsRecruited.tank).toBe(2);
+
+    // End turn and check that turn economy accumulated in analytics
+    p1.unplacedArmies = 0;
+    state.round = 2;
+    state = applyAction(state, "p1", { type: "end_turn" }, createSeededRng("seed_t1"));
+    const activePlayer = state.players[state.turnIndex];
+    expect(activePlayer.analytics?.totalMoneyEarned).toBeGreaterThan(0);
+  });
+
+  it("tracks fuel starvation turns and continent unification rounds", () => {
+    let state = createGame({
+      id: "g_telemetry_2",
+      seed: "telemetry-seed-2",
+      players: [
+        { id: "p1", name: "Alice", color: "blue" },
+        { id: "p2", name: "Bob", color: "red" },
+      ],
+    });
+    state.turnIndex = state.players.findIndex((p) => p.id === "p1");
+    const p1 = state.players[state.turnIndex];
+    p1.resources.oil = 0; // Starving oil!
+    state.territories["brasil"].ownerId = p1.id;
+    state.territories["brasil"].units = unitCounts(1, 2); // Owns tanks without oil
+
+    // Give p1 all of South America
+    for (const tId of ["brasil", "argentina", "peru", "venezuela"]) {
+      state.territories[tId].ownerId = p1.id;
+    }
+
+    state.phase = "deploy";
+    p1.unplacedArmies = 0;
+    state = applyAction(state, p1.id, { type: "end_turn" }, createSeededRng("end_turn_fuel"));
+
+    // Check that p1 had fuel starvation turns incremented and continent unification recorded
+    const p1After = state.players.find((p) => p.id === "p1")!;
+    expect(p1After.analytics?.fuelStarvationTurns).toBe(1);
+    expect(p1After.analytics?.unificationRounds.south_america).toBe(state.round);
+  });
+});
+
+describe("Military Supply Lines, Fuel Starvation & Encirclement (HEGEM-35)", () => {
+  const unitCounts = (
+    infantry = 0,
+    tank = 0,
+    artillery = 0,
+    aircraft = 0,
+    navy = 0
+  ) => ({ infantry, tank, artillery, aircraft, navy });
+
+  it("evaluates land connectivity to capital and marks isolated territory as encircled", () => {
+    const state = createGame({
+      id: "g_supply_1",
+      seed: "supply-seed",
+      players: [
+        { id: "p1", name: "Alice", color: "blue" },
+        { id: "p2", name: "Bob", color: "red" },
+      ],
+    });
+    const p1 = state.players[0];
+    p1.capitalTerritoryId = "brasil";
+    state.territories["brasil"].ownerId = p1.id;
+    state.territories["argentina"].ownerId = p1.id; // adjacent by land to Brasil -> supplied
+
+    // Peru is owned by enemy p2, severing land access to Venezuela if Argentina doesn't connect
+    state.territories["peru"].ownerId = "p2";
+    state.territories["venezuela"].ownerId = "p1"; // borders Peru and Brasil; since it borders Brasil directly, it is supplied
+
+    // Let's isolate an overseas or cut-off territory: e.g. Japão owned by p1 without any friendly ports or neighbors
+    state.territories["japao"].ownerId = p1.id;
+    state.territories["vladivostok"].ownerId = "p2";
+    state.territories["china"].ownerId = "p2";
+    state.territories["havai"].ownerId = "p2";
+
+    updateSupplyAndEncirclement(state, CLASSIC_MAP);
+
+    expect(state.territories["brasil"].isEncircled).toBe(false);
+    expect(state.territories["argentina"].isEncircled).toBe(false);
+    expect(state.territories["japao"].isEncircled).toBe(true);
+    expect(state.territories["japao"].encircledRounds).toBeGreaterThanOrEqual(1);
+
+    // Deploying to encircled territory is blocked
+    state.phase = "deploy";
+    state.turnIndex = 0;
+    p1.unplacedArmies = 3;
+    expect(() =>
+      applyAction(
+        state,
+        p1.id,
+        { type: "deploy", territoryId: "japao", armies: 1 },
+        createSeededRng("deploy_encircled")
+      )
+    ).toThrow(/cerco militar/);
+  });
+
+  it("maintains maritime supply line across unblockaded sea link (e.g. China to Japan)", () => {
+    const state = createGame({
+      id: "g_supply_port",
+      seed: "supply-port-seed",
+      players: [
+        { id: "p1", name: "Alice", color: "blue" },
+        { id: "p2", name: "Bob", color: "red" },
+      ],
+    });
+    const p1 = state.players.find((p) => p.id === "p1")!;
+    p1.capitalTerritoryId = "brasil";
+    state.territories["brasil"].ownerId = p1.id;
+
+    // Connect Brasil -> Venezuela -> Mexico -> California -> Havai -> Japão and China
+    for (const t of ["venezuela", "mexico", "california", "havai", "china", "japao"]) {
+      state.territories[t].ownerId = p1.id;
+    }
+
+    // Direct sea link China <-> Japan is unblockaded: Japão is supplied by default without ports!
+    updateSupplyAndEncirclement(state, CLASSIC_MAP);
+    expect(state.territories["japao"].isEncircled).toBe(false);
+
+    // If severed from Capital (all neighbors of Japan owned by enemy p2):
+    state.territories["china"].ownerId = "p2";
+    state.territories["vladivostok"].ownerId = "p2";
+    state.territories["havai"].ownerId = "p2";
+    updateSupplyAndEncirclement(state, CLASSIC_MAP);
+    expect(state.territories["japao"].isEncircled).toBe(true);
+  });
+
+  it("applies defense penalty (-1 or -2) when attacking an encircled territory", () => {
+    let state = createGame({
+      id: "g_supply_combat",
+      seed: "supply-combat-seed",
+      players: [
+        { id: "p1", name: "Alice", color: "blue" },
+        { id: "p2", name: "Bob", color: "red" },
+      ],
+    });
+    state.round = 2;
+    state.phase = "attack";
+    state.turnIndex = state.players.findIndex((p) => p.id === "p1");
+
+    state.territories["brasil"].ownerId = "p1";
+    state.territories["brasil"].armies = 4;
+    state.territories["argentina"].ownerId = "p2";
+    state.territories["argentina"].armies = 2;
+    state.territories["argentina"].isEncircled = true;
+    state.territories["argentina"].encircledRounds = 2;
+
+    const rng = createSeededRng("combat_pen");
+    rng.rollD6 = () => 5; // Defender rolls 5, but encircled penalty -2 brings highest to 3
+
+    state = applyAction(
+      state,
+      "p1",
+      { type: "attack", fromTerritoryId: "brasil", toTerritoryId: "argentina", diceCount: 1 },
+      rng
+    );
+
+    expect(state.lastCombat?.encircledDefenderPenalty).toBe(2);
+    expect(state.lastCombat?.defenderDice[0]).toBe(3); // 5 - 2 = 3
+  });
+
+  it("flags outOfFuel when national oil is zero and territory has mechanized units", () => {
+    const state = createGame({
+      id: "g_fuel_starve",
+      seed: "fuel-seed",
+      players: [
+        { id: "p1", name: "Alice", color: "blue" },
+        { id: "p2", name: "Bob", color: "red" },
+      ],
+    });
+    const p1 = state.players.find((p) => p.id === "p1")!;
+    p1.resources.oil = 0;
+    state.territories["brasil"].ownerId = p1.id;
+    state.territories["brasil"].units = unitCounts(2, 1); // 2 infantry, 1 tank
+
+    updateSupplyAndEncirclement(state, CLASSIC_MAP);
+    expect(state.territories["brasil"].outOfFuel).toBe(true);
+
+    p1.resources.oil = 2;
+    updateSupplyAndEncirclement(state, CLASSIC_MAP);
+    expect(state.territories["brasil"].outOfFuel).toBe(false);
+  });
+});
+
+describe("Asymmetric Naval Blockade & Coastal Bombardment (HEGEM-57)", () => {
+  const unitCounts = (
+    infantry = 0,
+    tank = 0,
+    artillery = 0,
+    aircraft = 0,
+    navy = 0
+  ) => ({ infantry, tank, artillery, aircraft, navy });
+
+  it("allows free amphibious crossing by default when neither side has naval forces", () => {
+    const state = createGame({
+      id: "g_nav_1",
+      seed: "nav-seed-1",
+      players: [
+        { id: "p1", name: "Alice", color: "blue" },
+        { id: "p2", name: "Bob", color: "red" },
+      ],
+    });
+    const blockade = checkNavalBlockade(state, "brasil", "argelia", "p1");
+    expect(blockade.isBlockaded).toBe(false);
+  });
+
+  it("enforces asymmetric naval blockade when defender has more navy in connected port than attacker", () => {
+    const state = createGame({
+      id: "g_nav_block",
+      seed: "nav-seed-block",
+      players: [
+        { id: "p1", name: "Alice", color: "blue" },
+        { id: "p2", name: "Bob", color: "red" },
+      ],
+    });
+    state.round = 2;
+    state.phase = "attack";
+    state.turnIndex = state.players.findIndex((p) => p.id === "p1");
+
+    state.players[0].resources.oil = 3;
+    state.players[1].resources.oil = 3;
+
+    state.territories["brasil"].ownerId = "p1";
+    state.territories["brasil"].armies = 4;
+    state.territories["argelia"].ownerId = "p2";
+    state.territories["argelia"].armies = 3;
+
+    // Defender builds port with 2 navies
+    state.territories["argelia"].buildings = [{ type: "port", level: 1 }];
+    state.territories["argelia"].units = unitCounts(1, 0, 0, 0, 2);
+
+    // Attacker has no navy: blocked!
+    expect(() =>
+      applyAction(
+        state,
+        "p1",
+        { type: "attack", fromTerritoryId: "brasil", toTerritoryId: "argelia" },
+        createSeededRng("atk_block")
+      )
+    ).toThrow(/bloqueada por frotas inimigas/);
+
+    // Attacker builds port and stations 2 navies (ties defender): blockade broken!
+    state.territories["brasil"].buildings = [{ type: "port", level: 1 }];
+    state.territories["brasil"].units = unitCounts(2, 0, 0, 0, 2);
+
+    const check = checkNavalBlockade(state, "brasil", "argelia", "p1");
+    expect(check.isBlockaded).toBe(false);
+  });
+
+  it("awards coastal bombardment bonus (+1 attack die) when attacker possesses navy in connected port", () => {
+    let state = createGame({
+      id: "g_nav_bombard",
+      seed: "nav-bombard",
+      players: [
+        { id: "p1", name: "Alice", color: "blue" },
+        { id: "p2", name: "Bob", color: "red" },
+      ],
+    });
+    state.round = 2;
+    state.phase = "attack";
+    state.turnIndex = state.players.findIndex((p) => p.id === "p1");
+    state.players.find((p) => p.id === "p1")!.resources.oil = 2;
+
+    state.territories["brasil"].ownerId = "p1";
+    state.territories["brasil"].armies = 4;
+    state.territories["brasil"].buildings = [{ type: "port", level: 1 }];
+    state.territories["brasil"].units = unitCounts(3, 0, 0, 0, 1);
+
+    state.territories["argelia"].ownerId = "p2";
+    state.territories["argelia"].armies = 2;
+
+    const rng = createSeededRng("nav_combat");
+    rng.rollD6 = () => 4; // Rolls 4, coastal bombardment +1 brings highest to 5
+
+    state = applyAction(
+      state,
+      "p1",
+      { type: "attack", fromTerritoryId: "brasil", toTerritoryId: "argelia", diceCount: 1 },
+      rng
+    );
+
+    expect(state.lastCombat?.coastalBombardmentBonus).toBe(true);
+    expect(state.lastCombat?.attackerDice[0]).toBe(5); // 4 + 1 = 5
+  });
+});
+
+describe("Tanks, Blitzkrieg Spearhead & Infantry Assault Fatigue (HEGEM-25)", () => {
+  const unitCounts = (
+    infantry = 0,
+    tank = 0,
+    artillery = 0,
+    aircraft = 0,
+    navy = 0
+  ) => ({ infantry, tank, artillery, aircraft, navy });
+
+  it("re-rolls attack dice rolling 1 when attacking with tanks and fuel", () => {
+    let state = createGame({
+      id: "g_tank_reroll",
+      seed: "tank-reroll",
+      players: [
+        { id: "p1", name: "Alice", color: "blue" },
+        { id: "p2", name: "Bob", color: "red" },
+      ],
+    });
+    state.round = 2;
+    state.phase = "attack";
+    state.turnIndex = state.players.findIndex((p) => p.id === "p1");
+    state.players.find((p) => p.id === "p1")!.resources.oil = 2;
+
+    state.territories["brasil"].ownerId = "p1";
+    state.territories["brasil"].units = unitCounts(1, 2);
+    state.territories["brasil"].armies = 3;
+    state.territories["argentina"].ownerId = "p2";
+    state.territories["argentina"].armies = 2;
+
+    const rolls = [1, 3, 2, 5]; // Attacker first rolls 1, defender rolls 3 & 2, re-roll produces 5
+    const rng = createSeededRng("tank_combat");
+    rng.rollD6 = () => rolls.shift() ?? 6;
+
+    state = applyAction(
+      state,
+      "p1",
+      {
+        type: "attack",
+        fromTerritoryId: "brasil",
+        toTerritoryId: "argentina",
+        diceCount: 1,
+        units: unitCounts(0, 1),
+      },
+      rng
+    );
+
+    expect(state.lastCombat?.blitzkriegBonus).toBe(true);
+    expect(state.lastCombat?.attackerDice[0]).toBe(5); // 1 was re-rolled into 5!
+  });
+
+  it("grants Blitzkrieg capability upon conquest with surviving tanks and blocks fatigued infantry", () => {
+    let state = createGame({
+      id: "g_blitzkrieg",
+      seed: "blitz-seed",
+      players: [
+        { id: "p1", name: "Alice", color: "blue" },
+        { id: "p2", name: "Bob", color: "red" },
+      ],
+    });
+    state.round = 2;
+    state.phase = "attack";
+    state.turnIndex = state.players.findIndex((p) => p.id === "p1");
+    state.players.find((p) => p.id === "p1")!.resources.oil = 3;
+
+    state.territories["brasil"].ownerId = "p1";
+    setTerritoryUnits(state.territories["brasil"], unitCounts(2, 2));
+    state.territories["argentina"].ownerId = "p2";
+    setTerritoryUnits(state.territories["argentina"], unitCounts(1, 0));
+
+    // Brazil conquers Argentina
+    const rolls = [6, 6, 6, 1, 6, 1];
+    const rng = createSeededRng("blitz_conquer");
+    rng.rollD6 = () => rolls.shift() ?? 1;
+
+    state = applyAction(
+      state,
+      "p1",
+      {
+        type: "attack",
+        fromTerritoryId: "brasil",
+        toTerritoryId: "argentina",
+        units: unitCounts(1, 2),
+      },
+      rng
+    );
+
+    // Conquered territory has blitzkriegAvailable enabled because tanks survived
+    expect(state.territories["argentina"].blitzkriegAvailable).toBe(true);
+    expect(state.territories["argentina"].infantryAssaultFatigued).toBe(true);
+
+    // Complete conquest occupation
+    state = applyAction(
+      state,
+      "p1",
+      {
+        type: "occupy",
+        armies: 3,
+        units: unitCounts(1, 2),
+      },
+      rng
+    );
+
+    // Secondary attack from Argentina with fatigued infantry fails
+    state.territories["peru"].ownerId = "p2";
+    setTerritoryUnits(state.territories["peru"], unitCounts(1, 0));
+
+    expect(() =>
+      applyAction(
+        state,
+        "p1",
+        {
+          type: "attack",
+          fromTerritoryId: "argentina",
+          toTerritoryId: "peru",
+          units: unitCounts(1, 1), // includes infantry!
+        },
+        createSeededRng("blitz_fail")
+      )
+    ).toThrow(/Apenas blindados/);
+
+    // Secondary attack led exclusively by surviving tanks succeeds in Blitzkrieg!
+    state = applyAction(
+      state,
+      "p1",
+      {
+        type: "attack",
+        fromTerritoryId: "argentina",
+        toTerritoryId: "peru",
+        units: unitCounts(0, 1), // only tanks!
+      },
+      rng
+    );
+    expect(state.territories["peru"].ownerId).toBe("p1");
+  });
+});
+
+describe("Artillery Barrage & Airfield Air Missions (HEGEM-26, HEGEM-30)", () => {
+  const unitCounts = (
+    infantry = 0,
+    tank = 0,
+    artillery = 0,
+    aircraft = 0,
+    navy = 0
+  ) => ({ infantry, tank, artillery, aircraft, navy });
+
+  it("fires artillery barrage against adjacent territory, suppressing fortification and destroying units", () => {
+    let state = createGame({
+      id: "g_artillery",
+      seed: "artillery-seed",
+      players: [
+        { id: "p1", name: "Alice", color: "blue" },
+        { id: "p2", name: "Bob", color: "red" },
+      ],
+    });
+    state.round = 2;
+    state.phase = "attack";
+    state.turnIndex = state.players.findIndex((p) => p.id === "p1");
+
+    state.territories["brasil"].ownerId = "p1";
+    setTerritoryUnits(state.territories["brasil"], unitCounts(2, 0, 2)); // 2 inf, 2 artillery = 4 armies
+    state.territories["argentina"].ownerId = "p2";
+    setTerritoryUnits(state.territories["argentina"], unitCounts(3, 0, 0)); // 3 inf = 3 armies
+    state.territories["argentina"].buildings = [{ type: "fortification", level: 2 }];
+
+    const rolls = [5, 4]; // 2 hits
+    const rng = createSeededRng("art_rng");
+    rng.rollD6 = () => rolls.shift() ?? 6;
+
+    state = applyAction(
+      state,
+      "p1",
+      { type: "artillery_barrage", fromTerritoryId: "brasil", toTerritoryId: "argentina" },
+      rng
+    );
+
+    // 1st hit degraded fortress from lvl 2 to lvl 1, 2nd hit destroyed 1 defender unit
+    expect(getTerritoryBuildingLevel(state.territories["argentina"], "fortification")).toBe(1);
+    expect(state.territories["argentina"].armies).toBe(2);
+    expect(state.territories["brasil"].artilleryBarrageFiredThisTurn).toBe(true);
+  });
+
+  it("executes air missions (CAS, Strategic Bombing, Recon) within BFS range <= 2 and <= 1 sea crossing", () => {
+    let state = createGame({
+      id: "g_air",
+      seed: "air-seed",
+      players: [
+        { id: "p1", name: "Alice", color: "blue" },
+        { id: "p2", name: "Bob", color: "red" },
+      ],
+    });
+    state.round = 2;
+    state.phase = "attack";
+    state.turnIndex = state.players.findIndex((p) => p.id === "p1");
+    state.players.find((p) => p.id === "p1")!.resources.oil = 5;
+
+    state.territories["brasil"].ownerId = "p1";
+    state.territories["brasil"].buildings = [{ type: "airfield", level: 1 }];
+    state.territories["brasil"].units = unitCounts(2, 0, 0, 2); // 2 aircraft
+    state.territories["argentina"].ownerId = "p2";
+    state.territories["argentina"].armies = 2;
+
+    // Verify operational range
+    const targets = findAirMissionTargets(state, "brasil", CLASSIC_MAP);
+    expect(targets).toContain("argentina"); // distance 1
+    expect(targets).toContain("argelia"); // 1 sea link
+    expect(targets).toContain("egito"); // 1 sea link + 1 land border (distance 2, 1 sea crossing)
+
+    // Execute CAS mission
+    state = applyAction(
+      state,
+      "p1",
+      { type: "air_mission", fromTerritoryId: "brasil", toTerritoryId: "argentina", missionType: "cas" },
+      createSeededRng("cas_rng")
+    );
+    expect(state.territories["argentina"].casBonusAttackerId).toBe("p1");
+    expect(state.players.find((p) => p.id === "p1")!.resources.oil).toBe(4); // 1 oil consumed
+  });
+});
+

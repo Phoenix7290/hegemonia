@@ -3,8 +3,13 @@
   import { i18n, t } from "../i18n/index.svelte";
   import { getBadgeName, getBadgeDescription } from "../i18n/content.svelte";
   import Icon from "./Icon.svelte";
+  import { isKnownIconName, type IconName } from "../lib/icons";
 
   let { badges }: { badges: Badge[] } = $props();
+
+  function getBadgeIconName(rawIcon: string): IconName {
+    return isKnownIconName(rawIcon) ? rawIcon : "laurel";
+  }
 </script>
 
 <div class="badge-grid">
@@ -12,7 +17,7 @@
     {@const name = getBadgeName(badge.slug, badge.name)}
     {@const description = getBadgeDescription(badge.slug, badge.description)}
     <article class:unlocked={badge.awardedAt} class="achievement" title={description}>
-      <div class="achievement-icon"><Icon name={badge.icon} size={23} /></div>
+      <div class="achievement-icon"><Icon name={getBadgeIconName(badge.icon)} size={23} /></div>
       <div>
         <strong>{name}</strong>
         <p>{description}</p>

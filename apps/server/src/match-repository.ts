@@ -1,5 +1,5 @@
 import type { PoolClient } from "pg";
-import type { GameAction, GameState, PlayerColor } from "@hegemonia/shared";
+import type { CompetitionMode, GameAction, GameState, MatchOrigin, PlayerColor } from "@hegemonia/shared";
 import { calculateObjectiveProgress } from "@hegemonia/engine";
 import { query, withTransaction } from "./connection.js";
 import { awardMatchBadges } from "./badge-service.js";
@@ -10,7 +10,8 @@ export interface CreateMatchInput {
   rulesetVersion?: string;
   mapId?: string;
   gameMode?: "classic" | "roleplay";
-  competitionMode?: "casual" | "ranked";
+  competitionMode?: CompetitionMode;
+  matchOrigin?: MatchOrigin;
   seasonId?: string;
   rulesConfig?: Record<string, unknown>;
 }
@@ -33,6 +34,7 @@ export interface MatchRow {
   mapId: string;
   gameMode: string;
   competitionMode: string;
+  matchOrigin: string;
   round: number;
   seedCommitHash: string;
   revealedSeed: string | null;
@@ -45,8 +47,8 @@ export async function createMatch(input: CreateMatchInput): Promise<string> {
   const result = await query<{ id: string }>(
     `INSERT INTO matches (
       room_code, seed_commit_hash, ruleset_version, map_id, game_mode,
-      competition_mode, season_id, rules_config, ranked_ineligible_reason
-    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+      competition_mode, match_origin, season_id, rules_config, ranked_ineligible_reason
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
     RETURNING id`,
     [
       input.roomCode,
@@ -55,6 +57,7 @@ export async function createMatch(input: CreateMatchInput): Promise<string> {
       input.mapId ?? "classic",
       input.gameMode ?? "classic",
       input.competitionMode ?? "casual",
+      input.matchOrigin ?? "lobby",
       input.seasonId ?? null,
       input.rulesConfig ?? {},
       input.competitionMode === "ranked" ? "Aguardando avaliação dos participantes" : null,
@@ -75,16 +78,19 @@ export async function startMatch(
     }
 
     const ranked = match.competition_mode === "ranked";
+    const fromMatchmaking = match.match_origin === "matchmaking";
     const hasBots = participants.some((participant) => participant.isBot);
     const hasGuests = participants.some((participant) => !participant.userId);
-    const rankedEligible = ranked && !hasBots && !hasGuests;
+    const rankedEligible = ranked && fromMatchmaking && !hasBots && !hasGuests;
     const ineligibleReason = !ranked
       ? null
-      : hasBots
-        ? "Partidas com bots não são elegíveis"
-        : hasGuests
-          ? "Todos os participantes devem estar autenticados"
-          : null;
+      : !fromMatchmaking
+        ? "Somente partidas da fila ranqueada são elegíveis"
+        : hasBots
+          ? "Partidas com bots não são elegíveis"
+          : hasGuests
+            ? "Todos os participantes devem estar autenticados"
+            : null;
 
     await client.query(
       `UPDATE matches
@@ -174,7 +180,7 @@ export async function getRecentMatches(limit = 15): Promise<MatchRow[]> {
     `SELECT
       id, room_code AS "roomCode", status, map_id AS "mapId",
       game_mode AS "gameMode", competition_mode AS "competitionMode",
-      current_round AS round, seed_commit_hash AS "seedCommitHash",
+      match_origin AS "matchOrigin", current_round AS round, seed_commit_hash AS "seedCommitHash",
       revealed_seed AS "revealedSeed", started_at AS "startedAt",
       ended_at AS "endedAt", updated_at AS "updatedAt"
      FROM matches
@@ -190,10 +196,11 @@ async function lockMatch(client: PoolClient, matchId: string) {
     id: string;
     status: string;
     competition_mode: string;
+    match_origin: string;
     season_id: string | null;
     ranked_eligible: boolean;
   }>(
-    `SELECT id, status, competition_mode, season_id, ranked_eligible
+    `SELECT id, status, competition_mode, match_origin, season_id, ranked_eligible
      FROM matches WHERE id = $1 FOR UPDATE`,
     [matchId]
   );
@@ -306,6 +313,11 @@ async function finalizeMatch(
     const eloResidual = observedWin - expectedWinRate;
     const progress = calculateObjectiveProgress(state, player.id);
 
+    const analytics = player.analytics;
+    const fuelStarvationRate = analytics
+      ? Number((analytics.fuelStarvationTurns / Math.max(1, state.round)).toFixed(4))
+      : 0;
+
     const statsJson = {
       objectiveId: player.objective?.id ?? null,
       objectiveType: player.objective?.rule?.type ?? null,
@@ -319,6 +331,17 @@ async function finalizeMatch(
       winVelocityRounds: state.round,
       worldTensionFinal: state.worldTension ?? 0,
       infamyFinal: player.infamy ?? 0,
+      // Geoeconomic telemetry & continental balance (Task #59)
+      capitalContinentId: analytics?.capitalContinentId ?? null,
+      fuelStarvationTurns: analytics?.fuelStarvationTurns ?? 0,
+      fuelStarvationRate,
+      encircledRoundsCount: analytics?.encircledRoundsCount ?? 0,
+      totalMoneyEarned: analytics?.totalMoneyEarned ?? 0,
+      buildingsConstructed: analytics?.buildingsConstructed ?? null,
+      unitsRecruited: analytics?.unitsRecruited ?? null,
+      unitsLost: analytics?.unitsLost ?? null,
+      unificationRounds: analytics?.unificationRounds ?? {},
+      marketPricesFinal: state.marketPrices ?? null,
     };
 
     await client.query(

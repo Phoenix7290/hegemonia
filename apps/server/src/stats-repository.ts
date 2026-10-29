@@ -136,7 +136,7 @@ export async function getPlayerMatchHistory(options: {
     `SELECT
       m.id AS "matchId", m.room_code AS "roomCode", m.map_id AS "mapId",
       m.game_mode AS "gameMode", m.competition_mode AS "competitionMode",
-      m.ended_at AS "endedAt", p.result, p.placement, p.color,
+      m.match_origin AS "matchOrigin", m.ended_at AS "endedAt", p.result, p.placement, p.color,
       p.objective_id AS "objectiveId", p.doctrine_id AS "doctrineId",
       p.final_territories AS "finalTerritories", p.final_armies AS "finalArmies"
      FROM match_participants p
