@@ -62,6 +62,7 @@ database("persistência PostgreSQL", () => {
       roomCode: "RANK01",
       seedCommitHash: state.seedCommitHash,
       competitionMode: "ranked",
+      matchOrigin: "matchmaking",
       seasonId,
     });
     await matches.startMatch(matchId, { ...state, id: matchId }, [
@@ -120,6 +121,32 @@ database("persistência PostgreSQL", () => {
     expect(botStats.rows[0].count).toBe(0);
   });
 
+  it("mantém partidas Custom com contas autenticadas fora do rating", async () => {
+    const firstUser = await createUser("custom1");
+    const secondUser = await createUser("custom2");
+    const state = makeState("pending");
+    const matchId = await matches.createMatch({
+      roomCode: "CUST01",
+      seedCommitHash: state.seedCommitHash,
+      competitionMode: "custom",
+      matchOrigin: "lobby",
+    });
+    await matches.startMatch(matchId, { ...state, id: matchId }, [
+      participant("p1", firstUser, "blue"),
+      participant("p2", secondUser, "red"),
+    ]);
+    await matches.appendMatchEvent(matchId, 1, "p1", { type: "end_turn" }, finishedState(matchId));
+
+    const ratingRows = await connection.query<{ ratings: number; history: number }>(
+      `SELECT
+        (SELECT count(*)::integer FROM player_ratings) AS ratings,
+        (SELECT count(*)::integer FROM player_rating_history) AS history`
+    );
+    expect(ratingRows.rows[0]).toEqual({ ratings: 0, history: 0 });
+    expect((await stats.getPlayerStats(firstUser)).career).toMatchObject({ matchesPlayed: 1, wins: 1 });
+    expect((await stats.getPlayerStats(secondUser)).career).toMatchObject({ matchesPlayed: 1, wins: 0 });
+  });
+
   it("bloqueia duas finalizações concorrentes da mesma partida", async () => {
     const firstUser = await createUser("concorrente1");
     const secondUser = await createUser("concorrente2");
@@ -128,6 +155,7 @@ database("persistência PostgreSQL", () => {
       roomCode: "RACE01",
       seedCommitHash: state.seedCommitHash,
       competitionMode: "ranked",
+      matchOrigin: "matchmaking",
       seasonId,
     });
     await matches.startMatch(matchId, { ...state, id: matchId }, [

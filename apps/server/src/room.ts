@@ -4,10 +4,12 @@ import {
   GameActionSchema,
   PlayerColorSchema,
   SESSION_REPLACED_CLOSE_CODE,
+  type AuthUser,
+  type CompetitionMode,
   type GameAction,
   type GameState,
+  type MatchOrigin,
   type PlayerColor,
-  type AuthUser,
 } from "@hegemonia/shared";
 import { authenticateToken } from "./auth-service.js";
 import { sessionTokenFromHeaders } from "./http.js";
@@ -23,6 +25,7 @@ import {
 import { appendMatchEvent, createMatch, startMatch } from "./db.js";
 import { RoomCommunications } from "./communications.js";
 import { synchronizeHumanHost } from "./room-membership.js";
+import { matchmakingService } from "./matchmaking.js";
 
 interface LobbyPlayer {
   token: string;
@@ -35,6 +38,17 @@ interface LobbyPlayer {
   userId?: string;
   username?: string;
   avatarUrl?: string | null;
+}
+
+interface HegemoniaRoomOptions {
+  roomCode?: string;
+  name?: string;
+  token?: string;
+  competitionMode?: CompetitionMode;
+  matchOrigin?: MatchOrigin;
+  seasonId?: string;
+  expectedUserIds?: string[];
+  rulesConfig?: Record<string, unknown>;
 }
 
 const ALL_COLORS: PlayerColor[] = ["blue", "red", "green", "yellow", "black", "white"];
@@ -55,9 +69,19 @@ export class HegemoniaRoom extends Room {
   private disconnectTimeouts = new Map<string, NodeJS.Timeout>();
   private disposeTimeout: NodeJS.Timeout | null = null;
   private communications!: RoomCommunications;
+  private competitionMode: CompetitionMode = "custom";
+  private matchOrigin: MatchOrigin = "lobby";
+  private seasonId?: string;
+  private expectedUserIds = new Set<string>();
+  private rulesConfig: Record<string, unknown> = {};
 
-  onCreate(options: { roomCode?: string; name?: string; token?: string }) {
+  onCreate(options: HegemoniaRoomOptions) {
     this.autoDispose = false;
+    this.competitionMode = options.competitionMode ?? "custom";
+    this.matchOrigin = options.matchOrigin ?? "lobby";
+    this.seasonId = options.seasonId;
+    this.expectedUserIds = new Set(options.expectedUserIds ?? []);
+    this.rulesConfig = options.rulesConfig ?? {};
     this.communications = new RoomCommunications({
       getPlayers: () => this.lobbyPlayers,
       getClients: () => [...this.clients],
@@ -95,6 +119,10 @@ export class HegemoniaRoom extends Room {
       if (this.gameState) return;
       const caller = this.lobbyPlayers.find((p) => p.sessionId === client.sessionId);
       if (!caller?.isHost) return;
+      if (this.competitionMode !== "custom") {
+        client.send("error_msg", { message: "Bots estão disponíveis apenas em salas Custom." });
+        return;
+      }
       if (this.lobbyPlayers.length >= 6) {
         client.send("error_msg", { message: "Máximo de 6 jogadores atingido." });
         return;
@@ -139,6 +167,13 @@ export class HegemoniaRoom extends Room {
           client.send("error_msg", { message: "São necessários pelo menos 2 jogadores." });
           return;
         }
+        const missingReservedPlayer = [...this.expectedUserIds].some((userId) =>
+          !this.lobbyPlayers.some((player) => player.userId === userId && player.connected)
+        );
+        if (missingReservedPlayer) {
+          client.send("error_msg", { message: "Aguarde todos os jogadores reservados se conectarem." });
+          return;
+        }
 
         try {
           const players = this.lobbyPlayers.map((p) => ({
@@ -147,7 +182,14 @@ export class HegemoniaRoom extends Room {
             color: p.color,
           }));
           const provisional = createGame({ id: "pending", seed: this.secretSeed, players });
-          this.matchId = await createMatch({ roomCode: this.roomCode, seedCommitHash: provisional.seedCommitHash });
+          this.matchId = await createMatch({
+            roomCode: this.roomCode,
+            seedCommitHash: provisional.seedCommitHash,
+            competitionMode: this.competitionMode,
+            matchOrigin: this.matchOrigin,
+            seasonId: this.seasonId,
+            rulesConfig: this.rulesConfig,
+          });
           const nextState = createGame({ id: this.matchId, seed: this.secretSeed, players });
           await startMatch(
             this.matchId,
@@ -241,6 +283,7 @@ export class HegemoniaRoom extends Room {
         this.enqueueAction(() => this.handleTurnTimeout());
       }
     }, 1000);
+    this.checkAutoDispose();
   }
 
   async onAuth(_client: Client, _options: unknown, context: { headers?: { cookie?: string } }) {
@@ -254,6 +297,9 @@ export class HegemoniaRoom extends Room {
     auth: { user?: AuthUser | null } | AuthUser | null
   ) {
     const authUser = auth && typeof auth === "object" && "user" in auth ? auth.user ?? null : (auth as AuthUser | null);
+    if (this.matchOrigin === "matchmaking" && (!authUser || !this.expectedUserIds.has(authUser.id))) {
+      throw new Error("Esta sala é reservada aos jogadores selecionados pelo matchmaking.");
+    }
     const requestedToken = String(options?.token || client.sessionId);
     const existing = authUser
       ? this.lobbyPlayers.find((p) => p.userId === authUser.id)
@@ -265,6 +311,7 @@ export class HegemoniaRoom extends Room {
     const name = authUser?.displayName ?? (String(options?.name || "General").trim().slice(0, 24) || "General");
 
     if (existing) {
+      if (authUser) matchmakingService.confirmParticipant(authUser.id, this.roomCode);
       const previousClient = existing.connected && existing.sessionId !== client.sessionId
         ? [...this.clients].find((candidate) => candidate.sessionId === existing.sessionId)
         : undefined;
@@ -306,6 +353,11 @@ export class HegemoniaRoom extends Room {
       throw new Error("Sala cheia (máx 6 jogadores).");
     }
 
+    if (authUser) matchmakingService.confirmParticipant(authUser.id, this.roomCode);
+    if (this.disposeTimeout) {
+      clearTimeout(this.disposeTimeout);
+      this.disposeTimeout = null;
+    }
     const freeColor = ALL_COLORS.find((c) => !this.lobbyPlayers.some((p) => p.color === c)) ?? "blue";
     this.lobbyPlayers.push({
       token,
@@ -360,6 +412,7 @@ export class HegemoniaRoom extends Room {
   private purgePlayer(player: LobbyPlayer) {
     player.connected = false;
     player.isHost = false;
+    if (player.userId) matchmakingService.releaseParticipant(player.userId, this.roomCode);
     if (!this.gameState) {
       this.lobbyPlayers = this.lobbyPlayers.filter((p) => p.token !== player.token);
     } else {
@@ -400,6 +453,9 @@ export class HegemoniaRoom extends Room {
     this.disconnectTimeouts.clear();
     this.communications.dispose();
     await this.actionQueue;
+    for (const player of this.lobbyPlayers) {
+      if (player.userId) matchmakingService.releaseParticipant(player.userId, this.roomCode);
+    }
   }
 
   private enqueueAction(operation: () => Promise<void>): void {
@@ -413,6 +469,8 @@ export class HegemoniaRoom extends Room {
       roomCode: this.roomCode,
       status: this.gameState ? "playing" : "lobby",
       playersCount: this.lobbyPlayers.length,
+      competitionMode: this.competitionMode,
+      matchOrigin: this.matchOrigin,
     });
   }
 
@@ -598,6 +656,8 @@ export class HegemoniaRoom extends Room {
     client.send("room_state", {
       roomCode: this.roomCode,
       status: this.gameState ? "playing" : "lobby",
+      competitionMode: this.competitionMode,
+      matchOrigin: this.matchOrigin,
       turnDeadline: this.turnDeadline,
       myPlayerId: viewerToken,
       lobbyPlayers: this.lobbyPlayers.map((p) => ({
