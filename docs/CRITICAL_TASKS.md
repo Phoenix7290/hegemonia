@@ -17,7 +17,7 @@ Este documento centraliza as correções de estabilidade, verificações manuais
 | **7** | **Revisão Textual & Eliminação de Typos (PT-BR/EN)** | Shared / Maps / Engine |  Concluído (v0.1.0-alpha) |
 | **8** | **Stress Test de Estabilidade & Concorrência** | Engine & Server | ⏳ Pendente |
 | **9** | **Compatibilidade Cross-Browser (Chromium / Firefox)** | Frontend (`apps/web`) | ⏳ Pendente |
-| **10** | **Multiplayer Local (LAN) e Suporte IPv6** | Server (`apps/server`) | ⏳ Pendente |
+| **10** | **Estabilidade e Reconexão do Multiplayer Online** | Frontend & Server | Concluído |
 
 ---
 
@@ -71,8 +71,11 @@ Este documento centraliza as correções de estabilidade, verificações manuais
   - Firefox: Verificar aceleração de renderização do SVG e suporte a zoom/pan.
   - Chromium (Chrome, Brave, Edge): Validar fluidez do mapa e manipulação do canvas.
 
-### 10. Multiplayer Local e Suporte IPv6
-- **Objetivo**: Permitir que amigos na mesma rede local ou via IPv6 entrem na sala digitando o IP/hostname do servidor.
+### 10. Estabilidade e Reconexão do Multiplayer Online
+- **Objetivo**: Tornar criação, entrada, saída e reconexão de salas online previsíveis, sem criar salas substitutas nem manter sessões duplicadas.
 - **Critério de Aceite**:
-  - Configurar o servidor Express / Colyseus para escutar em `0.0.0.0` e `::` (Dual Stack).
-  - Testar conexão do cliente web apontando para o endereço IP local do host.
+  - Criar salas somente pela ação explícita de criação e entrar por código, link ou reconexão exclusivamente com `joinById`.
+  - Validar códigos hexadecimais de 6 caracteres e apresentar erros localizados em PT-BR e EN.
+  - Reconectar com backoff exponencial limitado, ignorando callbacks de conexões antigas e limpando completamente o estado ao sair.
+  - Manter metadados da sala sincronizados, transferir o anfitrião para um humano conectado e substituir sessões duplicadas da mesma identidade.
+  - Validar com testes automatizados, build completo e fluxo real entre dois clientes, incluindo início de partida e reconexão sem duplicação.

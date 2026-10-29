@@ -25,4 +25,11 @@ export const ptBRErrors: TranslationCatalog = {
   error_request_not_found: "Solicitação pendente não encontrada.",
   error_social_unavailable: "Rede militar indisponível.",
   error_action_unavailable: "Ação militar indisponível.",
+  multiplayer_invalid_room_code: "Código de sala inválido. Use os 6 caracteres informados pelo anfitrião.",
+  multiplayer_room_not_found: "Sala não encontrada. Confira o código ou crie uma nova partida.",
+  multiplayer_connection_failed: "Não foi possível conectar ao servidor. Tente novamente.",
+  multiplayer_connection_lost: "A conexão foi perdida. Retorne ao Centro de Comando e tente novamente.",
+  multiplayer_reconnecting: "Reconectando ao Quartel-General... ({attempt}/8)",
+  multiplayer_room_error: "Erro de comunicação com a sala (código {code}).",
+  multiplayer_session_replaced: "Esta sessão foi substituída por uma nova conexão do mesmo comandante.",
 };

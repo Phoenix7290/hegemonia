@@ -25,4 +25,11 @@ export const enErrors: TranslationCatalog = {
   error_request_not_found: "Pending request not found.",
   error_social_unavailable: "Military social network unavailable.",
   error_action_unavailable: "Military action unavailable.",
+  multiplayer_invalid_room_code: "Invalid room code. Use the 6 characters provided by the host.",
+  multiplayer_room_not_found: "Room not found. Check the code or create a new match.",
+  multiplayer_connection_failed: "Unable to connect to the server. Please try again.",
+  multiplayer_connection_lost: "The connection was lost. Return to Command Center and try again.",
+  multiplayer_reconnecting: "Reconnecting to Headquarters... ({attempt}/8)",
+  multiplayer_room_error: "Room communication error (code {code}).",
+  multiplayer_session_replaced: "This session was replaced by a new connection from the same commander.",
 };
