@@ -563,3 +563,4 @@ export type GameAction = z.infer<typeof GameActionSchema>;
 
 export * from "./identity.js";
 export * from "./comms.js";
+export * from "./multiplayer.js";

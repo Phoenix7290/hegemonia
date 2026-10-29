@@ -7,6 +7,8 @@ import { checkDatabase } from "./connection.js";
 import { getRecentMatches } from "./match-repository.js";
 import { getLeaderboard, type LeaderboardCursor } from "./stats-repository.js";
 import { createAuthRouter, socialErrorStatus } from "./auth-routes.js";
+import { createMatchmakingRouter } from "./matchmaking-routes.js";
+import { MatchmakingError } from "./matchmaking.js";
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -40,6 +42,7 @@ export async function createApp(): Promise<express.Express> {
     } catch (error) { next(error); }
   });
 
+  app.use("/api/matchmaking", createMatchmakingRouter());
   app.use("/api", await createAuthRouter());
   app.use("/avatars", express.static(resolve(process.env.AVATAR_DIR ?? "data/avatars"), {
     immutable: true,
@@ -60,6 +63,10 @@ export async function createApp(): Promise<express.Express> {
     if (res.headersSent) return;
     const socialStatus = socialErrorStatus(error);
     if (socialStatus) { res.status(socialStatus).json({ error: error instanceof Error ? error.message : "Falha na solicitação." }); return; }
+    if (error instanceof MatchmakingError) {
+      res.status(error.status).json({ error: error.message, code: error.code });
+      return;
+    }
     if (error instanceof InvalidCursorError) { res.status(400).json({ error: error.message }); return; }
     if (error instanceof ZodError) {
       res.status(400).json({ error: error.issues[0]?.message ?? "Dados inválidos.", code: "validation_error", fields: error.flatten().fieldErrors });
