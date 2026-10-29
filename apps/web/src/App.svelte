@@ -825,6 +825,12 @@
                 />
               {/each}
 
+            </g>
+          {/each}
+
+          <!-- TERRITORY PASS: after all world-copy backgrounds -->
+          {#each [-MAP_WIDTH, 0, MAP_WIDTH] as offsetX (offsetX)}
+            <g class="world-copy" transform="translate({offsetX}, 0)">
               <!-- 44 Natural Earth Admin-1 & Admin-0 Geopolitical Territories -->
               {#each CLASSIC_MAP.territories as t (t.id)}
                 {@const tState = game.territories[t.id]}

@@ -4,11 +4,19 @@ import { fileURLToPath } from "node:url";
 import * as d3 from "d3-geo";
 import * as topojson from "topojson-client";
 import * as topojsonServer from "topojson-server";
+import polygonClipping from "polygon-clipping";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const c110 = JSON.parse(
   fs.readFileSync(
     path.join(__dirname, "../node_modules/world-atlas/countries-110m.json"),
+    "utf-8"
+  )
+);
+
+const c50 = JSON.parse(
+  fs.readFileSync(
+    path.join(__dirname, "../node_modules/world-atlas/countries-50m.json"),
     "utf-8"
   )
 );
@@ -24,7 +32,7 @@ for (const f of admin1Raw.features) {
   if (f.properties.adm0_a3 === "RUS" && f.geometry.type === "MultiPolygon") {
     const shiftRing = (ring: number[][]) =>
       ring.map(([lon, lat]) => [
-        Math.abs(Math.abs(lon) - 180) < 1e-4 ? 180 : lon < 0 ? lon + 360 : lon,
+        Math.abs(Math.abs(lon) - 180) < 5e-4 ? 180 : lon < 0 ? lon + 360 : lon,
         lat,
       ]);
     for (const poly of f.geometry.coordinates) {
@@ -83,7 +91,17 @@ function cleanMultiPolygon(geojson: any, minAreaSqPx = 1.6): any {
     const kept = outerOnly.filter((coords: any[]) => {
       const poly = { type: "Polygon", coordinates: coords };
       const area = AREA_CHECK_PATH.area(poly as any);
-      return area >= minAreaSqPx && area < 250000;
+      if (area < minAreaSqPx || area >= 250000) return false;
+      // Drop degenerate slivers (thin seam lines left by boolean union ops): bbox is long in one axis, near-zero in the other
+      const ring = coords[0] as number[][];
+      const lons = ring.map((p) => p[0]);
+      const lats = ring.map((p) => p[1]);
+      const spanLon = Math.max(...lons) - Math.min(...lons);
+      const spanLat = Math.max(...lats) - Math.min(...lats);
+      const long = Math.max(spanLon, spanLat);
+      const thin = Math.min(spanLon, spanLat);
+      if (long > 2 && thin < 0.35 && long / Math.max(thin, 1e-6) > 12) return false;
+      return true;
     });
     return {
       type: "MultiPolygon",
@@ -111,6 +129,150 @@ function mergeAdmin1ByCodes(codes: string[], minAreaSqPx = 1.8) {
     throw new Error(`No Admin-1 geometries found for codes: ${codes.join(", ")}`);
   }
   return cleanMultiPolygon(topojson.merge(admin1Topo, geoms), minAreaSqPx);
+}
+
+/**
+ * Dissolve geometries from different datasets (e.g. 110m countries + 50m admin-1) into ONE polygon,
+ * so no internal border line is stroked between them. Rings are re-wound for d3's spherical convention.
+ */
+function unionGeometries(geoms: any[], minAreaSqPx = 0.2): any {
+  // Every polygon goes in as its own geometry, so polygons that merely touch (e.g. along the 180° meridian) get dissolved too
+  const polys = geoms.flatMap((g) =>
+    (g.type === "Polygon" ? [g.coordinates] : g.coordinates).map((poly: number[][][]) => [poly])
+  );
+  const merged = polygonClipping.union(polys[0], ...polys.slice(1)) as number[][][][];
+  const fixed = merged.map((poly) =>
+    poly.map((ring, i) => {
+      if (i > 0) return ring;
+      const area = d3.geoArea({ type: "Polygon", coordinates: [ring] } as any);
+      return area > 2 * Math.PI ? [...ring].reverse() : ring;
+    })
+  );
+  return cleanMultiPolygon({ type: "MultiPolygon", coordinates: fixed }, minAreaSqPx);
+}
+
+/** Grows a geometry around its centroid so it overlaps its neighbours before a union (closes dataset-mismatch gaps). */
+function scaleGeometry(geojson: any, k: number): any {
+  const [cx, cy] = d3.geoCentroid(geojson);
+  const sc = (ring: number[][]) => ring.map(([x, y]) => [cx + (x - cx) * k, cy + (y - cy) * k]);
+  if (geojson.type === "Polygon") return { type: "Polygon", coordinates: geojson.coordinates.map(sc) };
+  return { type: "MultiPolygon", coordinates: geojson.coordinates.map((p: any[]) => p.map(sc)) };
+}
+
+function rectGeometry(lon0: number, lat0: number, lon1: number, lat1: number): any {
+  return { type: "Polygon", coordinates: [[[lon0, lat0], [lon1, lat0], [lon1, lat1], [lon0, lat1], [lon0, lat0]]] };
+}
+
+/** Planar bbox centre of a polygon's exterior ring (winding-independent, unlike d3.geoCentroid). */
+function ringCenter(ring: number[][]): [number, number] {
+  let w = Infinity, e = -Infinity, so = Infinity, n = -Infinity;
+  for (const [x, y] of ring) {
+    if (x < w) w = x;
+    if (x > e) e = x;
+    if (y < so) so = y;
+    if (y > n) n = y;
+  }
+  return [(w + e) / 2, (so + n) / 2];
+}
+
+/** Keeps only the polygons of a (Multi)Polygon whose exterior ring satisfies `keep` (rings are not altered, so winding is preserved). */
+function filterPolygons(geojson: any, keep: (ring: number[][]) => boolean): any {
+  const polys: number[][][][] = geojson.type === "Polygon" ? [geojson.coordinates] : geojson.coordinates;
+  return { type: "MultiPolygon", coordinates: polys.filter((poly) => keep(poly[0])) };
+}
+
+/** Longest side (degrees) of a ring's bounding box. */
+function ringSpan(ring: number[][]): number {
+  const xs = ring.map((p) => p[0]);
+  const ys = ring.map((p) => p[1]);
+  return Math.max(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys));
+}
+
+/**
+ * Merges 50m country polygons (one shared topology => borders dissolve exactly, no internal seam).
+ * `box` keeps only the polygons whose centroid falls inside [west, south, east, north].
+ */
+function mergeCountries50(
+  parts: { name: string; box?: [number, number, number, number] }[],
+  minAreaSqPx = 0.8
+) {
+  const geoms: any[] = [];
+  for (const part of parts) {
+    const g = c50.objects.countries.geometries.find((x: any) => x.properties.name === part.name);
+    if (!g) throw new Error(`50m country not found: ${part.name}`);
+    const polys: any[] = g.type === "Polygon" ? [g.arcs] : g.arcs;
+    const kept = part.box
+      ? polys.filter((arcs) => {
+          const feat: any = topojson.feature(c50, { type: "Polygon", arcs } as any);
+          const [cx, cy] = ringCenter(feat.geometry.coordinates[0]);
+          return cx >= part.box![0] && cy >= part.box![1] && cx <= part.box![2] && cy <= part.box![3];
+        })
+      : polys;
+    if (kept.length > 0) geoms.push({ type: "MultiPolygon", arcs: kept });
+  }
+  return cleanMultiPolygon(topojson.merge(c50, geoms), minAreaSqPx);
+}
+
+/** 50m polygon of one country, clipped to a lon/lat box, as plain GeoJSON (used to patch coarse 110m coastlines). */
+function clipGeometryToBox(geojson: any, [w, s, e, n]: [number, number, number, number]): any {
+  const multi = geojson.type === "Polygon" ? [geojson.coordinates] : geojson.coordinates;
+  const box = [[[[w, s], [e, s], [e, n], [w, n], [w, s]]]];
+  const out = polygonClipping.intersection(box as any, multi as any) as number[][][][];
+  return { type: "MultiPolygon", coordinates: out };
+}
+
+/** Douglas-Peucker simplification + Chaikin corner cutting on polygons whose centroid is inside `box` (smooths jagged coasts). */
+function smoothPolygonsInBox(
+  geojson: any,
+  box: [number, number, number, number],
+  tolerance = 0.03,
+  iterations = 2
+): any {
+  const dp = (pts: number[][], tol: number): number[][] => {
+    if (pts.length < 3) return pts;
+    const [x1, y1] = pts[0];
+    const [x2, y2] = pts[pts.length - 1];
+    const dx = x2 - x1;
+    const dy = y2 - y1;
+    const len = Math.hypot(dx, dy) || 1e-12;
+    let idx = 0;
+    let max = 0;
+    for (let i = 1; i < pts.length - 1; i++) {
+      const dist = Math.abs(dy * pts[i][0] - dx * pts[i][1] + x2 * y1 - y2 * x1) / len;
+      if (dist > max) {
+        max = dist;
+        idx = i;
+      }
+    }
+    if (max <= tol) return [pts[0], pts[pts.length - 1]];
+    return [...dp(pts.slice(0, idx + 1), tol).slice(0, -1), ...dp(pts.slice(idx), tol)];
+  };
+  const chaikin = (ring: number[][]): number[][] => {
+    const open = ring.slice(0, -1);
+    const out: number[][] = [];
+    for (let i = 0; i < open.length; i++) {
+      const a = open[i];
+      const b = open[(i + 1) % open.length];
+      out.push([0.75 * a[0] + 0.25 * b[0], 0.75 * a[1] + 0.25 * b[1]]);
+      out.push([0.25 * a[0] + 0.75 * b[0], 0.25 * a[1] + 0.75 * b[1]]);
+    }
+    out.push(out[0]);
+    return out;
+  };
+  const polys: number[][][][] = geojson.type === "Polygon" ? [geojson.coordinates] : geojson.coordinates;
+  const result = polys.map((poly) => {
+    const [cx, cy] = ringCenter(poly[0]);
+    if (cx < box[0] || cy < box[1] || cx > box[2] || cy > box[3]) return poly;
+    return poly.map((ring) => {
+      // closed ring: split in two halves so Douglas-Peucker has a real baseline
+      const mid = Math.floor(ring.length / 2);
+      let r = [...dp(ring.slice(0, mid + 1), tolerance).slice(0, -1), ...dp(ring.slice(mid), tolerance)];
+      if (r.length < 4) return ring;
+      for (let i = 0; i < iterations; i++) r = chaikin(r);
+      return r;
+    });
+  });
+  return { type: "MultiPolygon", coordinates: result };
 }
 
 function renderGeometry(
@@ -146,8 +308,23 @@ function renderGeometry(
       .postclip(d3.geoClipRectangle(x0, y0, x1, y1));
 
     const pathGen = d3.geoPath(proj).digits(1);
-    const subD = pathGen(geojson);
+    let subD = pathGen(geojson);
     if (subD) {
+      // Strip degenerate sliver subpaths the post-clip rectangle can leave along its own edge
+      subD = subD
+        .split(/(?=M)/)
+        .filter((sub) => {
+          const nums = sub.match(/-?\d+\.?\d*/g)?.map(Number) ?? [];
+          if (nums.length < 6) return true;
+          const xs = nums.filter((_, idx) => idx % 2 === 0);
+          const ys = nums.filter((_, idx) => idx % 2 === 1);
+          const w = Math.max(...xs) - Math.min(...xs);
+          const h = Math.max(...ys) - Math.min(...ys);
+          const long = Math.max(w, h);
+          const thin = Math.min(w, h);
+          return !(long > 6 && thin < 1.3 && long / Math.max(thin, 1e-6) > 10);
+        })
+        .join("");
       paths.push(subD);
       const area = pathGen.area(geojson);
       if (area > bestArea) {
@@ -318,7 +495,12 @@ const SPECS: TerritorySpec[] = [
     namePt: "Brasil",
     continent: "south_america",
     symbol: "circle",
-    buildGeo: () => renderGeometry(mergeCountries(["Brazil"])),
+    buildGeo: () => {
+      // 110m Brazil cuts a small peninsula on the Amapa coast (~49.5W, 1.2N): patch it with the 50m coastline
+      const base = mergeCountries(["Brazil"]);
+      const patch = clipGeometryToBox(mergeCountries50([{ name: "Brazil" }], 0.2), [-50.0, 0.6, -49.0, 1.8]);
+      return renderGeometry(unionGeometries([base, scaleGeometry(patch, 1.15)], 0.5));
+    },
     centerOverride: [425, 354],
     neighbors: ["venezuela", "peru", "argentina", "argelia"],
   },
@@ -445,8 +627,17 @@ const SPECS: TerritorySpec[] = [
     namePt: "Mackenzie",
     continent: "north_america",
     symbol: "circle",
-    buildGeo: () =>
-      renderGeometry(mergeAdmin1ByCodes(CAN_MACKENZIE, 3.0), [[-141, 60, -61, 84]]),
+    buildGeo: () => {
+      const main = renderGeometry(mergeAdmin1ByCodes(CAN_MACKENZIE, 3.0), [[-141, 60, -61, 84]]);
+      // Small Nunavut islands in Hudson/James Bay (Belcher, Akimiski, Sleeper, Digges...) were dropped by the 3.0 area filter
+      const bays = renderGeometry(
+        filterPolygons(mergeAdmin1ByCodes(CAN_MACKENZIE, 0.25), (ring) => {
+          const [cx, cy] = ringCenter(ring);
+          return ringSpan(ring) < 4 && cx >= -95 && cx <= -72 && cy >= 50 && cy <= 62;
+        })
+      );
+      return { d: `${main.d} ${bays.d}`.trim(), center: main.center };
+    },
     centerOverride: [242, 98],
     neighbors: ["alasca", "vancouver", "ottawa", "groenlandia"],
   },
@@ -519,7 +710,10 @@ const SPECS: TerritorySpec[] = [
     continent: "europe",
     symbol: "square",
     buildGeo: () =>
-      renderGeometry(mergeCountries(["Norway", "Sweden", "Finland"]), [[4, 54, 32, 72]]),
+      renderGeometry(mergeCountries(["Norway", "Sweden", "Finland"]), [
+        [4, 54, 32, 72],
+        [8, 74, 36, 81.5], // Svalbard
+      ]),
     centerOverride: [652, 106],
     neighbors: ["inglaterra", "moscou"],
   },
@@ -578,7 +772,8 @@ const SPECS: TerritorySpec[] = [
         "Estonia",
       ]);
       const kaliningrad = mergeAdmin1ByCodes(RUS_KALININGRAD, 0.2);
-      return renderGeometry(combineGeometries([centralEast, kaliningrad]));
+      // Kaliningrad (50m admin-1) is grown slightly so it overlaps Poland/Lithuania (110m) and dissolves into ONE polygon
+      return renderGeometry(unionGeometries([centralEast, scaleGeometry(kaliningrad, 1.18)]));
     },
     centerOverride: [688, 142],
     neighbors: ["alemanha", "balcas", "moscou"],
@@ -615,7 +810,10 @@ const SPECS: TerritorySpec[] = [
     namePt: "Moscou",
     continent: "europe",
     symbol: "triangle",
-    buildGeo: () => renderGeometry(mergeAdmin1ByCodes(RUS_MOSCOU), [[26, 40, 66, 78]]),
+    buildGeo: () => renderGeometry(
+        smoothPolygonsInBox(mergeAdmin1ByCodes(RUS_MOSCOU), [50, 70, 70, 78], 0.1, 3), // Nova Zembla/Vaygach polidas
+        [[26, 40, 72, 83]]
+      ),
     centerOverride: [742, 126],
     neighbors: ["suecia", "polonia", "balcas", "omsk", "aral", "oriente_medio"],
   },
@@ -827,7 +1025,7 @@ const SPECS: TerritorySpec[] = [
     buildGeo: () =>
       renderGeometry(
         mergeCountries(["Vietnam", "Thailand", "Myanmar", "Laos", "Cambodia", "Malaysia"]),
-        [[92, 1, 108, 29]]
+        [[92, 1, 109.55, 29]] // 109.55E: inclui a costa central do Vietna (Cabo Dai Lanh 109.46E) sem pegar Sarawak (109.6E)
       ),
     centerOverride: [936, 262],
     neighbors: ["china", "india", "borneu"],
@@ -888,7 +1086,7 @@ const SPECS: TerritorySpec[] = [
     subRegion: "asia_east",
     symbol: "circle",
     buildGeo: () =>
-      renderGeometry(mergeAdmin1ByCodes(RUS_VLADIVOSTOK), undefined, true),
+      renderGeometry(unionGeometries([mergeAdmin1ByCodes(RUS_VLADIVOSTOK)], 1.8), undefined, true),
     centerOverride: [1124, 110],
     neighbors: ["siberia", "tchita", "china", "japao", "alasca"],
   },
@@ -952,20 +1150,16 @@ const SPECS: TerritorySpec[] = [
     namePt: "Bornéu",
     continent: "oceania",
     symbol: "square",
-    buildGeo: () => {
-      const idnKalimantan = renderGeometry(
-        mergeAdmin1ByCodes(IDN_BORNEO, 0.8),
-        [[108, -5, 120, 8]]
-      );
-      const myBrPh = renderGeometry(
-        mergeCountries(["Malaysia", "Brunei", "Philippines"]),
-        [[108.5, 0.5, 128, 21]]
-      );
-      return {
-        d: `${idnKalimantan.d} ${myBrPh.d}`.trim(),
-        center: [986, 306],
-      };
-    },
+    buildGeo: () =>
+      renderGeometry(
+        mergeCountries50([
+          { name: "Indonesia", box: [108.5, -4.6, 119.5, 7.5] }, // Kalimantan
+          { name: "Malaysia", box: [108.5, 0.5, 120, 8] }, // Sarawak + Sabah
+          { name: "Brunei" },
+          { name: "Philippines" },
+        ]),
+        [[108, -5, 128, 21]]
+      ),
     centerOverride: [986, 306],
     neighbors: ["vietna", "nova_guine", "australia"],
   },
@@ -983,7 +1177,9 @@ const SPECS: TerritorySpec[] = [
         "Vanuatu",
         "Fiji",
       ]);
-      return renderGeometry(combineGeometries([idnEast, pngIslands]), [[118, -22, 179.9, 5]]);
+      // A thin bridge over the 141°E border dissolves the Indonesia/PNG seam into one landmass
+      const border = rectGeometry(140.6, -9.3, 141.5, -2.5); // wide margin so the union leaves no thin sliver seam
+      return renderGeometry(unionGeometries([idnEast, pngIslands, border], 0.8), [[118, -22, 179.9, 5]]);
     },
     centerOverride: [1054, 335],
     neighbors: ["borneu", "australia", "havai"],
@@ -1007,8 +1203,25 @@ const basePathGen = d3.geoPath(BASE_PROJ).digits(1);
 const globalLandSvgPath = basePathGen(landFeature) || "";
 const graticuleSvgPath = basePathGen(d3.geoGraticule10()) || "";
 
+/** Extra small-island coastline patches (lon/lat ring coords) for land visible in the relief JPG but missing from the Natural Earth source, keyed by territory id. */
+const COASTLINE_PATCHES: Record<string, number[][][]> = {"siberia": [[[152.025, 73.95], [149.025, 73.95], [148.8, 74.175], [149.025, 74.4], [150.675, 74.55], [151.125, 75.0], [151.425, 74.85], [152.175, 75.15], [153.075, 75.15], [153.6, 74.775], [152.925, 74.1], [152.175, 74.1], [152.025, 73.95]], [[146.175, 73.8], [145.725, 73.8], [145.2, 74.475], [145.425, 74.7], [146.025, 74.7], [146.175, 74.85], [146.4, 74.625], [146.4, 74.025], [146.175, 73.8]], [[145.275, 73.05], [145.125, 73.2], [144.075, 73.2], [143.7, 73.575], [143.925, 73.8], [145.275, 73.65], [145.5, 73.425], [145.275, 73.05]], [[129.825, 71.7], [129.6, 71.925], [129.75, 72.375], [129.15, 73.275], [129.375, 73.5], [129.675, 73.2], [130.275, 73.2], [130.65, 72.825], [130.05, 72.225], [130.05, 71.925], [129.825, 71.7]], [[148.125, 72.6], [146.775, 72.6], [146.625, 72.75], [146.325, 72.6], [145.8, 72.975], [146.025, 73.2], [146.475, 73.2], [146.625, 73.35], [147.975, 73.35], [148.5, 72.975], [148.125, 72.6]], [[152.775, 71.1], [152.175, 71.25], [151.875, 71.55], [151.575, 71.55], [151.425, 71.7], [150.675, 71.7], [149.7, 72.525], [149.925, 72.75], [151.125, 72.75], [151.425, 72.45], [152.775, 71.85], [153.15, 71.475], [152.775, 71.1]], [[161.775, 69.75], [161.625, 69.9], [161.175, 69.9], [161.025, 69.75], [160.575, 70.05], [159.9, 70.875], [160.125, 71.1], [160.725, 71.1], [161.325, 70.8], [161.775, 70.8], [162.15, 70.425], [161.775, 69.75]]], "dudinka": [[[76.575, 72.3], [76.2, 72.525], [76.05, 72.975], [75.75, 73.275], [75.975, 73.5], [76.125, 73.35], [76.275, 73.5], [76.425, 73.35], [76.725, 73.5], [77.4, 72.975], [76.575, 72.3]], [[73.275, 69.0], [72.9, 69.225], [72.9, 69.525], [73.05, 69.675], [72.9, 70.275], [73.2, 70.875], [73.575, 70.95], [73.95, 70.575], [73.2, 69.825], [73.5, 69.375], [73.275, 69.0]], [[73.125, 67.05], [72.9, 67.275], [73.5, 67.875], [73.5, 68.025], [74.025, 68.4], [74.4, 68.025], [73.575, 67.2], [73.275, 67.2], [73.125, 67.05]]], "suecia": [[[15.525, 68.4], [15.225, 68.4], [15.0, 68.625], [15.225, 68.85], [15.525, 68.85], [15.75, 68.625], [15.525, 68.4]]], "aral": [[[52.575, 45.75], [52.275, 45.75], [52.05, 45.975], [52.425, 46.5], [52.8, 46.275], [52.8, 45.975], [52.575, 45.75]], [[53.775, 40.95], [53.1, 41.325], [53.475, 41.7], [54.0, 41.175], [53.775, 40.95]]], "moscou": [[[49.425, 45.6], [49.05, 45.825], [49.575, 46.2], [49.8, 45.975], [49.425, 45.6]]], "china": [[[119.025, 38.1], [118.875, 38.25], [118.125, 38.4], [117.9, 38.625], [118.125, 38.85], [118.725, 38.85], [119.25, 38.325], [119.025, 38.1]], [[122.025, 31.95], [121.2, 32.925], [120.6, 34.125], [120.825, 34.5], [121.575, 34.35], [122.1, 33.675], [121.95, 33.525], [122.1, 33.225], [121.95, 32.775], [122.25, 32.175], [122.025, 31.95]], [[122.175, 30.0], [121.8, 30.525], [122.325, 31.05], [122.55, 30.825], [122.55, 30.375], [122.175, 30.0]]], "india": [[[91.125, 21.45], [90.675, 21.45], [90.45, 21.675], [91.125, 22.5], [91.65, 21.975], [91.65, 21.825], [91.125, 21.45]], [[72.075, 20.25], [71.775, 20.25], [71.55, 20.475], [72.225, 20.85], [72.45, 20.625], [72.075, 20.25]]], "vietna": [[[96.975, 15.9], [96.6, 16.125], [96.975, 16.5], [97.2, 16.275], [96.975, 15.9]]], "brasil": [[[-48.375, -0.15], [-48.675, 0.15], [-50.025, 0.15], [-50.25, 0.375], [-49.65, 0.975], [-49.65, 1.725], [-50.4, 2.475], [-50.175, 2.85], [-49.575, 2.55], [-48.9, 1.875], [-48.15, 0.375], [-48.15, 0.075], [-48.375, -0.15]]], "australia": [[[131.025, -11.85], [130.575, -11.85], [130.2, -11.475], [130.425, -11.25], [130.575, -11.4], [131.025, -11.4], [131.175, -11.25], [131.4, -11.475], [131.025, -11.85]]]};
+
+/** Renders COASTLINE_PATCHES[id] (if any) as extra SVG subpaths in the same projection as renderGeometry, appended to `d`. */
+function appendCoastlinePatches(id: string, built: { d: string; center: [number, number] }) {
+  const rings = COASTLINE_PATCHES[id];
+  if (!rings || rings.length === 0) return built;
+  const proj = d3.geoEquirectangular().scale(MAP_WIDTH / (2 * Math.PI)).translate([MAP_WIDTH / 2, 320]);
+  const pathGen = d3.geoPath(proj).digits(1);
+  const extra = rings
+    .map((ring) => pathGen({ type: "Polygon", coordinates: [ring] } as any))
+    .filter(Boolean)
+    .join(" ");
+  return { d: `${built.d} ${extra}`.trim(), center: built.center };
+}
+
 const builtTerritories = SPECS.map((spec) => {
-  const { d, center } = spec.buildGeo();
+  const built = appendCoastlinePatches(spec.id, spec.buildGeo());
+  const { d, center } = built;
   return {
     id: spec.id,
     name: spec.name,
