@@ -1,7 +1,7 @@
 export const API_BASE = (() => {
   const configured = import.meta.env.VITE_API_URL as string | undefined;
   if (configured) return configured.replace(/\/$/, "");
-  if (window.location.port === "5173") return `http://${window.location.hostname}:2567`;
+  if (typeof window !== "undefined" && window.location.port === "5173") return `http://${window.location.hostname}:2567`;
   return "";
 })();
 
@@ -26,7 +26,9 @@ export async function api<T>(path: string, options: RequestInit = {}): Promise<T
 }
 
 export function assetUrl(path: string | null): string | null {
-  return path ? `${API_BASE}${path}` : null;
+  if (!path) return null;
+  if (/^https?:\/\//i.test(path)) return path;
+  return `${API_BASE}${path}`;
 }
 
 export function navigate(path: string): void {
