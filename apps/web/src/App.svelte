@@ -1,8 +1,10 @@
 <script lang="ts">
+  import { onDestroy } from "svelte";
   import { Client, type Room } from "colyseus.js";
   import {
     ASIA_SUBREGIONS,
     CLASSIC_MAP,
+
   } from "@hegemonia/maps";
   import {
     UNIT_COSTS,
@@ -15,16 +17,25 @@
     subtractUnits,
     totalUnits,
   } from "@hegemonia/engine";
-  import { SESSION_REPLACED_CLOSE_CODE } from "@hegemonia/shared";
+  import {
+    IDLE_MATCHMAKING_STATUS,
+    MATCHMAKING_RULESET_VERSION,
+    SESSION_REPLACED_CLOSE_CODE,
+  } from "@hegemonia/shared";
   import type {
     AirMissionType,
     BuildingType,
+    CompetitionMode,
     GameState,
+    MatchOrigin,
+    MatchmakingStatus,
+    PublicQueueMode,
     UnitCounts,
     UnitType,
   } from "@hegemonia/shared";
   import { sound } from "./audio.js";
   import { estimateAttackWinOdds } from "./odds.js";
+  import { api, ApiError } from "./lib/api";
   import { auth } from "./lib/auth.svelte";
   import { ui } from "./lib/ui.svelte";
   import CommandCenter, {
@@ -84,6 +95,14 @@
   let turnDeadline = $state(0);
   let remainingSeconds = $state(120);
   let errorBanner = $state("");
+  let matchmakingStatus = $state<MatchmakingStatus>({ ...IDLE_MATCHMAKING_STATUS });
+  let matchmakingBusy = $state(false);
+  let competitionMode = $state<CompetitionMode>("custom");
+  let matchOrigin = $state<MatchOrigin>("lobby");
+  let matchmakingPollTimer: ReturnType<typeof setTimeout> | null = null;
+  let matchmakingPollGeneration = 0;
+  let matchmakingStatusUserId: string | null = null;
+  let matchmakingConnectionCode: string | null = null;
 
   // Sync playerName with authenticated user display name when available
   $effect(() => {
@@ -269,6 +288,7 @@
     };
   });
 
+
   // Turn alert sound
   let lastTurnPlayerId = "";
   $effect(() => {
@@ -366,6 +386,8 @@
     myPlayerId: string | null;
     lobbyPlayers: LobbyPlayerView[];
     game: GameState | null;
+    competitionMode: CompetitionMode;
+    matchOrigin: MatchOrigin;
   }
 
   function clearPersistedRoom() {
@@ -396,14 +418,139 @@
     selectedToId = null;
     activeRightDrawer = null;
     showHudManager = false;
+    competitionMode = "custom";
+    matchOrigin = "lobby";
   }
+
+  function stopMatchmakingPolling() {
+    matchmakingPollGeneration++;
+    if (matchmakingPollTimer !== null) {
+      clearTimeout(matchmakingPollTimer);
+      matchmakingPollTimer = null;
+    }
+  }
+
+  function showMatchmakingError(error: unknown) {
+    if (error instanceof ApiError && error.status === 401) {
+      auth.dialogOpen = true;
+    }
+    errorBanner = error instanceof ApiError && error.code
+      ? t(`error_${error.code}`)
+      : t("error_matchmaking_unavailable");
+  }
+
+  async function connectToMatchedRoom(): Promise<boolean> {
+    const code = matchmakingStatus.roomCode;
+    if (!code || connectedRoom || matchmakingConnectionCode === code) return false;
+    matchmakingConnectionCode = code;
+    try {
+      return await joinOrCreateRoom(false, code);
+    } finally {
+      matchmakingConnectionCode = null;
+    }
+  }
+
+  async function pollMatchmakingStatus(generation: number) {
+    if (generation !== matchmakingPollGeneration) return;
+    try {
+      const next = await api<MatchmakingStatus>("/api/matchmaking/status");
+      if (generation !== matchmakingPollGeneration) return;
+      matchmakingStatus = next;
+      if (next.status === "matched") {
+        stopMatchmakingPolling();
+        await connectToMatchedRoom();
+        return;
+      }
+    } catch (error) {
+      if (generation !== matchmakingPollGeneration) return;
+      if (error instanceof ApiError && error.status === 401) {
+        stopMatchmakingPolling();
+        matchmakingStatus = { ...IDLE_MATCHMAKING_STATUS };
+        return;
+      }
+    }
+
+    if (generation === matchmakingPollGeneration && matchmakingStatus.status === "queued") {
+      matchmakingPollTimer = setTimeout(() => {
+        void pollMatchmakingStatus(generation);
+      }, 1_000);
+    }
+  }
+
+  function startMatchmakingPolling() {
+    stopMatchmakingPolling();
+    void pollMatchmakingStatus(matchmakingPollGeneration);
+  }
+
+  async function queueForMatch(mode: PublicQueueMode) {
+    if (!auth.user) {
+      auth.dialogOpen = true;
+      return;
+    }
+    if (matchmakingBusy || matchmakingStatus.status !== "idle") return;
+    stopMatchmakingPolling();
+    matchmakingBusy = true;
+    errorBanner = "";
+    sound.playClick();
+    try {
+      matchmakingStatus = await api<MatchmakingStatus>("/api/matchmaking/queue", {
+        method: "POST",
+        body: JSON.stringify({ mode, rulesetVersion: MATCHMAKING_RULESET_VERSION }),
+      });
+      if (matchmakingStatus.status === "matched") await connectToMatchedRoom();
+      else startMatchmakingPolling();
+    } catch (error) {
+      showMatchmakingError(error);
+      matchmakingStatus = { ...IDLE_MATCHMAKING_STATUS };
+    } finally {
+      matchmakingBusy = false;
+    }
+  }
+
+  async function cancelMatchmakingQueue() {
+    if (matchmakingBusy) return;
+    matchmakingBusy = true;
+    errorBanner = "";
+    sound.playClick();
+    try {
+      matchmakingStatus = await api<MatchmakingStatus>("/api/matchmaking/queue", {
+        method: "DELETE",
+      });
+      stopMatchmakingPolling();
+    } catch (error) {
+      showMatchmakingError(error);
+    } finally {
+      matchmakingBusy = false;
+    }
+  }
+
+  $effect(() => {
+    if (!auth.ready) return;
+    const userId = auth.user?.id ?? null;
+    if (userId === matchmakingStatusUserId) return;
+    matchmakingStatusUserId = userId;
+    stopMatchmakingPolling();
+    matchmakingConnectionCode = null;
+    matchmakingStatus = { ...IDLE_MATCHMAKING_STATUS };
+    if (userId) startMatchmakingPolling();
+  });
+
+  onDestroy(() => {
+    stopMatchmakingPolling();
+    connectionGeneration++;
+    communications.detach();
+    if (connectedRoom) {
+      connectedRoom.removeAllListeners();
+      void connectedRoom.leave().catch(() => undefined);
+    }
+  });
 
   async function openRoom(
     createNew: boolean,
     forcedCode: string | undefined,
     generation: number,
     reconnecting: boolean
-  ) {
+  ): Promise<boolean> {
     const client = new Client(
       resolveWebSocketUrl(window.location, import.meta.env.VITE_WS_URL as string | undefined)
     );
@@ -433,13 +580,14 @@
       if (generation !== connectionGeneration) {
         room.removeAllListeners();
         void room.leave().catch(() => undefined);
-        return;
+        return false;
       }
 
       connectedRoom = room;
       communications.attach(room, token, lobbyPlayers);
       isReconnecting = false;
       reconnectAttempts = 0;
+      stopMatchmakingPolling();
 
       try {
         sessionStorage.setItem("hegemonia_active_room", room.roomId);
@@ -478,6 +626,8 @@
         turnDeadline = payload.turnDeadline;
         myPlayerId = payload.myPlayerId;
         lobbyPlayers = payload.lobbyPlayers;
+        competitionMode = payload.competitionMode;
+        matchOrigin = payload.matchOrigin;
         communications.setMyPlayerId(payload.myPlayerId);
         communications.setPlayers(payload.lobbyPlayers);
         game = payload.game;
@@ -505,7 +655,7 @@
         }, 4200);
       });
     } catch (error: unknown) {
-      if (generation !== connectionGeneration) return;
+      if (generation !== connectionGeneration) return false;
       if (error instanceof InvalidRoomCodeError) {
         errorBanner = t("multiplayer_invalid_room_code");
       } else if (isRoomNotFoundError(error)) {
@@ -517,12 +667,14 @@
       }
       resetRoomState();
       clearPersistedRoom();
+      return false;
     } finally {
       if (generation === connectionGeneration) connecting = false;
     }
+    return true;
   }
 
-  async function joinOrCreateRoom(createNew: boolean, forcedCode?: string) {
+  async function joinOrCreateRoom(createNew: boolean, forcedCode?: string): Promise<boolean> {
     const generation = ++connectionGeneration;
     autoConnectAttempted = true;
     errorBanner = "";
@@ -539,7 +691,7 @@
       void previousRoom.leave().catch(() => undefined);
     }
 
-    await openRoom(createNew, forcedCode, generation, false);
+    return openRoom(createNew, forcedCode, generation, false);
   }
 
   // Auto-reconnect to previous session on page refresh (F5) or direct room link
@@ -560,6 +712,8 @@
   function leaveCurrentRoom() {
     sound.playClick();
     connectionGeneration++;
+    stopMatchmakingPolling();
+    matchmakingStatus = { ...IDLE_MATCHMAKING_STATUS };
     const room = connectedRoom;
     resetRoomState();
     clearPersistedRoom();
@@ -858,6 +1012,13 @@
       {lobbyPlayers}
       {communications}
       {connecting}
+      {matchmakingStatus}
+      {matchmakingBusy}
+      {competitionMode}
+      {matchOrigin}
+      onQueue={queueForMatch}
+      onCancelQueue={cancelMatchmakingQueue}
+      onConnectMatch={connectToMatchedRoom}
       onCreateRoom={() => joinOrCreateRoom(true)}
       onJoinRoom={() => joinOrCreateRoom(false)}
       onLeaveRoom={leaveCurrentRoom}
