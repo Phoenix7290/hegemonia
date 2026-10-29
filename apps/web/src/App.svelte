@@ -28,6 +28,7 @@
     subtractUnits,
     totalUnits,
   } from "@hegemonia/engine";
+  import { SESSION_REPLACED_CLOSE_CODE } from "@hegemonia/shared";
   import type {
     BuildingType,
     GameState,
@@ -49,6 +50,14 @@
   import VictoryModal from "./components/VictoryModal.svelte";
   import WarJournal from "./components/WarJournal.svelte";
   import { CommunicationsController } from "./lib/communications.svelte";
+  import {
+    InvalidRoomCodeError,
+    connectToRoom,
+    isRecoverableConnectionError,
+    isRoomNotFoundError,
+    resolveWebSocketUrl,
+    retryWithBackoff,
+  } from "./lib/multiplayer";
   import { t } from "./i18n/index.svelte";
   import {
     getTerritoryName,
@@ -203,7 +212,8 @@
   // Session Resilience & Reconnection State
   let isReconnecting = $state(false);
   let reconnectAttempts = $state(0);
-  let reconnectTimeout: number | null = null;
+  let connectionGeneration = 0;
+  let autoConnectAttempted = false;
 
   // Objective Map Visualizer State
   let highlightObjectiveTerritories = $state(false);
@@ -577,72 +587,119 @@
     pressedKeys.delete(e.key.toLowerCase());
   }
 
-  function resolveWsUrl(): string {
-    const envUrl = import.meta.env.VITE_WS_URL as string | undefined;
-    if (envUrl) return envUrl;
-    const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
-    if (window.location.port === "5173") {
-      return `${proto}//${window.location.hostname}:2567`;
-    }
-    return `${proto}//${window.location.host}`;
+  interface RoomStateMessage {
+    roomCode: string;
+    status: "lobby" | "playing";
+    turnDeadline: number;
+    myPlayerId: string | null;
+    lobbyPlayers: LobbyPlayerView[];
+    game: GameState | null;
   }
 
-  async function joinOrCreateRoom(createNew: boolean, forcedCode?: string) {
-    errorBanner = "";
-    sound.playClick();
-    const cleanName = (auth.user?.displayName || playerName).trim() || "General";
-    playerName = cleanName;
-    localStorage.setItem("hegemonia_name", cleanName);
-    const client = new Client(resolveWsUrl());
+  function clearPersistedRoom() {
+    try {
+      sessionStorage.removeItem("hegemonia_active_room");
+      const url = new URL(window.location.href);
+      url.searchParams.delete("room");
+      window.history.replaceState({}, "", url.toString());
+    } catch {
+      // Storage and history can be unavailable in restricted browser contexts.
+    }
+  }
+
+  function resetRoomState() {
+    communications.detach();
+    connectedRoom = null;
+    roomStatus = "disconnected";
+    roomCode = "";
+    roomCodeInput = "";
+    myPlayerId = null;
+    turnDeadline = 0;
+    remainingSeconds = 120;
+    game = null;
+    lobbyPlayers = [];
+    isReconnecting = false;
+    reconnectAttempts = 0;
+    selectedFromId = null;
+    selectedToId = null;
+    activeRightDrawer = null;
+    showHudManager = false;
+  }
+
+  async function openRoom(
+    createNew: boolean,
+    forcedCode: string | undefined,
+    generation: number,
+    reconnecting: boolean
+  ) {
+    const client = new Client(
+      resolveWebSocketUrl(window.location, import.meta.env.VITE_WS_URL as string | undefined)
+    );
     const token = getOrCreateToken();
+    const cleanName = (auth.user?.displayName || playerName).trim() || "General";
     connecting = true;
+    isReconnecting = reconnecting;
 
     try {
-      const code = createNew ? undefined : (forcedCode || roomCodeInput).trim().toUpperCase();
-      const room = await client.joinOrCreate("hegemonia", {
-        name: cleanName,
-        token,
-        roomCode: code,
-      });
+      const room = await retryWithBackoff(
+        () => connectToRoom<Room>(client, {
+          create: createNew,
+          roomCode: forcedCode ?? roomCodeInput,
+          name: cleanName,
+          token,
+        }),
+        {
+          maxAttempts: reconnecting ? undefined : 1,
+          shouldRetry: (error) =>
+            generation === connectionGeneration && isRecoverableConnectionError(error),
+          onAttempt: (attempt) => {
+            if (generation === connectionGeneration) reconnectAttempts = attempt;
+          },
+        }
+      );
+
+      if (generation !== connectionGeneration) {
+        room.removeAllListeners();
+        void room.leave().catch(() => undefined);
+        return;
+      }
 
       connectedRoom = room;
       communications.attach(room, token, lobbyPlayers);
       isReconnecting = false;
       reconnectAttempts = 0;
-      if (reconnectTimeout) {
-        clearTimeout(reconnectTimeout);
-        reconnectTimeout = null;
-      }
 
-      // Persist active room for F5 resilience and bookmark sharing
       try {
-        sessionStorage.setItem("hegemonia_active_room", room.id);
+        sessionStorage.setItem("hegemonia_active_room", room.roomId);
         const url = new URL(window.location.href);
-        url.searchParams.set("room", room.id);
+        url.searchParams.set("room", room.roomId);
         window.history.replaceState({}, "", url.toString());
       } catch {
-        // ignore storage error
+        // The connection remains usable without persistence.
       }
 
       room.onLeave((code) => {
-        if (roomStatus === "disconnected") return;
-        if (code !== 1000) {
-          isReconnecting = true;
-          reconnectAttempts++;
-          if (reconnectAttempts <= 8) {
-            reconnectTimeout = window.setTimeout(() => {
-              if (roomStatus !== "disconnected") {
-                joinOrCreateRoom(false, room.id);
-              }
-            }, 2000);
-          } else {
-            isReconnecting = false;
-            errorBanner = "Conexão perdida com o quartel general. Tente reconectar.";
-          }
+        if (generation !== connectionGeneration) return;
+        if (code === SESSION_REPLACED_CLOSE_CODE) {
+          connectionGeneration++;
+          resetRoomState();
+          clearPersistedRoom();
+          errorBanner = t("multiplayer_session_replaced");
+          return;
+        }
+        connectedRoom = null;
+        communications.detach();
+        void openRoom(false, room.roomId, generation, true);
+      });
+
+      room.onError((code) => {
+        if (generation === connectionGeneration) {
+          errorBanner = t("multiplayer_room_error", { code });
         }
       });
 
-      room.onMessage("room_state", (payload) => {
+      room.onMessage("room_state", (payload: RoomStateMessage) => {
+        if (generation !== connectionGeneration) return;
         const prevLastCombat = game?.lastCombat;
         roomCode = payload.roomCode;
         roomStatus = payload.status;
@@ -659,68 +716,85 @@
           sound.playCombatAttack();
           sound.playDiceRoll();
           if (game.lastCombat.conquered) {
-            setTimeout(() => sound.playConquest(), 300);
+            setTimeout(() => {
+              if (generation === connectionGeneration) sound.playConquest();
+            }, 300);
           }
         }
       });
 
       room.onMessage("error_msg", (payload: { message: string }) => {
+        if (generation !== connectionGeneration) return;
         errorBanner = payload.message;
         setTimeout(() => {
-          if (errorBanner === payload.message) errorBanner = "";
+          if (generation === connectionGeneration && errorBanner === payload.message) {
+            errorBanner = "";
+          }
         }, 4200);
       });
-    } catch (err: unknown) {
-      errorBanner = err instanceof Error ? err.message : "Falha ao conectar ao servidor Hegemonia.";
+    } catch (error: unknown) {
+      if (generation !== connectionGeneration) return;
+      if (error instanceof InvalidRoomCodeError) {
+        errorBanner = t("multiplayer_invalid_room_code");
+      } else if (isRoomNotFoundError(error)) {
+        errorBanner = t("multiplayer_room_not_found");
+      } else {
+        errorBanner = t(reconnecting
+          ? "multiplayer_connection_lost"
+          : "multiplayer_connection_failed");
+      }
+      resetRoomState();
+      clearPersistedRoom();
     } finally {
-      connecting = false;
+      if (generation === connectionGeneration) connecting = false;
     }
+  }
+
+  async function joinOrCreateRoom(createNew: boolean, forcedCode?: string) {
+    const generation = ++connectionGeneration;
+    autoConnectAttempted = true;
+    errorBanner = "";
+    sound.playClick();
+    const cleanName = (auth.user?.displayName || playerName).trim() || "General";
+    playerName = cleanName;
+    localStorage.setItem("hegemonia_name", cleanName);
+
+    const previousRoom = connectedRoom;
+    connectedRoom = null;
+    communications.detach();
+    if (previousRoom) {
+      previousRoom.removeAllListeners();
+      void previousRoom.leave().catch(() => undefined);
+    }
+
+    await openRoom(createNew, forcedCode, generation, false);
   }
 
   // Auto-reconnect to previous session on page refresh (F5) or direct room link
   $effect(() => {
-    if (typeof window === "undefined") return;
+    if (typeof window === "undefined" || autoConnectAttempted) return;
     const urlParams = new URLSearchParams(window.location.search);
     const roomFromUrl = urlParams.get("room");
     const roomFromStorage = sessionStorage.getItem("hegemonia_active_room");
     const targetRoom = roomFromUrl || roomFromStorage;
 
     if (targetRoom && roomStatus === "disconnected" && !connecting && !connectedRoom) {
+      autoConnectAttempted = true;
       roomCodeInput = targetRoom.toUpperCase();
-      joinOrCreateRoom(false, targetRoom.toUpperCase());
+      void joinOrCreateRoom(false, targetRoom);
     }
   });
 
   function leaveCurrentRoom() {
     sound.playClick();
-    communications.detach();
-    try {
-      sessionStorage.removeItem("hegemonia_active_room");
-      const url = new URL(window.location.href);
-      url.searchParams.delete("room");
-      window.history.replaceState({}, "", url.toString());
-    } catch {
-      // ignore
+    connectionGeneration++;
+    const room = connectedRoom;
+    resetRoomState();
+    clearPersistedRoom();
+    if (room) {
+      room.removeAllListeners();
+      void room.leave().catch(() => undefined);
     }
-    isReconnecting = false;
-    if (reconnectTimeout) {
-      clearTimeout(reconnectTimeout);
-      reconnectTimeout = null;
-    }
-    try {
-      connectedRoom?.leave();
-    } catch {
-      // ignore disconnect errors
-    }
-    connectedRoom = null;
-    roomStatus = "disconnected";
-    roomCode = "";
-    game = null;
-    lobbyPlayers = [];
-    selectedFromId = null;
-    selectedToId = null;
-    activeRightDrawer = null;
-    showHudManager = false;
   }
 
   function sendAction(action: unknown) {
@@ -3254,7 +3328,7 @@
       {#if isReconnecting}
         <div class="reconnecting-toast">
           <div class="reconnecting-spinner"></div>
-          <span>Reconectando ao Quartel-General... ({reconnectAttempts}/8)</span>
+          <span>{t("multiplayer_reconnecting", { attempt: reconnectAttempts })}</span>
         </div>
       {/if}
     </div>
