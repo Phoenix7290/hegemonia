@@ -468,28 +468,30 @@
                       filter="drop-shadow(0 2px 4px rgba(0,0,0,0.85))"
                     />
 
-                    <!-- Resource Icon on Left -->
+                    <!-- Resource Icon on Left (Unified 24x24 Design System Plate) -->
                     {#if t.resource === "gold"}
-                      <g transform="translate(-14, -0.5)">
-                        <polygon points="-4.5,2.5 -2.5,-3.5 2.5,-3.5 4.5,2.5" fill="#facc15" stroke="#ca8a04" stroke-width="0.6" />
-                        <polygon points="-5,5.5 -4.5,2.5 4.5,2.5 5,5.5" fill="#eab308" />
+                      <g transform="translate(-14, 0)">
+                        <circle cx="0" cy="0" r="5.2" fill="#2e1b05" stroke="#facc15" stroke-width="0.85" />
+                        <Icon name="gold" size={8} x={-4} y={-4} color="#fde047" strokeWidth={2} />
                       </g>
                     {:else if t.resource === "steel"}
                       <g transform="translate(-14, 0)">
-                        <polygon points="-4.5,3.8 4.5,3.8 3,-3 -3,-3" fill="#94a3b8" stroke="#cbd5e1" stroke-width="0.6" />
+                        <circle cx="0" cy="0" r="5.2" fill="#0f172a" stroke="#94a3b8" stroke-width="0.85" />
+                        <Icon name="steel" size={8} x={-4} y={-4} color="#e2e8f0" strokeWidth={2} />
                       </g>
                     {:else if t.resource === "oil"}
-                      <g transform="translate(-14, -0.5)">
-                        <path d="M0,-4.5 C-3,0 -3,3.5 0,4.5 C3,3.5 3,0 0,-4.5 Z" fill="#f59e0b" stroke="#b45309" stroke-width="0.6" />
+                      <g transform="translate(-14, 0)">
+                        <circle cx="0" cy="0" r="5.2" fill="#321202" stroke="#f97316" stroke-width="0.85" />
+                        <Icon name="oil" size={8} x={-4} y={-4} color="#fdba74" strokeWidth={2} />
                       </g>
                     {:else if t.tradeBonus && t.tradeBonus > 0}
                       <g transform="translate(-14, 0)">
-                        <circle cx="0" cy="0" r="4.2" fill="#065f46" stroke="#10b981" stroke-width="0.8" />
-                        <text x="0" y="0.5" text-anchor="middle" dominant-baseline="central" fill="#ecfdf5" font-size="4.8" font-weight="900">$</text>
+                        <circle cx="0" cy="0" r="5.2" fill="#042f2e" stroke="#10b981" stroke-width="0.85" />
+                        <Icon name="coins" size={8} x={-4} y={-4} color="#6ee7b7" strokeWidth={2} />
                       </g>
                     {:else}
                       <g transform="translate(-14, 0)">
-                        <circle cx="0" cy="0" r="2.8" fill="#1e293b" stroke="rgba(148, 163, 184, 0.4)" stroke-width="0.7" />
+                        <circle cx="0" cy="0" r="3.2" fill="#0f172a" stroke="rgba(148, 163, 184, 0.45)" stroke-width="0.75" />
                       </g>
                     {/if}
 
@@ -497,49 +499,56 @@
                     <line x1="-7.5" y1="-8" x2="-7.5" y2="8" stroke="rgba(148, 163, 184, 0.3)" stroke-width="0.7" />
 
                     <!-- Building Slots on Right (2 for regular, 3 for active Capital) -->
-                    <g transform="translate(6, 0)">
+                    <g transform="translate(6.2, 0)">
                       {#each Array(maxSlots) as _, slotIdx}
                         {@const b = bldgs[slotIdx]}
-                        {@const slotX = (slotIdx - (maxSlots - 1) / 2) * 8.5}
+                        {@const slotX = (slotIdx - (maxSlots - 1) / 2) * 8.6}
                         <g transform="translate({slotX}, 0)">
                           {#if b}
                             <rect
-                              x="-3.5"
-                              y="-4.5"
-                              width="7"
-                              height="9"
-                              rx="1.2"
+                              x="-3.8"
+                              y="-4.6"
+                              width="7.6"
+                              height="9.2"
+                              rx="1.4"
                               fill={b.type === "market"
-                                ? "#78350f"
+                                ? "#451a03"
                                 : b.type === "industry"
-                                  ? "#1e3a8a"
+                                  ? "#1e293b"
                                   : b.type === "fortification"
-                                    ? (b.level === 2 ? "#0369a1" : "#334155")
+                                    ? (b.level === 2 ? "#082f49" : "#1e293b")
                                     : b.type === "airfield"
-                                      ? "#4c1d95"
-                                      : "#065f46"}
-                              stroke={b.type === "fortification" && b.level === 2 ? "#38bdf8" : "rgba(255,255,255,0.3)"}
-                              stroke-width="0.7"
+                                      ? "#172554"
+                                      : "#042f2e"}
+                              stroke={b.type === "market"
+                                ? "#f59e0b"
+                                : b.type === "industry"
+                                  ? "#fb923c"
+                                  : b.type === "fortification"
+                                    ? (b.level === 2 ? "#38bdf8" : "#94a3b8")
+                                    : b.type === "airfield"
+                                      ? "#60a5fa"
+                                      : "#2dd4bf"}
+                              stroke-width="0.8"
                             />
-                            <text
-                              x="0"
-                              y="0.3"
-                              text-anchor="middle"
-                              dominant-baseline="central"
-                              fill="#ffffff"
-                              font-size="4.5"
-                              font-weight="bold"
-                            >
-                              {b.type === "market"
-                                ? "M"
+                            <Icon
+                              name={b.type === "fortification"
+                                ? (b.level === 2 ? "fortification-l2" : "fortification")
+                                : b.type}
+                              size={6.2}
+                              x={-3.1}
+                              y={-3.1}
+                              color={b.type === "market"
+                                ? "#fde047"
                                 : b.type === "industry"
-                                  ? "I"
+                                  ? "#fdba74"
                                   : b.type === "fortification"
-                                    ? (b.level === 2 ? "F2" : "F1")
+                                    ? (b.level === 2 ? "#7dd3fc" : "#e2e8f0")
                                     : b.type === "airfield"
-                                      ? "A"
-                                      : "P"}
-                            </text>
+                                      ? "#93c5fd"
+                                      : "#5eead4"}
+                              strokeWidth={2.1}
+                            />
                           {:else}
                             <rect
                               x="-3.5"
@@ -569,7 +578,7 @@
                       pointer-events="none"
                       style="paint-order: stroke; stroke: #050912; stroke-width: 2.2px; stroke-linejoin: round;"
                     >
-                      {isCapital ? `⭐ ${getTerritoryName(t.id)}` : getTerritoryName(t.id)}
+                      {getTerritoryName(t.id)}
                     </text>
                   </g>
                 {:else}
@@ -578,17 +587,16 @@
                     transform="translate({t.center[0]}, {t.center[1]}) scale({COMPACT_BADGE_IDS.has(t.id) ? 0.82 : 0.94})"
                     class="division-counter"
                   >
-                  <!-- Capital Crown / Golden Star Crest -->
+                  <!-- Capital Crown / Vector Seal (HEGEM-63) -->
                   {#if isCapital}
                     <g transform="translate(0, -10.2)">
-                      <circle cx="0" cy="0" r="4.2" fill="#090e1a" stroke="#f59e0b" stroke-width="1.3" />
-                      <polygon points="0,-3.2 0.95,-0.9 3.2,-0.9 1.4,0.4 2.1,2.6 0,1.3 -2.1,2.6 -1.4,0.4 -3.2,-0.9 -0.95,-0.9" fill="#facc15" />
+                      <circle cx="0" cy="0" r="4.4" fill="#090e1a" stroke="#f59e0b" stroke-width="1.3" />
+                      <Icon name="capital" size={6.4} x={-3.2} y={-3.2} color="#facc15" strokeWidth={2.1} />
                     </g>
                   {:else if isFallenCapital}
                     <g transform="translate(0, -10.2)">
-                      <circle cx="0" cy="0" r="4.2" fill="#090e1a" stroke="#ef4444" stroke-width="1.3" />
-                      <polygon points="0,-3.2 0.95,-0.9 3.2,-0.9 1.4,0.4 2.1,2.6 0,1.3 -2.1,2.6 -1.4,0.4 -3.2,-0.9 -0.95,-0.9" fill="#94a3b8" />
-                      <line x1="-2.8" y1="-2.8" x2="2.8" y2="2.8" stroke="#ef4444" stroke-width="1.2" />
+                      <circle cx="0" cy="0" r="4.4" fill="#090e1a" stroke="#ef4444" stroke-width="1.3" />
+                      <Icon name="capital-fallen" size={6.4} x={-3.2} y={-3.2} color="#fca5a5" strokeWidth={2.1} />
                     </g>
                   {/if}
 
@@ -656,35 +664,42 @@
                     {tState.armies}
                   </text>
 
-                  <!-- Fortification Crest -->
+                  <!-- Fortification Crest (HEGEM-63) -->
                   {#if fortLevel > 0}
                     <g transform="translate(13.5, -4.5)">
-                      <circle cx="0" cy="0" r="3.4" fill="#090e1a" stroke={fortLevel === 2 ? "#38bdf8" : "#94a3b8"} stroke-width="1.1" />
-                      <polygon points="0,-1.8 1.4,-0.8 1.4,1 0,1.8 -1.4,1 -1.4,-0.8" fill={fortLevel === 2 ? "#38bdf8" : "#cbd5e1"} />
+                      <circle cx="0" cy="0" r="3.8" fill="#090e1a" stroke={fortLevel === 2 ? "#38bdf8" : "#94a3b8"} stroke-width="1.1" />
+                      <Icon
+                        name={fortLevel === 2 ? "fortification-l2" : "fortification"}
+                        size={5.2}
+                        x={-2.6}
+                        y={-2.6}
+                        color={fortLevel === 2 ? "#38bdf8" : "#cbd5e1"}
+                        strokeWidth={2.2}
+                      />
                     </g>
                   {/if}
 
-                  <!-- Encirclement / Out of Supply Badge (HEGEM-35) -->
+                  <!-- Encirclement / Out of Supply Badge (HEGEM-35, HEGEM-63) -->
                   {#if tState.isEncircled}
                     <g transform="translate(-13.5, -4.5)" pointer-events="none">
-                      <circle cx="0" cy="0" r="3.6" fill="#450a0a" stroke="#ef4444" stroke-width="1.1" />
-                      <text x="0" y="0.8" text-anchor="middle" dominant-baseline="central" font-size="4.5" fill="#fca5a5" font-weight="900">📦</text>
+                      <circle cx="0" cy="0" r="3.8" fill="#450a0a" stroke="#ef4444" stroke-width="1.1" />
+                      <Icon name="supply-cut" size={5.2} x={-2.6} y={-2.6} color="#fca5a5" strokeWidth={2.2} />
                     </g>
                   {/if}
 
-                  <!-- Fuel Starvation Badge (HEGEM-35) -->
+                  <!-- Fuel Starvation Badge (HEGEM-35, HEGEM-63) -->
                   {#if tState.outOfFuel}
                     <g transform="translate(-13.5, 4.5)" pointer-events="none">
-                      <circle cx="0" cy="0" r="3.6" fill="#451a03" stroke="#f97316" stroke-width="1.1" />
-                      <text x="0" y="0.8" text-anchor="middle" dominant-baseline="central" font-size="4.5" fill="#fdba74" font-weight="900">⛽</text>
+                      <circle cx="0" cy="0" r="3.8" fill="#451a03" stroke="#f97316" stroke-width="1.1" />
+                      <Icon name="fuel-empty" size={5.2} x={-2.6} y={-2.6} color="#fdba74" strokeWidth={2.2} />
                     </g>
                   {/if}
 
-                  <!-- Blitzkrieg Spearhead Indicator (HEGEM-25) -->
+                  <!-- Blitzkrieg Spearhead Indicator (HEGEM-25, HEGEM-63) -->
                   {#if tState.blitzkriegAvailable}
                     <g transform="translate(13.5, 4.5)" pointer-events="none">
-                      <circle cx="0" cy="0" r="3.6" fill="#422006" stroke="#eab308" stroke-width="1.1" />
-                      <text x="0" y="0.8" text-anchor="middle" dominant-baseline="central" font-size="5" fill="#fef08a" font-weight="900">⚡</text>
+                      <circle cx="0" cy="0" r="3.8" fill="#422006" stroke="#eab308" stroke-width="1.1" />
+                      <Icon name="blitzkrieg" size={5.2} x={-2.6} y={-2.6} color="#fef08a" strokeWidth={2.2} />
                     </g>
                   {/if}
 
@@ -700,7 +715,7 @@
                     pointer-events="none"
                     style="paint-order: stroke; stroke: #050912; stroke-width: 2.4px; stroke-linejoin: round;"
                   >
-                    {isCapital ? `⭐ ${getTerritoryName(t.id)}` : getTerritoryName(t.id)}
+                    {getTerritoryName(t.id)}
                   </text>
 
                   <!-- Structural Indicators (Dots for constructed infrastructure) -->

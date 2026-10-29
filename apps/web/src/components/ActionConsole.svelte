@@ -119,12 +119,15 @@
                 <button class="preset-btn" onclick={() => (sliderArmies = maxD)}>
                   {t("total")} ({maxD})
                 </button>
-                <button class="preset-btn" onclick={clearSelection}>✕</button>
+                <button class="preset-btn" onclick={clearSelection} aria-label={t("close")}>
+                  <Icon name="close" size={12} />
+                </button>
               </div>
             </div>
             {#if fromTerr?.isEncircled}
-              <div class="encircled-alert">
-                📦❌ <strong>Território sob Cerco Militar:</strong> Sem conexão com a Capital. Reforços bloqueados!
+              <div class="tactical-intel-alert danger">
+                <Icon name="supply-cut" size={14} />
+                <span><strong>Território sob Cerco Militar:</strong> Sem conexão com a Capital. Reforços bloqueados!</span>
               </div>
             {/if}
             <div class="slider-row">
@@ -135,11 +138,11 @@
                   title={t("capital_select_hint")}
                   onclick={() => sendAction({ type: "select_capital", territoryId: selectedFromId })}
                 >
-                  {t("capital_select_btn")}
+                  <Icon name="capital" size={13} /> {t("capital_select_btn")}
                 </button>
               {/if}
               <button class="btn primary-gold" disabled={fromTerr?.isEncircled} onclick={confirmDeploy}>
-                {t("deploy_confirm", { count: sliderArmies })}
+                <Icon name="phase-deploy" size={14} /> {t("deploy_confirm", { count: sliderArmies })}
               </button>
             </div>
           </div>
@@ -167,27 +170,32 @@
 
             <!-- Tactical Logistics & Support Intel -->
             {#if toTerr.isEncircled}
-              <div class="intel-alert danger">
-                📦 <strong>Defensor Sob Cerco:</strong> Penalidade de -{(toTerr.encircledRounds ?? 1) >= 2 ? 2 : 1} no dado de defesa.
+              <div class="tactical-intel-alert danger">
+                <Icon name="supply-cut" size={14} />
+                <span><strong>Defensor Sob Cerco:</strong> Penalidade de -{(toTerr.encircledRounds ?? 1) >= 2 ? 2 : 1} no dado de defesa.</span>
               </div>
             {/if}
             {#if fromTerr.outOfFuel}
-              <div class="intel-alert warning">
-                ⛽ <strong>Sem Petróleo:</strong> Blindados imobilizados e sem re-rolagem de 1s.
+              <div class="tactical-intel-alert warning">
+                <Icon name="fuel-empty" size={14} />
+                <span><strong>Sem Petróleo:</strong> Blindados imobilizados e sem re-rolagem de 1s.</span>
               </div>
             {/if}
             {#if fromTerr.blitzkriegAvailable}
-              <div class="intel-alert yellow">
-                ⚡ <strong>Blitzkrieg Ativo:</strong> Blindados sobreviventes podem liderar este segundo ataque imediato!
+              <div class="tactical-intel-alert gold">
+                <Icon name="blitzkrieg" size={14} />
+                <span><strong>Blitzkrieg Ativo:</strong> Blindados sobreviventes podem liderar este segundo ataque imediato!</span>
               </div>
             {/if}
             {#if navalCheck?.isBlockaded}
-              <div class="intel-alert red">
-                🚫 <strong>Bloqueio Naval:</strong> Frota inimiga ({navalCheck.defenderNavy} vs {navalCheck.attackerNavy}) impede o desembarque anfíbio.
+              <div class="tactical-intel-alert danger">
+                <Icon name="blockade" size={14} />
+                <span><strong>Bloqueio Naval:</strong> Frota inimiga ({navalCheck.defenderNavy} vs {navalCheck.attackerNavy}) impede o desembarque anfíbio.</span>
               </div>
             {:else if navalCheck && navalCheck.attackerNavy > 0}
-              <div class="intel-alert blue">
-                ⚓ <strong>Bombardeio Costeiro:</strong> Frotas aliadas no Porto concedem +1 ao dado mais alto!
+              <div class="tactical-intel-alert info">
+                <Icon name="anchor" size={14} />
+                <span><strong>Bombardeio Costeiro:</strong> Frotas aliadas no Porto concedem +1 ao dado mais alto!</span>
               </div>
             {/if}
 
@@ -243,37 +251,41 @@
             {/if}
 
             {#if canArtillery || canAir}
-              <div class="air-artillery-actions">
+              <div class="support-missions-row">
                 {#if canArtillery}
                   <button
-                    class="btn secondary-btn action-mini-btn"
+                    class="btn secondary-btn support-mission-btn"
                     title="Disparo de saturação sem contra-ataque: 4+ degrada fortaleza ou destrói unidades"
                     onclick={confirmArtilleryBarrage}
                   >
-                    🎯 Barragem de Artilharia ({fromUnits.artillery})
+                    <Icon name="artillery" size={13} />
+                    <span>Barragem de Artilharia ({fromUnits.artillery})</span>
                   </button>
                 {/if}
                 {#if canAir}
                   <button
-                    class="btn secondary-btn action-mini-btn"
+                    class="btn secondary-btn support-mission-btn"
                     title="Apoio Aéreo Aproximado: +1 dado no próximo ataque a este território"
                     onclick={() => confirmAirMission("cas")}
                   >
-                    ✈️ Apoio Aéreo (CAS)
+                    <Icon name="aircraft" size={13} />
+                    <span>Apoio Aéreo (CAS)</span>
                   </button>
                   <button
-                    class="btn secondary-btn action-mini-btn"
+                    class="btn secondary-btn support-mission-btn"
                     title="Bombardeio Estratégico: 5+ degrada construções inimigas"
                     onclick={() => confirmAirMission("bombardment")}
                   >
-                    💣 Bombardeio Estratégico
+                    <Icon name="bombardment" size={13} />
+                    <span>Bombardeio Estratégico</span>
                   </button>
                   <button
-                    class="btn secondary-btn action-mini-btn"
+                    class="btn secondary-btn support-mission-btn"
                     title="Reconhecimento Aéreo: revela dados secretos e espionagem"
                     onclick={() => confirmAirMission("recon")}
                   >
-                    🔭 Reconhecimento
+                    <Icon name="recon-plane" size={13} />
+                    <span>Reconhecimento</span>
                   </button>
                 {/if}
               </div>
@@ -289,7 +301,7 @@
                 disabled={selectedUnitTotal < 1 || (navalCheck?.isBlockaded ?? false)}
                 onclick={confirmAttack}
               >
-                <Icon name="swords" size={15} /> {t("combat_execute")}
+                <Icon name="phase-attack" size={15} /> {t("combat_execute")}
               </button>
             </div>
           </div>
@@ -309,7 +321,10 @@
             <div class="popup-head">
               <h4>
                 {#if isAirlift}
-                  <Icon name="airfield" size={14} /> {t("airlift_btn_label")} ({getTerritoryName(selectedFromId)} → {getTerritoryName(selectedToId)})
+                  <Icon name="airfield" size={14} />
+                  <span>{t("airlift_btn_label")} ({getTerritoryName(selectedFromId)}</span>
+                  <Icon name="arrow-right" size={12} />
+                  <span>{getTerritoryName(selectedToId)})</span>
                 {:else}
                   {t("maneuver_prompt", { from: getTerritoryName(selectedFromId), to: getTerritoryName(selectedToId) })}
                 {/if}
@@ -319,8 +334,8 @@
                   <button class="preset-btn" disabled={maxM < 1} onclick={() => (sliderArmies = 1)}>Min (1)</button>
                   <button class="preset-btn" disabled={maxM < 1} onclick={() => (sliderArmies = maxM)}>Max ({maxM})</button>
                 {/if}
-                <button class="preset-btn" onclick={clearSelection}>
-                  ✕
+                <button class="preset-btn" onclick={clearSelection} aria-label={t("close")}>
+                  <Icon name="close" size={12} />
                 </button>
               </div>
             </div>
@@ -350,38 +365,40 @@
       {/if}
     {/if}
 
-    <!-- 1 - 2 - 3 Step Phase Navigator -->
+    <!-- 1 - 2 - 3 Step Phase Navigator (HEGEM-63: Stabilized 3-Column Grid) -->
     <div class="phase-stepper-row">
-      <div class="phase-step" class:active-phase={game.phase === "deploy"}>
-        <span class="num">1</span>
-        <span class="label">{t("phase_deploy")}</span>
-      </div>
-      <div class="phase-arrow">›</div>
-      <div class="phase-step" class:active-phase={game.phase === "attack"}>
-        <span class="num">2</span>
-        <span class="label">{t("phase_attack")}</span>
-      </div>
-      <div class="phase-arrow">›</div>
-      <div class="phase-step" class:active-phase={game.phase === "maneuver"}>
-        <span class="num">3</span>
-        <span class="label">{t("phase_maneuver")}</span>
+      <div class="phase-balance-slot" aria-hidden="true"></div>
+      <div class="phase-steps-group" role="group" aria-label="Turn Phases">
+        <div class="phase-step" class:active-phase={game.phase === "deploy"} title={t("phase_deploy_desc")}>
+          <span class="num">1</span>
+          <span class="step-icon"><Icon name="phase-deploy" size={12} /></span>
+          <span class="label">{t("phase_deploy")}</span>
+        </div>
+        <div class="phase-step" class:active-phase={game.phase === "attack"} title={t("phase_attack_desc")}>
+          <span class="num">2</span>
+          <span class="step-icon"><Icon name="phase-attack" size={12} /></span>
+          <span class="label">{t("phase_attack")}</span>
+        </div>
+        <div class="phase-step" class:active-phase={game.phase === "maneuver"} title={t("phase_maneuver_desc")}>
+          <span class="num">3</span>
+          <span class="step-icon"><Icon name="phase-maneuver" size={12} /></span>
+          <span class="label">{t("phase_maneuver")}</span>
+        </div>
       </div>
 
-      {#if isMyTurn && !game.winnerId}
-        {#if (game.phase === "attack" && !game.pendingConquest) || game.phase === "maneuver"}
-          <div class="phase-action-slot">
-            {#if game.phase === "attack" && !game.pendingConquest}
-              <button class="btn secondary" onclick={() => sendAction({ type: "end_attack" })}>
-                {t("advance_to_maneuver")}
-              </button>
-            {:else if game.phase === "maneuver"}
-              <button class="btn primary-gold" onclick={() => sendAction({ type: "end_turn" })}>
-                <Icon name="check" size={15} /> {t("end_turn")}
-              </button>
-            {/if}
-          </div>
+      <div class="phase-action-slot">
+        {#if isMyTurn && !game.winnerId}
+          {#if game.phase === "attack" && !game.pendingConquest}
+            <button class="btn secondary" onclick={() => sendAction({ type: "end_attack" })}>
+              {t("advance_to_maneuver")}
+            </button>
+          {:else if game.phase === "maneuver"}
+            <button class="btn primary-gold" onclick={() => sendAction({ type: "end_turn" })}>
+              <Icon name="check" size={15} /> {t("end_turn")}
+            </button>
+          {/if}
         {/if}
-      {/if}
+      </div>
     </div>
   </footer>
 {/if}
@@ -468,46 +485,7 @@
   .select-cap-btn:hover {
     background: rgba(234, 179, 8, 0.35);
   }
-  .encircled-alert {
-    margin: 4px 0 8px;
-    font-size: 0.8rem;
-    color: #f87171;
-    background: rgba(220, 38, 38, 0.2);
-    padding: 4px 8px;
-    border-radius: 4px;
-    border: 1px solid rgba(239, 68, 68, 0.4);
-  }
-  .intel-alert {
-    margin: 4px 0;
-    font-size: 0.8rem;
-    padding: 4px 8px;
-    border-radius: 4px;
-  }
-  .intel-alert.danger {
-    color: #fca5a5;
-    background: rgba(185, 28, 28, 0.25);
-    border: 1px solid rgba(239, 68, 68, 0.35);
-  }
-  .intel-alert.warning {
-    color: #fdba74;
-    background: rgba(194, 65, 12, 0.25);
-    border: 1px solid rgba(249, 115, 22, 0.35);
-  }
-  .intel-alert.yellow {
-    color: #fde047;
-    background: rgba(202, 138, 4, 0.25);
-    border: 1px solid rgba(234, 179, 8, 0.35);
-  }
-  .intel-alert.red {
-    color: #f87171;
-    background: rgba(220, 38, 38, 0.25);
-    border: 1px solid rgba(239, 68, 68, 0.45);
-  }
-  .intel-alert.blue {
-    color: #38bdf8;
-    background: rgba(2, 132, 199, 0.25);
-    border: 1px solid rgba(56, 189, 248, 0.35);
-  }
+
   .attack-matchup {
     display: flex;
     justify-content: space-between;
@@ -556,16 +534,52 @@
     height: 100%;
     background: #10b981;
   }
-  .air-artillery-actions {
+  .tactical-intel-alert {
+    margin: 3px 0;
+    font-size: 0.76rem;
+    padding: 5px 8px;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    gap: 0.42rem;
+    line-height: 1.3;
+  }
+  .tactical-intel-alert.danger {
+    color: #fca5a5;
+    background: rgba(185, 28, 28, 0.24);
+    border: 1px solid rgba(239, 68, 68, 0.4);
+  }
+  .tactical-intel-alert.warning {
+    color: #fdba74;
+    background: rgba(194, 65, 12, 0.24);
+    border: 1px solid rgba(249, 115, 22, 0.4);
+  }
+  .tactical-intel-alert.gold {
+    color: #fde047;
+    background: rgba(202, 138, 4, 0.24);
+    border: 1px solid rgba(234, 179, 8, 0.4);
+  }
+  .tactical-intel-alert.info {
+    color: #38bdf8;
+    background: rgba(2, 132, 199, 0.24);
+    border: 1px solid rgba(56, 189, 248, 0.4);
+  }
+
+  .support-missions-row {
     display: flex;
     flex-wrap: wrap;
     gap: 6px;
-    margin-top: 6px;
+    margin-top: 4px;
   }
-  .action-mini-btn {
-    font-size: 0.78rem;
+  .support-mission-btn {
+    font-size: 0.74rem;
     padding: 4px 8px;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
   }
+
+
   .attack-cta-row {
     display: flex;
     gap: 0.45rem;
@@ -606,37 +620,62 @@
     color: white;
   }
   .phase-stepper-row {
-    display: flex;
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
     align-items: center;
-    justify-content: center;
-    gap: 0.55rem;
-    flex-wrap: wrap;
+    gap: 0.5rem;
+    width: 100%;
+    min-height: 34px;
+  }
+  .phase-balance-slot {
+    min-width: 0;
+  }
+  .phase-steps-group {
+    display: inline-grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    align-items: center;
+    justify-items: stretch;
+    gap: 0.32rem;
   }
   .phase-step {
-    display: flex;
+    display: inline-flex;
     align-items: center;
-    gap: 0.35rem;
-    padding: 0.32rem 0.65rem;
+    justify-content: center;
+    gap: 0.32rem;
+    padding: 0.32rem 0.55rem;
     border-radius: 4px;
-    background: rgba(5, 9, 18, 0.75);
+    background: rgba(5, 9, 18, 0.82);
     color: #64748b;
     font-family: var(--font-tactical);
-    font-size: 0.76rem;
+    font-size: 0.74rem;
     font-weight: 700;
     letter-spacing: 0.04em;
     text-transform: uppercase;
-    border: 1px solid transparent;
+    border: 1px solid rgba(148, 163, 184, 0.14);
+    white-space: nowrap;
+    line-height: 1;
+    transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
   }
   .phase-step .num {
-    width: 18px;
-    height: 18px;
+    width: 17px;
+    height: 17px;
     border-radius: 3px;
     background: #1e293b;
     font-family: var(--font-mono);
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    font-size: 0.68rem;
+    font-size: 0.65rem;
+    color: #94a3b8;
+    line-height: 1;
+    flex-shrink: 0;
+  }
+  .phase-step .step-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0.7;
+    flex-shrink: 0;
   }
   .phase-step.active-phase {
     background: rgba(234, 179, 8, 0.16);
@@ -647,13 +686,14 @@
     background: #eab308;
     color: #090d16;
   }
-  .phase-arrow {
-    color: #475569;
-    font-size: 0.95rem;
-    font-weight: 700;
+  .phase-step.active-phase .step-icon {
+    opacity: 1;
+    color: #fef08a;
   }
   .phase-action-slot {
-    margin-left: 0.35rem;
+    justify-self: end;
+    display: inline-flex;
+    align-items: center;
   }
   @media (max-width: 1180px) {
     .bottom-center-dock {
@@ -669,6 +709,17 @@
   @media (max-width: 820px) {
     .bottom-center-dock {
       width: min(calc(100vw - 1rem), 440px);
+    }
+    .phase-stepper-row {
+      grid-template-columns: 1fr;
+      justify-items: center;
+      gap: 0.35rem;
+    }
+    .phase-balance-slot {
+      display: none;
+    }
+    .phase-action-slot {
+      justify-self: center;
     }
     .phase-step {
       padding: 0.25rem 0.45rem;
