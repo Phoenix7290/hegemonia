@@ -335,6 +335,7 @@ export interface CombatRollResult {
   encircledDefenderPenalty?: number;
   navalBlockade?: boolean;
   coastalBombardmentBonus?: boolean;
+  unescortedArtilleryPenalty?: boolean;
 }
 
 export interface GameState {
@@ -560,6 +561,28 @@ export const GameActionSchema = z.discriminatedUnion("type", [
 ]);
 
 export type GameAction = z.infer<typeof GameActionSchema>;
+
+/**
+ * Formats troop counts compactly for UI badges (HEGEM-70):
+ * - count < 1000: exact number string (e.g. "45", "999")
+ * - 1000 <= count < 10000: 1 decimal place with 'k', stripping trailing .0 (e.g. "1k", "1.5k", "9.9k")
+ * - 10000 <= count < 1000000: whole thousands with 'k' (e.g. "10k", "450k")
+ * - count >= 1000000: 1 decimal place with 'M', stripping trailing .0 (e.g. "1M", "2.4M")
+ */
+export function formatCompactTroops(count: number): string {
+  if (count < 1000) {
+    return String(Math.max(0, Math.floor(count)));
+  }
+  if (count < 10000) {
+    const val = (count / 1000).toFixed(1).replace(/\.0$/, "");
+    return `${val}k`;
+  }
+  if (count < 1000000) {
+    return `${Math.floor(count / 1000)}k`;
+  }
+  const val = (count / 1000000).toFixed(1).replace(/\.0$/, "");
+  return `${val}M`;
+}
 
 export * from "./identity.js";
 export * from "./comms.js";

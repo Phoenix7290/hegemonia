@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { formatCompactTroops } from "@hegemonia/shared";
 import { ALL_OBJECTIVES, ASIA_SUBREGIONS, CLASSIC_MAP, CLASSIC_OBJECTIVES, ROLEPLAY_OBJECTIVES } from "@hegemonia/maps";
 import {
   applyAction,
@@ -2169,6 +2170,220 @@ describe("Artillery Barrage & Airfield Air Missions (HEGEM-26, HEGEM-30)", () =>
     );
     expect(state.territories["argentina"].casBonusAttackerId).toBe("p1");
     expect(state.players.find((p) => p.id === "p1")!.resources.oil).toBe(4); // 1 oil consumed
+  });
+});
+
+describe("Compact Division Troop Formatter (HEGEM-70)", () => {
+  it("formats troop counts cleanly preventing text overflow on SVG badges and HUDs", () => {
+    // Under 1000: exact numbers
+    expect(formatCompactTroops(0)).toBe("0");
+    expect(formatCompactTroops(1)).toBe("1");
+    expect(formatCompactTroops(45)).toBe("45");
+    expect(formatCompactTroops(999)).toBe("999");
+
+    // 1000 to 9999: 1 decimal place with 'k', stripping trailing .0
+    expect(formatCompactTroops(1000)).toBe("1k");
+    expect(formatCompactTroops(1050)).toBe("1.1k");
+    expect(formatCompactTroops(1500)).toBe("1.5k");
+    expect(formatCompactTroops(2648)).toBe("2.6k");
+    expect(formatCompactTroops(9900)).toBe("9.9k");
+
+    // 10k to 999k: whole thousands with 'k'
+    expect(formatCompactTroops(10000)).toBe("10k");
+    expect(formatCompactTroops(12345)).toBe("12k");
+    expect(formatCompactTroops(450000)).toBe("450k");
+    expect(formatCompactTroops(999000)).toBe("999k");
+
+    // 1.0M+: 1 decimal place with 'M', stripping trailing .0
+    expect(formatCompactTroops(1000000)).toBe("1M");
+    expect(formatCompactTroops(1500000)).toBe("1.5M");
+    expect(formatCompactTroops(2400000)).toBe("2.4M");
+  });
+});
+
+describe("Advanced Artillery Mechanics, Maintenance & Escort Vulnerability (HEGEM-26)", () => {
+  const unitCounts = (
+    infantry = 0,
+    tank = 0,
+    artillery = 0,
+    aircraft = 0,
+    navy = 0
+  ) => ({ infantry, tank, artillery, aircraft, navy });
+
+  it("calculates ammunition maintenance ($1/turn per active artillery) in turn economy", () => {
+    let state = createGame({
+      id: "g_art_econ",
+      seed: "art-econ-seed",
+      players: [
+        { id: "p1", name: "Alice", color: "blue" },
+        { id: "p2", name: "Bob", color: "red" },
+      ],
+    });
+    for (const t of Object.values(state.territories)) {
+      t.ownerId = "p2";
+      t.armies = 2;
+      t.units = unitCounts(2);
+      t.buildings = [];
+    }
+
+    const p1 = state.players.find((p) => p.id === "p1")!;
+    p1.capitalTerritoryId = "brasil";
+    p1.isCapitalLost = false;
+    p1.resources.money = 10;
+
+    state.territories["brasil"].ownerId = "p1";
+    state.territories["brasil"].units = unitCounts(2, 0, 2); // 2 artillery
+    state.territories["brasil"].armies = 4;
+
+    state.territories["argentina"].ownerId = "p1";
+    state.territories["argentina"].units = unitCounts(1, 0, 1); // 1 artillery
+    state.territories["argentina"].armies = 2;
+
+    const econ = calculateTurnEconomy(state, "p1");
+    // Capital gives +3$, 1 trade bonus from Argentina gives +1$ => grossMoney = 4
+    expect(econ.grossMoney).toBe(4);
+    // 3 total artillery units across Brasil and Argentina => $3 maintenance
+    expect(econ.artilleryUpkeep).toBe(3);
+    // Net money: 4 - 3 = 1
+    expect(econ.netMoney).toBe(1);
+
+    // If p1 loses capital, grossMoney is halved: floor(4 * 0.5) = 2, netMoney = 2 - 3 = -1
+    p1.isCapitalLost = true;
+    p1.economicPenaltyMultiplier = 0.5;
+    const decapitatedEcon = calculateTurnEconomy(state, "p1");
+    expect(decapitatedEcon.grossMoney).toBe(4);
+    expect(decapitatedEcon.artilleryUpkeep).toBe(3);
+    expect(decapitatedEcon.netMoney).toBe(-1);
+  });
+
+  it("applies vulnerability penalty (-1 to highest defense die) when defender has artillery without infantry/tank escort", () => {
+    let state = createGame({
+      id: "g_art_vuln",
+      seed: "art-vuln-seed",
+      players: [
+        { id: "p1", name: "Alice", color: "blue" },
+        { id: "p2", name: "Bob", color: "red" },
+      ],
+    });
+    state.round = 2;
+    state.phase = "attack";
+    state.turnIndex = state.players.findIndex((p) => p.id === "p1");
+
+    state.territories["brasil"].ownerId = "p1";
+    state.territories["brasil"].armies = 4;
+    state.territories["brasil"].units = unitCounts(3, 0, 1); // 3 infantry, 1 artillery
+
+    // Argentina defended by Bob with 3 artillery units and 0 infantry/tanks (unescorted!)
+    state.territories["argentina"].ownerId = "p2";
+    state.territories["argentina"].armies = 3;
+    state.territories["argentina"].units = unitCounts(0, 0, 3);
+
+    const rolls = [5, 5, 5, 5, 4]; // Attacker [5, 5, 5], Defender [5, 4]
+    const rng = createSeededRng("vuln_rng");
+    rng.rollD6 = () => rolls.shift() ?? 4;
+
+    state = applyAction(
+      state,
+      "p1",
+      {
+        type: "attack",
+        fromTerritoryId: "brasil",
+        toTerritoryId: "argentina",
+        units: unitCounts(3, 0, 0), // attack with 3 infantry
+      },
+      rng
+    );
+
+    // Defender rolled 5, 4. But because artillery was unescorted, highest die (5) took -1 penalty -> became 4!
+    expect(state.lastCombat?.unescortedArtilleryPenalty).toBe(true);
+    expect(state.lastCombat?.defenderDice[0]).toBe(4);
+    expect(state.log.some((l) => l.includes("Artilharia Desprotegida -1 DEF"))).toBe(true);
+
+    // Now test WITH infantry escort in fresh attack: penalty should NOT apply
+    state.pendingConquest = null;
+    state.territories["argentina"].ownerId = "p2";
+    state.territories["argentina"].armies = 3;
+    state.territories["argentina"].units = unitCounts(2, 0, 1); // 2 infantry + 1 artillery
+    state.territories["brasil"].armies = 4;
+    state.territories["brasil"].units = unitCounts(3, 0, 1);
+
+    const rolls2 = [5, 5, 5, 5, 4];
+    const rng2 = createSeededRng("escort_rng");
+    rng2.rollD6 = () => rolls2.shift() ?? 4;
+
+    state = applyAction(
+      state,
+      "p1",
+      {
+        type: "attack",
+        fromTerritoryId: "brasil",
+        toTerritoryId: "argentina",
+        units: unitCounts(3, 0, 0),
+      },
+      rng2
+    );
+
+    expect(state.lastCombat?.unescortedArtilleryPenalty).toBeUndefined();
+    expect(state.lastCombat?.defenderDice[0]).toBe(5);
+  });
+
+  it("executes coastal artillery barrage across direct sea links and respects enemy naval blockades", () => {
+    let state = createGame({
+      id: "g_art_sea",
+      seed: "art-sea-seed",
+      players: [
+        { id: "p1", name: "Alice", color: "blue" },
+        { id: "p2", name: "Bob", color: "red" },
+      ],
+    });
+    state.round = 2;
+    state.phase = "attack";
+    state.turnIndex = state.players.findIndex((p) => p.id === "p1");
+
+    // Alice owns Groelândia with 2 artillery units
+    state.territories["groenlandia"].ownerId = "p1";
+    state.territories["groenlandia"].armies = 3;
+    state.territories["groenlandia"].units = unitCounts(1, 0, 2);
+
+    // Bob owns Islândia with a Casamata fortification, Port, 2 infantry and 2 navies fueled by oil
+    state.territories["islandia"].ownerId = "p2";
+    state.territories["islandia"].armies = 4;
+    state.territories["islandia"].buildings = [
+      { type: "fortification", level: 1 },
+      { type: "port", level: 1 },
+    ];
+    state.territories["islandia"].units = unitCounts(2, 0, 0, 0, 2); // 2 navies
+    state.players.find((p) => p.id === "p2")!.resources.oil = 3;
+
+    // 1. With active naval blockade in Islândia: artillery barrage is blocked
+    expect(() =>
+      applyAction(
+        state,
+        "p1",
+        { type: "artillery_barrage", fromTerritoryId: "groenlandia", toTerritoryId: "islandia" },
+        createSeededRng("blocked_art")
+      )
+    ).toThrow(/bloqueio naval/);
+
+    // 2. Clear enemy navy: coastal bombardment proceeds across direct sea link
+    state.territories["islandia"].units = unitCounts(2, 0, 0, 0, 0);
+    state.territories["islandia"].armies = 2;
+    const rolls = [5, 4]; // 2 hits (>= 4)
+    const rng = createSeededRng("coastal_art");
+    rng.rollD6 = () => rolls.shift() ?? 6;
+
+    state = applyAction(
+      state,
+      "p1",
+      { type: "artillery_barrage", fromTerritoryId: "groenlandia", toTerritoryId: "islandia" },
+      rng
+    );
+
+    // Fortification destroyed, 1 defender unit destroyed, log shows coastal barrage
+    expect(getTerritoryBuildingLevel(state.territories["islandia"], "fortification")).toBe(0);
+    expect(state.territories["islandia"].armies).toBe(1);
+    expect(state.territories["groenlandia"].artilleryBarrageFiredThisTurn).toBe(true);
+    expect(state.log.some((l) => l.includes("BARRAGEM COSTEIRA DE ARTILHARIA"))).toBe(true);
   });
 });
 

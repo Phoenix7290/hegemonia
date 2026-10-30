@@ -33,7 +33,7 @@
     subtractUnits,
     totalUnits,
   } from "@hegemonia/engine";
-  import { SESSION_REPLACED_CLOSE_CODE } from "@hegemonia/shared";
+  import { formatCompactTroops, SESSION_REPLACED_CLOSE_CODE } from "@hegemonia/shared";
   import type {
     AirMissionType,
     BuildingType,
@@ -1409,6 +1409,7 @@
                     if (hoveredTerritoryId === t.id) hoveredTerritoryId = null;
                   }}
                 >
+                  <title>{getTerritoryName(t.id)}: {tState.armies} divisões</title>
                   <!-- Political or Regional Fill + Frontier Border -->
                   <path
                     d={t.svgPath}
@@ -1600,10 +1601,13 @@
                       </g>
                     {:else}
                       <!-- HOI4-STYLE MILITARY DIVISION COUNTER (COMPACT FLAG + TROOP COUNT) -->
+                      {@const compactTroops = formatCompactTroops(tState.armies)}
+                      {@const troopFontSize = compactTroops.length <= 2 ? 8.2 : compactTroops.length === 3 ? 7.5 : 6.5}
                       <g
                         transform="translate({t.center[0]}, {t.center[1]}) scale({COMPACT_BADGE_IDS.has(t.id) ? 0.82 : 0.94})"
                         class="division-counter"
                       >
+                        <title>{getTerritoryName(t.id)}: {tState.armies} divisões</title>
                       <!-- Capital Crown / Golden Star Crest -->
                       {#if isCapital}
                         <g transform="translate(0, -10.2)">
@@ -1674,12 +1678,12 @@
                         text-anchor="middle"
                         dominant-baseline="central"
                         fill="#ffffff"
-                        font-size="8.2"
+                        font-size={troopFontSize}
                         font-weight="800"
                         font-family="system-ui, -apple-system, sans-serif"
                         pointer-events="none"
                       >
-                        {tState.armies}
+                        {compactTroops}
                       </text>
 
                       <!-- Fortification Crest -->
@@ -3152,7 +3156,7 @@
               {@const fromUnits = getTerritoryUnits(fromTerr)}
               {@const isSea = isSeaLink(selectedFromId, selectedToId)}
               {@const navalCheck = isSea && myPlayerId ? checkNavalBlockade(game, selectedFromId, selectedToId, myPlayerId) : null}
-              {@const canArtillery = fromUnits.artillery > 0 && !fromTerr.artilleryBarrageFiredThisTurn}
+              {@const canArtillery = fromUnits.artillery > 0 && !fromTerr.artilleryBarrageFiredThisTurn && (!navalCheck || !navalCheck.isBlockaded)}
               {@const canAir = hasTerritoryBuilding(fromTerr, "airfield") && fromUnits.aircraft > 0 && !fromTerr.airMissionFlownThisTurn && (myPlayerState?.resources?.oil ?? 0) > 0}
               <div class="action-popup attack-popup">
                 <div class="attack-matchup">
