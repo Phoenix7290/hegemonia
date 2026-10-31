@@ -244,6 +244,12 @@
             <span>Mobilização Total ({lastCombat.attackerModifier ? `ATQ +${lastCombat.attackerModifier}` : `DEF +${lastCombat.defenderModifier}`})</span>
           </div>
         {/if}
+        {#if lastCombat.unescortedArtilleryPenalty}
+          <div class="last-stand-badge" style="background: rgba(239, 68, 68, 0.2); border-color: #ef4444; color: #fca5a5;" title="Artilharia inimiga desprotegida sem escolta de infantaria ou blindados (-1 DEF)">
+            <Icon name="artillery" size={12} color="#fca5a5" />
+            <span>Artilharia Desprotegida (-1 DEF)</span>
+          </div>
+        {/if}
       </div>
     {/if}
 

@@ -155,7 +155,7 @@
           {@const fromUnits = getTerritoryUnits(fromTerr)}
           {@const isSea = isSeaLink(selectedFromId, selectedToId)}
           {@const navalCheck = isSea && myPlayerId ? checkNavalBlockade(game, selectedFromId, selectedToId, myPlayerId) : null}
-          {@const canArtillery = fromUnits.artillery > 0 && !fromTerr.artilleryBarrageFiredThisTurn}
+          {@const canArtillery = fromUnits.artillery > 0 && !fromTerr.artilleryBarrageFiredThisTurn && (!navalCheck || !navalCheck.isBlockaded)}
           {@const canAir = hasTerritoryBuilding(fromTerr, "airfield") && fromUnits.aircraft > 0 && !fromTerr.airMissionFlownThisTurn && (myPlayerState?.resources?.oil ?? 0) > 0}
           <div class="action-popup attack-popup">
             <div class="attack-matchup">
