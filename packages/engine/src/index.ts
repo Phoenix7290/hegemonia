@@ -1,6 +1,7 @@
 import {
   type BorderTradeDeal,
   type BuildingType,
+  type CardTradePreview,
   createInitialPlayerAnalytics,
   type GameAction,
   type GameMapDef,
@@ -8,6 +9,8 @@ import {
   type InvestmentRoute,
   type MarketPrices,
   type MarketResourcePrice,
+  normalizeCardSymbol,
+  type NormalizedCardSymbol,
   type ObjectiveCard,
   type PlayerColor,
   type PlayerMatchAnalytics,
@@ -15,6 +18,8 @@ import {
   type ResourceType,
   type TerritoryCard,
   type TerritoryState,
+  type TheaterHegemonyPerks,
+  type TheaterHegemonyStatus,
   type UnitCounts,
   type UnitType,
 } from "@hegemonia/shared";
@@ -69,26 +74,216 @@ export function getTradeBonusArmies(tradeIndexZeroBased: number): number {
 }
 
 /**
- * Checks if 3 territory cards form a valid exchange set:
+ * Checks if 3 territory cards form a valid exchange set (HEGEM-72):
  * - 3 identical symbols OR 3 all-different symbols (joker counts as anything)
  */
 export function isValidCardSet(cards: TerritoryCard[]): boolean {
   if (cards.length !== 3) return false;
-  const nonJokers = cards.filter((c) => c.symbol !== "joker");
+  const nonJokers = cards.filter((c) => normalizeCardSymbol(c.symbol) !== "joker");
   if (nonJokers.length <= 1) return true; // 2 or 3 jokers always valid
   if (nonJokers.length === 2) {
     // 1 joker can complete either 3-of-a-kind or 3-different
     return true;
   }
-  const [a, b, c] = nonJokers.map((x) => x.symbol);
+  const [a, b, c] = nonJokers.map((x) => normalizeCardSymbol(x.symbol));
   const allSame = a === b && b === c;
   const allDiff = a !== b && b !== c && a !== c;
   return allSame || allDiff;
 }
 
 /**
- * Calculates start-of-turn reinforcements for a player:
- * max(3, floor(ownedTerritories / 2)) + full continent bonuses
+ * Tactical Card Exchange 2.0 (HEGEM-72):
+ * Calculates deterministic rewards based on a Primary Focus card (100% FULL)
+ * and two Secondary Support cards (reduced), plus territory ownership bonuses.
+ */
+export function calculateCardTradePreview(
+  cards: TerritoryCard[],
+  primaryCardId?: string,
+  chosenResource: "steel" | "oil" = "steel",
+  state?: GameState,
+  playerId?: string,
+  map: GameMapDef = CLASSIC_MAP
+): CardTradePreview {
+  if (cards.length !== 3) {
+    return {
+      isValid: false,
+      errorMessage: "Selecione exatamente 3 cartas para a troca.",
+      primaryCardId: primaryCardId ?? cards[0]?.id ?? "",
+      primarySymbol: "infantry",
+      armies: 0,
+      money: 0,
+      steel: 0,
+      oil: 0,
+      territoryBonuses: [],
+    };
+  }
+
+  if (!isValidCardSet(cards)) {
+    return {
+      isValid: false,
+      errorMessage: "Combinação inválida (precisa de 3 símbolos iguais ou 3 diferentes).",
+      primaryCardId: primaryCardId ?? cards[0]?.id ?? "",
+      primarySymbol: normalizeCardSymbol(cards[0]?.symbol ?? "infantry"),
+      armies: 0,
+      money: 0,
+      steel: 0,
+      oil: 0,
+      territoryBonuses: [],
+    };
+  }
+
+  const primary = cards.find((c) => c.id === primaryCardId) ?? cards[0];
+  const supports = cards.filter((c) => c.id !== primary.id);
+  const primarySym = normalizeCardSymbol(primary.symbol);
+
+  let armies = 0;
+  let money = 0;
+  let steel = 0;
+  let oil = 0;
+
+  // Primary Focus Rewards (FULL 100%)
+  if (primarySym === "infantry") {
+    armies += 4;
+  } else if (primarySym === "resource") {
+    if (chosenResource === "oil") oil += 2;
+    else steel += 2;
+  } else if (primarySym === "treasury") {
+    money += 5;
+  } else if (primarySym === "joker") {
+    // Supreme Command Joker: +1 extra money + full benefits
+    money += 1;
+    if (chosenResource === "oil") oil += 2;
+    else if (chosenResource === "steel") steel += 2;
+    else armies += 4;
+  }
+
+  // Secondary Support Rewards (Reduced)
+  for (const supp of supports) {
+    const sym = normalizeCardSymbol(supp.symbol);
+    if (sym === "infantry") {
+      armies += 1;
+    } else if (sym === "resource") {
+      if (chosenResource === "oil") oil += 1;
+      else steel += 1;
+    } else if (sym === "treasury") {
+      money += 2;
+    } else if (sym === "joker") {
+      // Joker in support: +1 extra army + chosen support yield
+      armies += 1;
+      if (chosenResource === "oil") oil += 1;
+      else steel += 1;
+    }
+  }
+
+  // Territory ownership bonus: +1 division directly deployed on owned territory
+  const territoryBonuses: { territoryId: string; namePt: string; armies: number }[] = [];
+  const mapById = new Map(map.territories.map((t) => [t.id, t]));
+
+  if (state && playerId) {
+    for (const c of cards) {
+      if (c.territoryId && state.territories[c.territoryId]?.ownerId === playerId) {
+        territoryBonuses.push({
+          territoryId: c.territoryId,
+          namePt: mapById.get(c.territoryId)?.namePt ?? c.territoryId,
+          armies: 1,
+        });
+      }
+    }
+  }
+
+  return {
+    isValid: true,
+    primaryCardId: primary.id,
+    primarySymbol: primarySym,
+    armies,
+    money,
+    steel,
+    oil,
+    territoryBonuses,
+  };
+}
+
+/**
+ * Asymmetric Hegemony 2.0 Theater Perks Matrix (HEGEM-71)
+ */
+export const HEGEMONY_THEATERS: Record<string, TheaterHegemonyPerks> = {
+  south_america: {
+    infantry: 2,
+    money: 2,
+    steel: 1,
+    oil: 1,
+    specialPerkPt: "Pacto Andino (Estabilidade e Recursos)",
+    specialPerkEn: "Andean Pact (Stability & Resources)",
+    specialPerkCode: "andean_pact",
+  },
+  oceania: {
+    infantry: 1,
+    money: 2,
+    steel: 0,
+    oil: 0,
+    specialPerkPt: "Talassocracia (Estreito de Malaca & Portos a $3)",
+    specialPerkEn: "Thalassocracy (Malacca Strait & Ports at $3)",
+    specialPerkCode: "thalassocracy",
+  },
+  africa: {
+    infantry: 2,
+    money: 2,
+    steel: 0,
+    oil: 0,
+    specialPerkPt: "Canal de Suez & Dobro de Ouro Passivo",
+    specialPerkEn: "Suez Canal & Double Passive Gold",
+    specialPerkCode: "suez_gold",
+  },
+  europe: {
+    infantry: 2,
+    money: 3,
+    steel: 0,
+    oil: 0,
+    specialPerkPt: "Complexo Industrial Continental (-$1 Indústria/Mercado)",
+    specialPerkEn: "Continental Industrial Complex (-$1 Industry/Market)",
+    specialPerkCode: "euro_industry",
+  },
+  north_america: {
+    infantry: 3,
+    money: 2,
+    steel: 1,
+    oil: 1,
+    specialPerkPt: "Poderio Estratégico (Ponte Aérea & Mobilização Total)",
+    specialPerkEn: "Strategic Might (Airlift & Full Mobilization)",
+    specialPerkCode: "strategic_might",
+  },
+  asia_indo_arabia: {
+    infantry: 1,
+    money: 0,
+    steel: 0,
+    oil: 2,
+    specialPerkPt: "Monopólio de Combustível (Imunidade a Sem Combustível)",
+    specialPerkEn: "Fuel Monopoly (Out of Fuel Immunity)",
+    specialPerkCode: "fuel_monopoly",
+  },
+  asia_steppes: {
+    infantry: 1,
+    money: 0,
+    steel: 1,
+    oil: 0,
+    specialPerkPt: "General Inverno (Defesa Vence Empates no Teatro)",
+    specialPerkEn: "General Winter (Defense Wins Ties in Steppes)",
+    specialPerkCode: "general_winter",
+  },
+  asia_east: {
+    infantry: 4,
+    money: 1,
+    steel: 0,
+    oil: 0,
+    specialPerkPt: "Arsenal Oriental (Mobilização Bélica)",
+    specialPerkEn: "Eastern Arsenal (Rapid Mobilization)",
+    specialPerkCode: "eastern_arsenal",
+  },
+};
+
+/**
+ * Calculates start-of-turn reinforcements for a player (HEGEM-71):
+ * max(3, floor(ownedTerritories / 2)) + Regional Hegemony 2.0 (Majoritary N-1 tolerance for theaters >= 5 territories)
  */
 export function calculateTurnReinforcements(
   state: GameState,
@@ -114,10 +309,13 @@ export function calculateTurnReinforcements(
 
   for (const cont of map.continents) {
     if (cont.id === "asia") {
-      // Asia is divided into 3 strategic sub-regions (+2 Indo-Arábia, +2 Estepes & Sibéria, +3 Leste Asiático = +7 total)
+      // Asia is divided into 3 strategic sub-regions (HEGEM-71 Majoritary Rule)
       let allAsiaSubregionsControlled = true;
       for (const sub of ASIA_SUBREGIONS) {
-        if (sub.territoryIds.every((tid) => ownedSet.has(tid))) {
+        const total = sub.territoryIds.length;
+        const required = total >= 5 ? total - 1 : total;
+        const ownedCount = sub.territoryIds.filter((tid) => ownedSet.has(tid)).length;
+        if (ownedCount >= required) {
           continentBonus += sub.bonus;
           controlledContinents.push(sub.id);
         } else {
@@ -130,7 +328,10 @@ export function calculateTurnReinforcements(
       continue;
     }
     const contTerritories = map.territories.filter((t) => t.continent === cont.id);
-    if (contTerritories.length > 0 && contTerritories.every((t) => ownedSet.has(t.id))) {
+    const total = contTerritories.length;
+    const required = total >= 5 ? total - 1 : total;
+    const ownedCount = contTerritories.filter((t) => ownedSet.has(t.id)).length;
+    if (total > 0 && ownedCount >= required) {
       continentBonus += cont.bonus;
       controlledContinents.push(cont.id);
     }
@@ -156,6 +357,114 @@ export function calculateTurnReinforcements(
     total,
     controlledContinents,
   };
+}
+
+/**
+ * Computes live Theater Hegemony status for all theaters and subregions (HEGEM-74).
+ */
+export function getHegemonyStatus(
+  state: GameState,
+  map: GameMapDef = CLASSIC_MAP
+): TheaterHegemonyStatus[] {
+  const result: TheaterHegemonyStatus[] = [];
+
+  // 1. Classic Continents (excluding Asia as it is handled by subregions)
+  for (const cont of map.continents) {
+    if (cont.id === "asia") continue;
+    const terrs = map.territories.filter((t) => t.continent === cont.id);
+    const total = terrs.length;
+    const required = total >= 5 ? total - 1 : total;
+
+    const ownedByPlayer: Record<string, number> = {};
+    for (const p of state.players) ownedByPlayer[p.id] = 0;
+    for (const t of terrs) {
+      const ownerId = state.territories[t.id]?.ownerId;
+      if (ownerId && ownedByPlayer[ownerId] !== undefined) {
+        ownedByPlayer[ownerId]++;
+      }
+    }
+
+    let hegemonPlayerId: string | null = null;
+    let isNearHegemony = false;
+    for (const p of state.players) {
+      const count = ownedByPlayer[p.id] ?? 0;
+      if (count >= required) {
+        hegemonPlayerId = p.id;
+      } else if (count === required - 1) {
+        isNearHegemony = true;
+      }
+    }
+
+    result.push({
+      theaterId: cont.id,
+      namePt: cont.namePt,
+      nameEn: cont.name,
+      isSubregion: false,
+      totalTerritories: total,
+      requiredTerritories: required,
+      ownedByPlayer,
+      hegemonPlayerId,
+      isNearHegemony,
+      perks: HEGEMONY_THEATERS[cont.id] ?? {
+        infantry: cont.bonus,
+        money: 0,
+        steel: 0,
+        oil: 0,
+        specialPerkPt: "",
+        specialPerkEn: "",
+        specialPerkCode: "none",
+      },
+    });
+  }
+
+  // 2. Asia Strategic Sub-regions
+  for (const sub of ASIA_SUBREGIONS) {
+    const total = sub.territoryIds.length;
+    const required = total >= 5 ? total - 1 : total;
+
+    const ownedByPlayer: Record<string, number> = {};
+    for (const p of state.players) ownedByPlayer[p.id] = 0;
+    for (const tid of sub.territoryIds) {
+      const ownerId = state.territories[tid]?.ownerId;
+      if (ownerId && ownedByPlayer[ownerId] !== undefined) {
+        ownedByPlayer[ownerId]++;
+      }
+    }
+
+    let hegemonPlayerId: string | null = null;
+    let isNearHegemony = false;
+    for (const p of state.players) {
+      const count = ownedByPlayer[p.id] ?? 0;
+      if (count >= required) {
+        hegemonPlayerId = p.id;
+      } else if (count === required - 1) {
+        isNearHegemony = true;
+      }
+    }
+
+    result.push({
+      theaterId: sub.id,
+      namePt: sub.namePt,
+      nameEn: sub.id,
+      isSubregion: true,
+      totalTerritories: total,
+      requiredTerritories: required,
+      ownedByPlayer,
+      hegemonPlayerId,
+      isNearHegemony,
+      perks: HEGEMONY_THEATERS[sub.id] ?? {
+        infantry: sub.bonus,
+        money: 0,
+        steel: 0,
+        oil: 0,
+        specialPerkPt: "",
+        specialPerkEn: "",
+        specialPerkCode: "none",
+      },
+    });
+  }
+
+  return result;
 }
 
 export interface BuildingCost {
@@ -343,11 +652,14 @@ export function updateSupplyAndEncirclement(
       (t) => t.ownerId === player.id
     );
 
-    // Flag out of fuel
+    // Flag out of fuel (HEGEM-71: Indo-Arabia Fuel Monopoly grants national immunity)
+    const playerReinf = calculateTurnReinforcements(state, player.id, map);
+    const hasFuelMonopoly = playerReinf.controlledContinents.includes("asia_indo_arabia");
+
     for (const t of playerTerritories) {
       const units = getTerritoryUnits(t);
       const hasMechanized = units.tank > 0 || units.aircraft > 0 || units.navy > 0;
-      t.outOfFuel = !playerHasOil && hasMechanized;
+      t.outOfFuel = !hasFuelMonopoly && !playerHasOil && hasMechanized;
     }
 
     const capId = player.capitalTerritoryId;
@@ -451,6 +763,7 @@ export interface TurnEconomyBreakdown {
   goldPassiveMoney: number;
   buildingMoney: number;
   investmentMoney: number;
+  hegemonyMoney: number;
   artilleryUpkeep: number;
   grossMoney: number;
   economicPenaltyMultiplier: number;
@@ -550,8 +863,55 @@ export function calculateTurnEconomy(
   }
   const artilleryUpkeep = totalArtillery * 1;
 
+  // Calculate Hegemony 2.0 asymmetric economic advantages (HEGEM-71)
+  const reinf = calculateTurnReinforcements(state, playerId, map);
+  const controlled = new Set(reinf.controlledContinents);
+
+  let hegemonyMoney = 0;
+  let hegemonySteel = 0;
+  let hegemonyOil = 0;
+
+  if (controlled.has("south_america")) {
+    hegemonyMoney += 2;
+    hegemonySteel += 1;
+    hegemonyOil += 1;
+  }
+  if (controlled.has("oceania")) {
+    hegemonyMoney += 2; // Estreito de Malaca
+  }
+  if (controlled.has("africa")) {
+    hegemonyMoney += 2; // Canal de Suez
+    // Africa double passive gold: +2$ extra per African territory with gold owned by player
+    for (const terr of occupiedTerritories) {
+      const def = mapById.get(terr.id);
+      if (def?.continent === "africa" && def.resource === "gold") {
+        hegemonyMoney += 2;
+      }
+    }
+  }
+  if (controlled.has("europe")) {
+    hegemonyMoney += 3;
+  }
+  if (controlled.has("north_america")) {
+    hegemonyMoney += 2;
+    hegemonySteel += 1;
+    hegemonyOil += 1;
+  }
+  if (controlled.has("asia_indo_arabia")) {
+    hegemonyOil += 2;
+  }
+  if (controlled.has("asia_steppes")) {
+    hegemonySteel += 1;
+  }
+  if (controlled.has("asia_east")) {
+    hegemonyMoney += 1;
+  }
+
+  steel += hegemonySteel;
+  oil += hegemonyOil;
+
   const grossMoney =
-    capitalMoney + tradeHubMoney + goldPassiveMoney + buildingMoney + investmentMoney;
+    capitalMoney + tradeHubMoney + goldPassiveMoney + buildingMoney + investmentMoney + hegemonyMoney;
   const economicPenaltyMultiplier = player?.isCapitalLost
     ? (player.economicPenaltyMultiplier ?? 0.5)
     : 1.0;
@@ -563,6 +923,7 @@ export function calculateTurnEconomy(
     goldPassiveMoney,
     buildingMoney,
     investmentMoney,
+    hegemonyMoney,
     artilleryUpkeep,
     grossMoney,
     economicPenaltyMultiplier,
@@ -1008,13 +1369,27 @@ export function applyAction(
         if (!c) throw new Error(`Carta inválida: ${cid}`);
         return c;
       });
-      if (!isValidCardSet(selected)) {
-        throw new Error("Combinação de cartas inválida (precisa de 3 iguais ou 3 diferentes).");
+
+      const preview = calculateCardTradePreview(
+        selected,
+        action.primaryCardId,
+        action.chosenResource ?? "steel",
+        state,
+        playerId,
+        map
+      );
+      if (!preview.isValid) {
+        throw new Error(
+          preview.errorMessage ??
+            "Combinação de cartas inválida (precisa de 3 iguais ou 3 diferentes)."
+        );
       }
 
-      const bonus = getTradeBonusArmies(state.tradeCount);
       state.tradeCount += 1;
-      currentPlayer.unplacedArmies += bonus;
+      currentPlayer.unplacedArmies += preview.armies;
+      currentPlayer.resources.money += preview.money;
+      currentPlayer.resources.steel += preview.steel;
+      currentPlayer.resources.oil += preview.oil;
 
       // Remove traded cards from hand and put into discardPile
       currentPlayer.cards = currentPlayer.cards.filter(
@@ -1022,22 +1397,28 @@ export function applyAction(
       );
       state.discardPile.push(...selected);
 
-      // Classic rule: +2 extra armies on owned territories pictured on traded cards
-      const territoryBonuses: string[] = [];
-      for (const c of selected) {
-        if (c.territoryId && state.territories[c.territoryId]?.ownerId === playerId) {
-          const terr = state.territories[c.territoryId];
+      // Deploy territory bonuses (+1 division on owned territory pictured on traded cards, HEGEM-72)
+      const deployedTerritories: string[] = [];
+      for (const b of preview.territoryBonuses) {
+        const terr = state.territories[b.territoryId];
+        if (terr && terr.ownerId === playerId) {
           setTerritoryUnits(
             terr,
-            addUnits(getTerritoryUnits(terr), singleUnitCount("infantry", 2))
+            addUnits(getTerritoryUnits(terr), singleUnitCount("infantry", b.armies))
           );
-          territoryBonuses.push(mapById.get(c.territoryId)?.namePt ?? c.territoryId);
+          deployedTerritories.push(b.namePt);
         }
       }
 
+      const rewardsText: string[] = [];
+      if (preview.armies > 0) rewardsText.push(`+${preview.armies} divisões`);
+      if (preview.money > 0) rewardsText.push(`+$${preview.money}`);
+      if (preview.steel > 0) rewardsText.push(`+${preview.steel} Aço`);
+      if (preview.oil > 0) rewardsText.push(`+${preview.oil} Petróleo`);
+
       state.log.push(
-        `${currentPlayer.name} trocou cartas (+${bonus} exércitos)${
-          territoryBonuses.length ? ` e ganhou +2 em: ${territoryBonuses.join(", ")}` : ""
+        `🎖️ ${currentPlayer.name} trocou cartas [Foco: ${preview.primarySymbol.toUpperCase()}] (${rewardsText.join(", ")})${
+          deployedTerritories.length ? ` e +1 em: ${deployedTerritories.join(", ")}` : ""
         }.`
       );
       break;
@@ -1148,7 +1529,25 @@ export function applyAction(
         );
       }
 
-      const cost = BUILDING_COSTS[action.buildingType];
+      const cost = { ...BUILDING_COSTS[action.buildingType] };
+
+      // HEGEM-71 Asymmetric Hegemony Discounts:
+      const playerReinf = calculateTurnReinforcements(state, currentPlayer.id, map);
+      const playerControlledContinents = new Set(playerReinf.controlledContinents);
+
+      // Europe Hegemony: -$1 money for industry and market
+      if (
+        playerControlledContinents.has("europe") &&
+        (action.buildingType === "market" || action.buildingType === "industry")
+      ) {
+        cost.money = Math.max(1, cost.money - 1);
+      }
+
+      // Oceania Hegemony: Thalassocracy discount for port ($3 instead of $5)
+      if (playerControlledContinents.has("oceania") && action.buildingType === "port") {
+        cost.money = 3;
+      }
+
       if (
         currentPlayer.resources.money < cost.money ||
         currentPlayer.resources.steel < cost.steel

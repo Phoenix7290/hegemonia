@@ -3,6 +3,7 @@ import { formatCompactTroops } from "@hegemonia/shared";
 import { ALL_OBJECTIVES, ASIA_SUBREGIONS, CLASSIC_MAP, CLASSIC_OBJECTIVES, ROLEPLAY_OBJECTIVES } from "@hegemonia/maps";
 import {
   applyAction,
+  calculateCardTradePreview,
   calculateTurnEconomy,
   calculateTurnReinforcements,
   checkNavalBlockade,
@@ -12,15 +13,25 @@ import {
   createSeededRng,
   damageTerritoryFortification,
   findAirMissionTargets,
+  getHegemonyStatus,
   getMovedInUnits,
   getTerritoryBuildingLevel,
   getTerritoryMaxBuildingSlots,
   getTerritoryUnits,
   getTradeBonusArmies,
+  HEGEMONY_THEATERS,
   isValidCardSet,
   setTerritoryUnits,
   updateSupplyAndEncirclement,
 } from "./index.js";
+
+const unitCounts = (
+  infantry = 0,
+  tank = 0,
+  artillery = 0,
+  aircraft = 0,
+  navy = 0
+) => ({ infantry, tank, artillery, aircraft, navy });
 
 describe("Classic Map Graph Integrity", () => {
   it("has exactly 53 territories across 6 continents", () => {
@@ -2388,6 +2399,231 @@ describe("Advanced Artillery Mechanics, Maintenance & Escort Vulnerability (HEGE
     expect(state.territories["islandia"].armies).toBe(1);
     expect(state.territories["groenlandia"].artilleryBarrageFiredThisTurn).toBe(true);
     expect(state.log.some((l) => l.includes("BARRAGEM COSTEIRA DE ARTILHARIA"))).toBe(true);
+  });
+
+  it("enforces Regional Hegemony 2.0: Majoritary N-1 tolerance for >= 5 territories and strict 100% for compact theaters (HEGEM-71)", () => {
+    const state = createGame({
+      id: "hegem_test_game",
+      seed: "hegem_seed",
+      players: [
+        { id: "p1", name: "Player 1", color: "blue" },
+        { id: "p2", name: "Player 2", color: "red" },
+      ],
+    });
+
+    // 1. South America has 6 territories in Admin-1 map.
+    // Majoritary tolerance (N-1): 5 of 6 is sufficient to achieve Hegemony.
+    const saTerrs = CLASSIC_MAP.territories.filter((t) => t.continent === "south_america");
+    expect(saTerrs.length).toBe(6);
+
+    for (const t of CLASSIC_MAP.territories) {
+      state.territories[t.id].ownerId = "p2";
+    }
+
+    // Give p1 4 SA territories -> NOT enough (required is 5)
+    for (let i = 0; i < 4; i++) {
+      state.territories[saTerrs[i].id].ownerId = "p1";
+    }
+    let reinf = calculateTurnReinforcements(state, "p1");
+    expect(reinf.controlledContinents).not.toContain("south_america");
+    expect(reinf.continentBonus).toBe(0);
+
+    // Give p1 the 5th territory (5 of 6) -> Hegemony ACTIVATED!
+    state.territories[saTerrs[4].id].ownerId = "p1";
+    reinf = calculateTurnReinforcements(state, "p1");
+    expect(reinf.controlledContinents).toContain("south_america");
+    expect(reinf.continentBonus).toBe(3);
+
+    // 2. Oceania has 4 territories (compact theater, < 5). Strict 100% rule applies.
+    const ocTerrs = CLASSIC_MAP.territories.filter((t) => t.continent === "oceania");
+    expect(ocTerrs.length).toBe(4);
+
+    for (let i = 0; i < 3; i++) {
+      state.territories[ocTerrs[i].id].ownerId = "p1";
+    }
+    reinf = calculateTurnReinforcements(state, "p1");
+    expect(reinf.controlledContinents).not.toContain("oceania");
+
+    state.territories[ocTerrs[3].id].ownerId = "p1";
+    reinf = calculateTurnReinforcements(state, "p1");
+    expect(reinf.controlledContinents).toContain("oceania");
+
+    // 3. Indo-Arabia (4 territories, compact theater in Asia): Requires 4 of 4
+    const indoTerrs = ASIA_SUBREGIONS.find((s) => s.id === "asia_indo_arabia")!.territoryIds;
+    for (let i = 0; i < 3; i++) {
+      state.territories[indoTerrs[i]].ownerId = "p1";
+    }
+    reinf = calculateTurnReinforcements(state, "p1");
+    expect(reinf.controlledContinents).not.toContain("asia_indo_arabia");
+
+    state.territories[indoTerrs[3]].ownerId = "p1";
+    reinf = calculateTurnReinforcements(state, "p1");
+    expect(reinf.controlledContinents).toContain("asia_indo_arabia");
+
+    // 4. getHegemonyStatus returns complete breakdown
+    const hegemStatus = getHegemonyStatus(state);
+    const saStatus = hegemStatus.find((h) => h.theaterId === "south_america")!;
+    expect(saStatus.totalTerritories).toBe(6);
+    expect(saStatus.requiredTerritories).toBe(5);
+    expect(saStatus.hegemonPlayerId).toBe("p1");
+  });
+
+  it("applies Hegemony 2.0 asymmetric economic perks, building discounts and fuel immunity (HEGEM-71)", () => {
+    let state = createGame({
+      id: "g_econ_hegem",
+      seed: "econ-hegem-seed",
+      players: [
+        { id: "p1", name: "Alice", color: "blue" },
+        { id: "p2", name: "Bob", color: "red" },
+      ],
+    });
+    state.round = 2;
+    state.phase = "deploy";
+    const activeId = state.players[state.turnIndex].id;
+    const otherId = state.players.find((plr) => plr.id !== activeId)!.id;
+    for (const t of CLASSIC_MAP.territories) {
+      state.territories[t.id].ownerId = otherId;
+      state.territories[t.id].armies = 1;
+    }
+    const p = state.players.find((plr) => plr.id === activeId)!;
+    p.capitalTerritoryId = "brasil";
+
+    // Set p as hegemon of South America (5 of 6) and Oceania (4 of 4)
+    const saTerrs = CLASSIC_MAP.territories.filter((t) => t.continent === "south_america");
+    for (let i = 0; i < 5; i++) {
+      state.territories[saTerrs[i].id].ownerId = activeId;
+      state.territories[saTerrs[i].id].armies = 1;
+    }
+    const ocTerrs = CLASSIC_MAP.territories.filter((t) => t.continent === "oceania");
+    for (const t of ocTerrs) {
+      state.territories[t.id].ownerId = activeId;
+      state.territories[t.id].armies = 1;
+    }
+
+    const econ = calculateTurnEconomy(state, activeId);
+    // SA Hegemony gives +$2 money, +1 steel, +1 oil
+    // Oceania gives +$2 money
+    // Total hegemonyMoney: +$4
+    expect(econ.hegemonyMoney).toBe(4);
+    expect(econ.steel).toBeGreaterThanOrEqual(1);
+    expect(econ.oil).toBeGreaterThanOrEqual(1);
+
+    // Thalassocracy port discount ($3 instead of $5)
+    p.resources = { money: 3, steel: 0, oil: 0, gold: 0 };
+    const rng = createSeededRng("build_port_discount");
+    state = applyAction(
+      state,
+      activeId,
+      { type: "build_structure", territoryId: "brasil", buildingType: "port" },
+      rng
+    );
+    expect(getTerritoryBuildingLevel(state.territories["brasil"], "port")).toBe(1);
+    expect(state.players.find((plr) => plr.id === activeId)!.resources.money).toBe(0);
+
+    // Indo-Arabia fuel immunity
+    const indoTerrs = ASIA_SUBREGIONS.find((s) => s.id === "asia_indo_arabia")!.territoryIds;
+    for (const tid of indoTerrs) {
+      state.territories[tid].ownerId = activeId;
+      state.territories[tid].armies = 1;
+    }
+    // Give mechanized unit to brasil without oil
+    state.players.find((plr) => plr.id === activeId)!.resources.oil = 0;
+    state.territories["brasil"].units = unitCounts(1, 1, 0, 0, 0);
+    updateSupplyAndEncirclement(state);
+    expect(state.territories["brasil"].outOfFuel).toBe(false);
+  });
+
+  it("handles Card Exchange 2.0 with Primary Focus FULL and Secondary Support (HEGEM-72)", () => {
+    let state = createGame({
+      id: "g_trade_2",
+      seed: "trade-2-seed",
+      players: [
+        { id: "p1", name: "Alice", color: "blue" },
+        { id: "p2", name: "Bob", color: "red" },
+      ],
+    });
+    state.round = 2;
+    state.phase = "deploy";
+    const activeId = state.players[state.turnIndex].id;
+    const otherId = state.players.find((plr) => plr.id !== activeId)!.id;
+    const p = state.players.find((plr) => plr.id === activeId)!;
+    p.resources = { money: 10, steel: 0, oil: 0, gold: 0 };
+
+    p.cards = [
+      { id: "c_inf_1", territoryId: "brasil", symbol: "infantry" },
+      { id: "c_res_1", territoryId: "islandia", symbol: "resource" },
+      { id: "c_tre_1", territoryId: null, symbol: "treasury" },
+    ];
+    state.territories["brasil"].ownerId = activeId;
+    state.territories["brasil"].armies = 2;
+    state.territories["brasil"].units = unitCounts(2);
+    state.territories["islandia"].ownerId = otherId;
+
+    // 1. Preview test with Primary = infantry
+    const previewInf = calculateCardTradePreview(
+      p.cards,
+      "c_inf_1",
+      "steel",
+      state,
+      activeId
+    );
+    expect(previewInf.isValid).toBe(true);
+    // Primary infantry = +4 armies, Support resource = +1 steel, Support treasury = +$2 money
+    // Plus brasil is owned = +1 army on brasil
+    expect(previewInf.armies).toBe(4);
+    expect(previewInf.steel).toBe(1);
+    expect(previewInf.money).toBe(2);
+    expect(previewInf.territoryBonuses.length).toBe(1);
+    expect(previewInf.territoryBonuses[0].territoryId).toBe("brasil");
+
+    // 2. Preview test with Primary = resource (chosen oil)
+    const previewRes = calculateCardTradePreview(
+      p.cards,
+      "c_res_1",
+      "oil",
+      state,
+      activeId
+    );
+    // Primary resource = +2 oil, Support infantry = +1 army, Support treasury = +$2 money
+    expect(previewRes.oil).toBe(2);
+    expect(previewRes.armies).toBe(1);
+    expect(previewRes.money).toBe(2);
+
+    // 3. Preview test with Primary = treasury
+    const previewTre = calculateCardTradePreview(
+      p.cards,
+      "c_tre_1",
+      "steel",
+      state,
+      activeId
+    );
+    // Primary treasury = +$5 money, Support infantry = +1 army, Support resource = +1 steel
+    expect(previewTre.money).toBe(5);
+    expect(previewTre.armies).toBe(1);
+    expect(previewTre.steel).toBe(1);
+
+    // 4. Apply action with Primary = treasury
+    const initialUnplaced = p.unplacedArmies;
+    state = applyAction(
+      state,
+      activeId,
+      {
+        type: "trade_cards",
+        cardIds: ["c_inf_1", "c_res_1", "c_tre_1"],
+        primaryCardId: "c_tre_1",
+        chosenResource: "steel",
+      },
+      createSeededRng("trade_2")
+    );
+
+    const updatedPlayer = state.players.find((plr) => plr.id === activeId)!;
+    expect(updatedPlayer.resources.money).toBe(15); // 10 + 5
+    expect(updatedPlayer.resources.steel).toBe(1);
+    expect(updatedPlayer.unplacedArmies).toBe(initialUnplaced + 1);
+    expect(updatedPlayer.cards.length).toBe(0);
+    // Territory bonus placed on brasil
+    expect(state.territories["brasil"].armies).toBe(3);
+    expect(state.tradeCount).toBe(1);
   });
 });
 

@@ -23,12 +23,24 @@ export const ContinentIdSchema = z.enum([
 export type ContinentId = z.infer<typeof ContinentIdSchema>;
 
 export const CardSymbolSchema = z.enum([
+  "infantry",
+  "resource",
+  "treasury",
   "circle",
   "square",
   "triangle",
   "joker",
 ]);
 export type CardSymbol = z.infer<typeof CardSymbolSchema>;
+
+export type NormalizedCardSymbol = "infantry" | "resource" | "treasury" | "joker";
+
+export function normalizeCardSymbol(symbol: CardSymbol): NormalizedCardSymbol {
+  if (symbol === "circle" || symbol === "infantry") return "infantry";
+  if (symbol === "square" || symbol === "resource") return "resource";
+  if (symbol === "triangle" || symbol === "treasury") return "treasury";
+  return "joker";
+}
 
 export const TurnPhaseSchema = z.enum([
   "deploy",
@@ -383,6 +395,8 @@ export const DeployActionSchema = z.object({
 export const TradeCardsActionSchema = z.object({
   type: z.literal("trade_cards"),
   cardIds: z.tuple([z.string(), z.string(), z.string()]),
+  primaryCardId: z.string().optional(),
+  chosenResource: z.enum(["steel", "oil"]).optional(),
 });
 
 export const BuyCardWithGoldActionSchema = z.object({
@@ -582,6 +596,41 @@ export function formatCompactTroops(count: number): string {
   }
   const val = (count / 1000000).toFixed(1).replace(/\.0$/, "");
   return `${val}M`;
+}
+
+export interface TheaterHegemonyPerks {
+  infantry: number;
+  money: number;
+  steel: number;
+  oil: number;
+  specialPerkPt: string;
+  specialPerkEn: string;
+  specialPerkCode: string;
+}
+
+export interface TheaterHegemonyStatus {
+  theaterId: string;
+  namePt: string;
+  nameEn: string;
+  isSubregion?: boolean;
+  totalTerritories: number;
+  requiredTerritories: number;
+  ownedByPlayer: Record<string, number>;
+  hegemonPlayerId: string | null;
+  isNearHegemony?: boolean;
+  perks: TheaterHegemonyPerks;
+}
+
+export interface CardTradePreview {
+  isValid: boolean;
+  errorMessage?: string;
+  primaryCardId: string;
+  primarySymbol: NormalizedCardSymbol;
+  armies: number;
+  money: number;
+  steel: number;
+  oil: number;
+  territoryBonuses: { territoryId: string; namePt: string; armies: number }[];
 }
 
 export * from "./identity.js";

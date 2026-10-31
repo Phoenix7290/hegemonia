@@ -12,17 +12,23 @@
   import { ui } from "../lib/ui.svelte";
   import { CLASSIC_MAP, ASIA_SUBREGIONS } from "@hegemonia/maps";
   import {
+    calculateCardTradePreview,
     calculateTurnEconomy,
     DEFAULT_MARKET_CONFIG,
     findValidTradeTriplet,
+    getHegemonyStatus,
     getTradeBonusArmies,
     playerHasMarket,
   } from "@hegemonia/engine";
-  import type {
-    GameState,
-    PlayerColor,
-    PlayerState,
-    ResourceType,
+  import {
+    normalizeCardSymbol,
+    type CardTradePreview,
+    type GameState,
+    type PlayerColor,
+    type PlayerState,
+    type ResourceType,
+    type TerritoryCard,
+    type TheaterHegemonyStatus,
   } from "@hegemonia/shared";
 
   const COLOR_HEX: Record<PlayerColor, string> = {
@@ -149,6 +155,56 @@
   let validTradeTriplet = $derived(
     myPlayerState ? findValidTradeTriplet(myPlayerState.cards) : null
   );
+
+  let selectedTradeCardIds = $state<string[]>([]);
+  let primaryTradeCardId = $state<string | null>(null);
+  let chosenTradeResource = $state<"steel" | "oil">("steel");
+
+  let hegemonyTheaters = $derived(
+    game ? getHegemonyStatus(game) : []
+  );
+
+  let selectedTradeCards = $derived.by(() => {
+    if (!myPlayerState) return [];
+    return myPlayerState.cards.filter((c) => selectedTradeCardIds.includes(c.id));
+  });
+
+  let cardTradePreview = $derived.by(() => {
+    if (!game || !myPlayerId || selectedTradeCards.length !== 3) return null;
+    return calculateCardTradePreview(
+      selectedTradeCards,
+      primaryTradeCardId ?? selectedTradeCards[0]?.id,
+      chosenTradeResource,
+      game,
+      myPlayerId,
+      CLASSIC_MAP
+    );
+  });
+
+  function toggleSelectCard(cardId: string) {
+    if (selectedTradeCardIds.includes(cardId)) {
+      selectedTradeCardIds = selectedTradeCardIds.filter((id) => id !== cardId);
+      if (primaryTradeCardId === cardId) {
+        primaryTradeCardId = selectedTradeCardIds[0] ?? null;
+      }
+    } else {
+      if (selectedTradeCardIds.length >= 3) {
+        selectedTradeCardIds = [...selectedTradeCardIds.slice(1), cardId];
+      } else {
+        selectedTradeCardIds = [...selectedTradeCardIds, cardId];
+      }
+      if (!primaryTradeCardId || !selectedTradeCardIds.includes(primaryTradeCardId)) {
+        primaryTradeCardId = selectedTradeCardIds[0] ?? cardId;
+      }
+    }
+  }
+
+  function autoSelectTriplet() {
+    if (validTradeTriplet) {
+      selectedTradeCardIds = [...validTradeTriplet];
+      primaryTradeCardId = validTradeTriplet[0];
+    }
+  }
 
   let nextTradeBonus = $derived(
     game ? getTradeBonusArmies(game.tradeCount) : 4
@@ -623,34 +679,65 @@
     {#if showContinents}
       <div class="continents-dropdown">
         <div class="dropdown-section-title">{t("classic_continents_section")}</div>
-        {#each CLASSIC_MAP.continents.filter((c) => c.id !== "asia") as c}
-          {@const terrs = CLASSIC_MAP.territories.filter((t) => t.continent === c.id)}
-          {@const ownerId = game.territories[terrs[0].id]?.ownerId}
-          {@const isMonopoly = terrs.every((t) => game!.territories[t.id].ownerId === ownerId)}
-          <div class="cont-pill">
-            <span>{getContinentName(c.id)}</span>
+        {#each hegemonyTheaters.filter((h) => !h.isSubregion) as h}
+          {@const hegemonPlayer = h.hegemonPlayerId ? game?.players.find((p) => p.id === h.hegemonPlayerId) : null}
+          {@const myCount = myPlayerId ? (h.ownedByPlayer[myPlayerId] ?? 0) : 0}
+          <div
+            class="cont-pill"
+            class:hegemony-active={Boolean(hegemonPlayer)}
+            class:near-hegemony={h.isNearHegemony && !hegemonPlayer}
+            title="{h.perks.specialPerkPt} — Meta: {h.requiredTerritories}/{h.totalTerritories}"
+          >
+            <div class="cont-left">
+              <span class="cont-title">{getContinentName(h.theaterId)}</span>
+              <span class="cont-ratio">
+                {myCount}/{h.totalTerritories} <span class="cont-goal">({h.requiredTerritories})</span>
+              </span>
+            </div>
             <div class="cont-right">
-              {#if isMonopoly}
-                {@const p = game.players.find((plr) => plr.id === ownerId)}
-                {#if p}<FactionFlag color={p.color} width={16} height={10} />{/if}
+              {#if hegemonPlayer}
+                <div class="hegemon-tag" title="{hegemonPlayer.name}: {h.perks.specialPerkPt}">
+                  <FactionFlag color={hegemonPlayer.color} width={15} height={9} />
+                  <Icon name="capital" size={12} color="#facc15" />
+                </div>
+              {:else if h.isNearHegemony}
+                <span class="dispute-badge" title={t("hegemony_dispute")}>
+                  <Icon name="swords" size={11} color="#f59e0b" />
+                </span>
               {/if}
-              <span class="bonus-tag">+{c.bonus}</span>
+              <span class="bonus-tag">+{h.perks.infantry}</span>
             </div>
           </div>
         {/each}
 
         <div class="dropdown-section-title">{t("asia_subregions_section")}</div>
-        {#each ASIA_SUBREGIONS as sub}
-          {@const ownerId = game.territories[sub.territoryIds[0]]?.ownerId}
-          {@const isMonopoly = sub.territoryIds.every((tid) => game!.territories[tid]?.ownerId === ownerId)}
-          <div class="cont-pill asia-sub-pill">
-            <span>{getSubregionName(sub.id)}</span>
+        {#each hegemonyTheaters.filter((h) => h.isSubregion) as h}
+          {@const hegemonPlayer = h.hegemonPlayerId ? game?.players.find((p) => p.id === h.hegemonPlayerId) : null}
+          {@const myCount = myPlayerId ? (h.ownedByPlayer[myPlayerId] ?? 0) : 0}
+          <div
+            class="cont-pill asia-sub-pill"
+            class:hegemony-active={Boolean(hegemonPlayer)}
+            class:near-hegemony={h.isNearHegemony && !hegemonPlayer}
+            title="{h.perks.specialPerkPt} — Meta: {h.requiredTerritories}/{h.totalTerritories}"
+          >
+            <div class="cont-left">
+              <span class="cont-title">{getSubregionName(h.theaterId)}</span>
+              <span class="cont-ratio">
+                {myCount}/{h.totalTerritories} <span class="cont-goal">({h.requiredTerritories})</span>
+              </span>
+            </div>
             <div class="cont-right">
-              {#if isMonopoly}
-                {@const p = game.players.find((plr) => plr.id === ownerId)}
-                {#if p}<FactionFlag color={p.color} width={16} height={10} />{/if}
+              {#if hegemonPlayer}
+                <div class="hegemon-tag" title="{hegemonPlayer.name}: {h.perks.specialPerkPt}">
+                  <FactionFlag color={hegemonPlayer.color} width={15} height={9} />
+                  <Icon name="capital" size={12} color="#facc15" />
+                </div>
+              {:else if h.isNearHegemony}
+                <span class="dispute-badge" title={t("hegemony_dispute")}>
+                  <Icon name="swords" size={11} color="#f59e0b" />
+                </span>
               {/if}
-              <span class="bonus-tag">+{sub.bonus}</span>
+              <span class="bonus-tag">+{h.perks.infantry}</span>
             </div>
           </div>
         {/each}
@@ -1058,35 +1145,67 @@
       </div>
     {/if}
 
-    <!-- Supply Cards & Escalation Drawer -->
+    <!-- Supply Cards & Escalation Drawer 2.0 (HEGEM-73) -->
     {#if activeRightDrawer === "cards" && myPlayerState}
       <div class="floating-drawer cards-drawer">
         <div class="drawer-header">
-          <h4><Icon name="cards" size={15} /> {t("cards_count", { count: myPlayerState.cards.length })}</h4>
+          <h4><Icon name="cards" size={15} /> {t("cards_exchange_mode_2")}</h4>
           <button class="btn-close" onclick={() => (activeRightDrawer = null)} aria-label={t("close")}><Icon name="close" size={14} /></button>
         </div>
 
         <div class="escalation-banner">
-          <span>{t("cards_exchange_next", { count: (game.tradeCount ?? 0) + 1 })}</span>
-          <strong>+{nextTradeBonus} {t("divisions", { count: nextTradeBonus })}</strong>
+          <span>{t("cards_count", { count: myPlayerState.cards.length })}</span>
+          {#if validTradeTriplet && selectedTradeCardIds.length < 3}
+            <button class="auto-triplet-btn" onclick={autoSelectTriplet} type="button">
+              <Icon name="swords" size={12} /> {t("cards_auto_select")}
+            </button>
+          {/if}
         </div>
 
+        <!-- Hand Cards Grid with Selection -->
         <div class="cards-grid">
           {#each myPlayerState.cards as c}
-            <div class="card-item">
-              <span class="card-symbol">
-                {c.symbol === "circle"
-                  ? t("card_symbol_circle")
-                  : c.symbol === "square"
-                    ? t("card_symbol_square")
-                    : c.symbol === "triangle"
-                      ? t("card_symbol_triangle")
-                      : t("card_symbol_joker")}
-              </span>
+            {@const sym = normalizeCardSymbol(c.symbol)}
+            {@const isSelected = selectedTradeCardIds.includes(c.id)}
+            {@const isPrimary = primaryTradeCardId === c.id}
+            {@const isTerritoryOwned = Boolean(c.territoryId && game?.territories[c.territoryId]?.ownerId === myPlayerId)}
+            <button
+              class="card-item"
+              class:selected={isSelected}
+              class:primary-card={isPrimary}
+              onclick={() => toggleSelectCard(c.id)}
+              type="button"
+            >
+              <div class="card-item-head">
+                <span class="card-symbol-badge symbol-{sym}">
+                  {#if sym === "infantry"}
+                    <Icon name="infantry" size={13} color="#60a5fa" />
+                    <span>{t("card_symbol_circle")}</span>
+                  {:else if sym === "resource"}
+                    <Icon name="steel" size={13} color="#f97316" />
+                    <span>{t("card_symbol_square")}</span>
+                  {:else if sym === "treasury"}
+                    <Icon name="coins" size={13} color="#fbbf24" />
+                    <span>{t("card_symbol_triangle")}</span>
+                  {:else}
+                    <Icon name="capital" size={13} color="#facc15" />
+                    <span>{t("card_symbol_joker")}</span>
+                  {/if}
+                </span>
+                {#if isSelected}
+                  <span class="selected-indicator">
+                    <Icon name="check" size={12} color="#10b981" />
+                  </span>
+                {/if}
+              </div>
+
               <span class="card-territory">
                 {c.territoryId ? getTerritoryName(c.territoryId) : t("card_wildcard")}
+                {#if isTerritoryOwned}
+                  <small class="territory-owned-tag" title="+1 divisão tática">(+1)</small>
+                {/if}
               </span>
-            </div>
+            </button>
           {/each}
           {#if myPlayerState.cards.length === 0}
             <p class="empty-cards-note">
@@ -1095,12 +1214,112 @@
           {/if}
         </div>
 
-        {#if isMyTurn && validTradeTriplet && (game.phase === "deploy" || myPlayerState.cards.length >= 5)}
+        <!-- Tactical Focus & War Material Selector (When 3 Cards are Selected) -->
+        {#if selectedTradeCards.length === 3}
+          <div class="trade-configuration-box">
+            <div class="config-section-title">
+              <Icon name="rank" size={13} /> {t("cards_set_focus_btn")}
+            </div>
+
+            <!-- Primary Focus Selection Row -->
+            <div class="focus-selector-row">
+              {#each selectedTradeCards as c}
+                {@const sym = normalizeCardSymbol(c.symbol)}
+                {@const isFocus = primaryTradeCardId === c.id}
+                <button
+                  class="focus-btn"
+                  class:is-primary={isFocus}
+                  onclick={() => (primaryTradeCardId = c.id)}
+                  type="button"
+                >
+                  <span class="focus-btn-sym">
+                    {#if sym === "infantry"}<Icon name="infantry" size={11} />
+                    {:else if sym === "resource"}<Icon name="steel" size={11} />
+                    {:else if sym === "treasury"}<Icon name="coins" size={11} />
+                    {:else}<Icon name="capital" size={11} />{/if}
+                    {c.territoryId ? getTerritoryName(c.territoryId).slice(0, 8) : "CORINGA"}
+                  </span>
+                  <span class="focus-tag-label">{isFocus ? t("cards_focus_primary") : t("cards_focus_support")}</span>
+                </button>
+              {/each}
+            </div>
+
+            <!-- War Material Resource Choice (Steel vs Oil) -->
+            {#if selectedTradeCards.some((c) => normalizeCardSymbol(c.symbol) === "resource" || normalizeCardSymbol(c.symbol) === "joker")}
+              <div class="resource-selector-row">
+                <span class="resource-choice-label">{t("cards_resource_choose")}</span>
+                <div class="resource-toggle-buttons">
+                  <button
+                    class="res-btn"
+                    class:active={chosenTradeResource === "steel"}
+                    onclick={() => (chosenTradeResource = "steel")}
+                    type="button"
+                  >
+                    <Icon name="steel" size={12} /> {t("cards_resource_steel")}
+                  </button>
+                  <button
+                    class="res-btn"
+                    class:active={chosenTradeResource === "oil"}
+                    onclick={() => (chosenTradeResource = "oil")}
+                    type="button"
+                  >
+                    <Icon name="oil" size={12} /> {t("cards_resource_oil")}
+                  </button>
+                </div>
+              </div>
+            {/if}
+
+            <!-- Real-time Tactical Preview Breakdown -->
+            {#if cardTradePreview}
+              <div class="tactical-preview-panel" class:invalid-preview={!cardTradePreview.isValid}>
+                <div class="preview-head">
+                  <Icon name="shield" size={12} />
+                  <span>{t("cards_preview_title")}</span>
+                </div>
+                {#if cardTradePreview.isValid}
+                  <div class="preview-metrics">
+                    {#if cardTradePreview.armies > 0}
+                      <span class="prev-metric metric-armies">+{cardTradePreview.armies} Divisões</span>
+                    {/if}
+                    {#if cardTradePreview.money > 0}
+                      <span class="prev-metric metric-money">+${cardTradePreview.money}</span>
+                    {/if}
+                    {#if cardTradePreview.steel > 0}
+                      <span class="prev-metric metric-steel">+{cardTradePreview.steel} Aço</span>
+                    {/if}
+                    {#if cardTradePreview.oil > 0}
+                      <span class="prev-metric metric-oil">+{cardTradePreview.oil} Petróleo</span>
+                    {/if}
+                  </div>
+                  {#if cardTradePreview.territoryBonuses.length > 0}
+                    <div class="prev-territories-note">
+                      +1 divisão em: {cardTradePreview.territoryBonuses.map((b) => b.namePt).join(", ")}
+                    </div>
+                  {/if}
+                {:else}
+                  <p class="preview-error-msg">{cardTradePreview.errorMessage}</p>
+                {/if}
+              </div>
+            {/if}
+          </div>
+        {/if}
+
+        <!-- Trade Confirmation CTA -->
+        {#if isMyTurn && selectedTradeCards.length === 3 && cardTradePreview?.isValid && (game.phase === "deploy" || myPlayerState.cards.length >= 5)}
           <button
             class="btn primary-gold full-width"
-            onclick={() => sendAction({ type: "trade_cards", cardIds: validTradeTriplet })}
+            onclick={() => {
+              sendAction({
+                type: "trade_cards",
+                cardIds: [selectedTradeCardIds[0], selectedTradeCardIds[1], selectedTradeCardIds[2]],
+                primaryCardId: primaryTradeCardId ?? selectedTradeCardIds[0],
+                chosenResource: chosenTradeResource,
+              });
+              selectedTradeCardIds = [];
+              primaryTradeCardId = null;
+            }}
           >
-            <Icon name="shield" size={15} /> {t("cards_exchange_btn", { armies: nextTradeBonus })}
+            <Icon name="swords" size={15} /> Confirmar Troca de Cartas 2.0
           </button>
         {/if}
 
@@ -1742,10 +1961,51 @@
     justify-content: space-between;
     align-items: center;
     font-size: 0.72rem;
-    padding: 0.22rem 0.45rem;
+    padding: 0.25rem 0.45rem;
     background: rgba(5, 9, 18, 0.75);
+    border: 1px solid rgba(148, 163, 184, 0.12);
     border-radius: 4px;
     color: #cbd5e1;
+    transition: all 0.15s ease;
+  }
+  .cont-pill.hegemony-active {
+    background: rgba(234, 179, 8, 0.08);
+    border-color: rgba(234, 179, 8, 0.35);
+  }
+  .cont-pill.near-hegemony {
+    border-color: rgba(245, 158, 11, 0.45);
+    box-shadow: 0 0 6px rgba(245, 158, 11, 0.15);
+  }
+  .cont-left {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+  }
+  .cont-title {
+    font-weight: 600;
+  }
+  .cont-ratio {
+    font-size: 0.65rem;
+    color: #94a3b8;
+    font-family: var(--font-mono);
+  }
+  .cont-goal {
+    color: #64748b;
+  }
+  .hegemon-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0.1rem 0.25rem;
+    background: rgba(234, 179, 8, 0.18);
+    border-radius: 3px;
+  }
+  .dispute-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.1rem 0.2rem;
+    background: rgba(245, 158, 11, 0.2);
+    border-radius: 3px;
   }
   .asia-sub-pill {
     border-left: 2px solid #eab308;
@@ -2621,23 +2881,203 @@
     max-height: 160px;
     overflow-y: auto;
   }
-  .card-item {
-    background: rgba(15, 23, 42, 0.8);
-    border: 1px solid rgba(148, 163, 184, 0.22);
+  .auto-triplet-btn {
+    background: rgba(234, 179, 8, 0.2);
+    border: 1px solid rgba(234, 179, 8, 0.4);
+    color: #fef08a;
+    font-size: 0.65rem;
+    font-weight: 700;
+    padding: 0.15rem 0.4rem;
     border-radius: 4px;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+  }
+  .auto-triplet-btn:hover {
+    background: rgba(234, 179, 8, 0.35);
+  }
+  .card-item {
+    background: rgba(15, 23, 42, 0.85);
+    border: 1px solid rgba(148, 163, 184, 0.22);
+    border-radius: 5px;
     padding: 0.35rem 0.45rem;
     display: flex;
     flex-direction: column;
-    gap: 0.15rem;
+    gap: 0.2rem;
+    cursor: pointer;
+    text-align: left;
+    transition: all 0.15s ease;
   }
-  .card-symbol {
-    font-size: 0.76rem;
-    font-weight: 700;
-    color: #facc15;
+  .card-item:hover {
+    border-color: rgba(234, 179, 8, 0.4);
+    background: rgba(30, 41, 59, 0.85);
   }
+  .card-item.selected {
+    border-color: #38bdf8;
+    background: rgba(56, 189, 248, 0.12);
+  }
+  .card-item.primary-card {
+    border-color: #facc15;
+    background: rgba(250, 204, 21, 0.15);
+    box-shadow: 0 0 6px rgba(250, 204, 21, 0.2);
+  }
+  .card-item-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .card-symbol-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    font-size: 0.68rem;
+    font-weight: 800;
+  }
+  .symbol-infantry { color: #60a5fa; }
+  .symbol-resource { color: #f97316; }
+  .symbol-treasury { color: #fbbf24; }
+  .symbol-joker { color: #facc15; }
   .card-territory {
     font-size: 0.65rem;
     color: #cbd5e1;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .territory-owned-tag {
+    color: #34d399;
+    font-weight: 700;
+  }
+  .trade-configuration-box {
+    margin-top: 0.35rem;
+    padding: 0.45rem;
+    background: rgba(5, 9, 18, 0.85);
+    border: 1px solid rgba(148, 163, 184, 0.25);
+    border-radius: 6px;
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+  }
+  .config-section-title {
+    font-size: 0.66rem;
+    font-weight: 800;
+    color: #facc15;
+    text-transform: uppercase;
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+  }
+  .focus-selector-row {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 0.25rem;
+  }
+  .focus-btn {
+    background: rgba(15, 23, 42, 0.9);
+    border: 1px solid rgba(148, 163, 184, 0.3);
+    border-radius: 4px;
+    padding: 0.25rem 0.2rem;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.15rem;
+    cursor: pointer;
+    color: #94a3b8;
+    transition: all 0.15s;
+  }
+  .focus-btn.is-primary {
+    border-color: #facc15;
+    background: rgba(250, 204, 21, 0.2);
+    color: #fef08a;
+  }
+  .focus-btn-sym {
+    font-size: 0.62rem;
+    font-weight: 700;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.2rem;
+  }
+  .focus-tag-label {
+    font-size: 0.58rem;
+    font-weight: 800;
+    letter-spacing: 0.03em;
+  }
+  .resource-selector-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 0.66rem;
+    color: #cbd5e1;
+  }
+  .resource-toggle-buttons {
+    display: flex;
+    gap: 0.25rem;
+  }
+  .res-btn {
+    background: rgba(15, 23, 42, 0.85);
+    border: 1px solid rgba(148, 163, 184, 0.3);
+    border-radius: 4px;
+    padding: 0.18rem 0.4rem;
+    font-size: 0.64rem;
+    color: #94a3b8;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+  }
+  .res-btn.active {
+    border-color: #38bdf8;
+    background: rgba(56, 189, 248, 0.25);
+    color: #ffffff;
+    font-weight: 700;
+  }
+  .tactical-preview-panel {
+    background: rgba(15, 23, 42, 0.95);
+    border: 1px solid rgba(56, 189, 248, 0.3);
+    border-radius: 5px;
+    padding: 0.35rem 0.45rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+  }
+  .tactical-preview-panel.invalid-preview {
+    border-color: rgba(239, 68, 68, 0.4);
+    background: rgba(239, 68, 68, 0.08);
+  }
+  .preview-head {
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+    font-size: 0.64rem;
+    font-weight: 700;
+    color: #38bdf8;
+    text-transform: uppercase;
+  }
+  .preview-metrics {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+  }
+  .prev-metric {
+    font-size: 0.68rem;
+    font-weight: 800;
+    padding: 0.1rem 0.3rem;
+    border-radius: 3px;
+  }
+  .metric-armies { background: rgba(59, 130, 246, 0.25); color: #93c5fd; }
+  .metric-money { background: rgba(234, 179, 8, 0.25); color: #fde047; }
+  .metric-steel { background: rgba(148, 163, 184, 0.25); color: #e2e8f0; }
+  .metric-oil { background: rgba(249, 115, 22, 0.25); color: #fdba74; }
+  .prev-territories-note {
+    font-size: 0.62rem;
+    color: #34d399;
+    font-weight: 600;
+  }
+  .preview-error-msg {
+    margin: 0;
+    font-size: 0.64rem;
+    color: #fca5a5;
   }
   .empty-cards-note {
     grid-column: 1 / -1;
