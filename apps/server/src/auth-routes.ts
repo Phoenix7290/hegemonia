@@ -34,6 +34,7 @@ import {
   unblockUser,
 } from "./social-repository.js";
 import { getPlayerMatchHistory, getPlayerStats } from "./stats-repository.js";
+import { matchmakingService } from "./matchmaking.js";
 import {
   clearSessionCookie,
   createRateLimiter,
@@ -89,6 +90,7 @@ export async function createAuthRouter(avatarStorage: AvatarStorage = createAvat
 
   router.post("/auth/logout", requireIdentity, async (_req, res, next) => {
     try {
+      await matchmakingService.logout(identity(res).user.id);
       await logoutAccount(identity(res).sessionId);
       clearSessionCookie(res);
       res.status(204).end();
@@ -97,6 +99,7 @@ export async function createAuthRouter(avatarStorage: AvatarStorage = createAvat
 
   router.post("/auth/logout-all", requireIdentity, async (_req, res, next) => {
     try {
+      await matchmakingService.logout(identity(res).user.id);
       await logoutAllAccounts(identity(res).user.id);
       clearSessionCookie(res);
       res.status(204).end();

@@ -1817,7 +1817,6 @@ export function applyAction(
           defenderDice[0] = Math.max(1, defenderDice[0] - 1);
         }
       }
-
       // HEGEM-32: Territorial Fortification combat modifiers
       // Level 1 (Casamata): +1 to highest defense die
       // Level 2 (Fortaleza): +1 to highest defense die AND -1 to highest enemy attack die

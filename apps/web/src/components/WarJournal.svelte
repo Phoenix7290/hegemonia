@@ -191,9 +191,10 @@
     <button
       class="j-collapse-btn"
       onclick={() => (collapsed = !collapsed)}
+      aria-label={collapsed ? t("expand_journal") : t("collapse_journal")}
       title={collapsed ? t("expand_journal") : t("collapse_journal")}
     >
-      {collapsed ? "▲" : "▼"}
+      <Icon name={collapsed ? "chevron-up" : "chevron-down"} size={14} />
     </button>
   </div>
 
@@ -203,7 +204,7 @@
         <div class="telemetry-top">
           <span class="telemetry-route">
             {getTerritoryName(lastCombat.fromTerritoryId)}
-            <strong>→</strong>
+            <strong><Icon name="arrow-right" size={12} /></strong>
             {getTerritoryName(lastCombat.toTerritoryId)}
           </span>
           {#if lastCombat.conquered}
@@ -239,12 +240,14 @@
 
         {#if lastCombat.lastStandBonus}
           <div class="last-stand-badge" title="Bônus de Mobilização Total / Última Resistência">
-            ⭐ Mobilização Total ({lastCombat.attackerModifier ? `ATQ +${lastCombat.attackerModifier}` : `DEF +${lastCombat.defenderModifier}`})
+            <Icon name="capital" size={12} />
+            <span>Mobilização Total ({lastCombat.attackerModifier ? `ATQ +${lastCombat.attackerModifier}` : `DEF +${lastCombat.defenderModifier}`})</span>
           </div>
         {/if}
         {#if lastCombat.unescortedArtilleryPenalty}
           <div class="last-stand-badge" style="background: rgba(239, 68, 68, 0.2); border-color: #ef4444; color: #fca5a5;" title="Artilharia inimiga desprotegida sem escolta de infantaria ou blindados (-1 DEF)">
-            💥 Artilharia Desprotegida (-1 DEF)
+            <Icon name="artillery" size={12} color="#fca5a5" />
+            <span>Artilharia Desprotegida (-1 DEF)</span>
           </div>
         {/if}
       </div>
@@ -492,6 +495,10 @@
     text-align: center;
     text-transform: uppercase;
     box-shadow: 0 0 10px rgba(245, 158, 11, 0.2);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.35rem;
   }
 
   /* Log Scroller */
