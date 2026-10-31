@@ -386,8 +386,9 @@
             <!-- svelte-ignore a11y_no_static_element_interactions -->
             <g
               class="territory-group"
-              data-testid="territory-{t.id}"
+              data-testid={offsetX === 0 ? `territory-${t.id}` : `territory-${t.id}-clone`}
               data-territory-id={t.id}
+              data-primary-globe={offsetX === 0 ? "true" : undefined}
               onclick={() => onTerritoryClick(t.id)}
               onmouseenter={() => (hoveredTerritoryId = t.id)}
               onmouseleave={() => {
@@ -477,7 +478,7 @@
                 <g
                   transform="translate({t.center[0]}, {t.center[1]}) scale({COMPACT_BADGE_IDS.has(t.id) ? 0.82 : 0.94})"
                   class="division-counter"
-                  data-testid="badge-troop-{t.id}"
+                  data-testid={offsetX === 0 ? `badge-troop-${t.id}` : undefined}
                 >
                   <!-- Capital Crown / Vector Seal (HEGEM-63) -->
                   {#if isCapital}
@@ -758,7 +759,7 @@
           <!-- Floating Regional & Sub-Regional Theatre Banners in "regional" Overlay -->
           {#if effectiveOverlays.regional && !cleanMapMode}
             {#each REGION_BANNERS as rb}
-              <g transform="translate({rb.x}, {rb.y})" pointer-events="none" data-testid="badge-theater-{rb.label.toLowerCase().replace(/[^a-z0-9]/g, '-')}">
+              <g transform="translate({rb.x}, {rb.y})" pointer-events="none" data-testid={offsetX === 0 ? `badge-theater-${rb.label.toLowerCase().replace(/[^a-z0-9]/g, '-')}` : undefined}>
                 <rect
                   x="-68"
                   y="-11"
