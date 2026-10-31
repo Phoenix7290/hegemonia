@@ -3,6 +3,7 @@ import { Server } from "@colyseus/core";
 import { WebSocketTransport } from "@colyseus/ws-transport";
 import { HegemoniaRoom } from "./room.js";
 import { checkDatabase, closeDatabase } from "./db.js";
+import { runMigrations } from "./migrate.js";
 import { createApp } from "./app.js";
 
 const PORT = Number(process.env.PORT ?? 2567);
@@ -14,6 +15,7 @@ const gameServer = new Server({ transport: new WebSocketTransport({ server: http
 gameServer.define("hegemonia", HegemoniaRoom).filterBy(["roomCode"]);
 
 await checkDatabase();
+await runMigrations();
 httpServer.listen(PORT, HOST, () => {
   console.log(`Hegemonia Server listening on [${HOST}]:${PORT} (IPv6 + IPv4 Dual-Stack)`);
 });
