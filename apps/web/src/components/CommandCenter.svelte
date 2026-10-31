@@ -1,5 +1,12 @@
 <script lang="ts">
-  import type { LeaderboardRow, PlayerColor } from "@hegemonia/shared";
+  import type {
+    CompetitionMode,
+    LeaderboardRow,
+    MatchOrigin,
+    MatchmakingStatus,
+    PlayerColor,
+    PublicQueueMode,
+  } from "@hegemonia/shared";
   import { api, navigate } from "../lib/api";
   import { auth } from "../lib/auth.svelte";
   import type { CommunicationsController } from "../lib/communications.svelte";
@@ -9,6 +16,7 @@
   import CommunicationsCenter from "./CommunicationsCenter.svelte";
   import FactionFlag from "./FactionFlag.svelte";
   import Icon from "./Icon.svelte";
+  import MatchmakingPanel from "./MatchmakingPanel.svelte";
 
   export interface LobbyPlayerView {
     token: string;
@@ -31,6 +39,13 @@
     lobbyPlayers,
     communications,
     connecting,
+    matchmakingStatus,
+    matchmakingBusy,
+    competitionMode = "custom",
+    matchOrigin = "lobby",
+    onQueue,
+    onCancelQueue,
+    onConnectMatch,
     onCreateRoom,
     onJoinRoom,
     onLeaveRoom,
@@ -47,6 +62,13 @@
     lobbyPlayers: LobbyPlayerView[];
     communications: CommunicationsController;
     connecting: boolean;
+    matchmakingStatus: MatchmakingStatus;
+    matchmakingBusy: boolean;
+    competitionMode?: CompetitionMode;
+    matchOrigin?: MatchOrigin;
+    onQueue: (mode: PublicQueueMode) => void;
+    onCancelQueue: () => void;
+    onConnectMatch: () => void;
     onCreateRoom: () => void;
     onJoinRoom: () => void;
     onLeaveRoom: () => void;
@@ -152,42 +174,17 @@
             </div>
           {/if}
 
-          <!-- Create New War Room CTA -->
-          <div class="ops-action-block">
-            <button class="launch-campaign-btn" disabled={connecting} onclick={onCreateRoom}>
-              <div class="launch-icon-box">
-                <Icon name="swords" size={22} />
-              </div>
-              <div class="launch-text">
-                <strong>{connecting ? t("deck_btn_creating_room") : t("deck_btn_create_room")}</strong>
-                <small>{t("deck_create_room_sub")}</small>
-              </div>
-            </button>
-          </div>
-
-          <div class="tactical-divider">
-            <span>{t("deck_or_join")}</span>
-          </div>
-
-          <!-- Join Existing Room by Code -->
-          <div class="join-operation-box">
-            <div class="code-input-wrap">
-              <span class="code-prefix">OP //</span>
-              <input
-                bind:value={roomCodeInput}
-                maxlength="6"
-                placeholder={t("deck_room_code_placeholder")}
-                onkeydown={(e) => e.key === "Enter" && onJoinRoom()}
-              />
-            </div>
-            <button
-              class="join-btn"
-              disabled={connecting || !roomCodeInput.trim()}
-              onclick={onJoinRoom}
-            >
-              <Icon name="compass" size={16} /> {t("deck_btn_join")}
-            </button>
-          </div>
+          <MatchmakingPanel
+            status={matchmakingStatus}
+            busy={matchmakingBusy}
+            {connecting}
+            bind:roomCodeInput
+            {onQueue}
+            {onCancelQueue}
+            {onConnectMatch}
+            {onCreateRoom}
+            {onJoinRoom}
+          />
         </section>
 
         <!-- RIGHT COLUMN: STRATEGIC BRIEFING & LIVE LEADERBOARD -->
@@ -242,7 +239,8 @@
                 <h3>{t("deck_honor_title")}</h3>
               </div>
               <button class="text-gold-btn" onclick={() => navigate("/leaderboard")}>
-                {t("deck_btn_full_ranking")}
+                <span>{t("deck_btn_full_ranking")}</span>
+                <Icon name="chevron-right" size={14} />
               </button>
             </div>
 
@@ -380,7 +378,7 @@
                         <small>{t("lobby_slot_waiting")}</small>
                       </div>
                     </div>
-                    {#if amIHost && idx === 0}
+                    {#if amIHost && competitionMode === "custom" && idx === 0}
                       <button class="outline-button mini-bot-btn" onclick={onAddBot}>
                         <Icon name="bot" size={13} /> {t("lobby_btn_alloc_ai")}
                       </button>
@@ -448,7 +446,11 @@
         <!-- Briefing Footer Actions -->
         <footer class="briefing-footer">
           <div class="footer-status">
-            {#if !amIHost}
+            {#if matchOrigin === "matchmaking" && (lobbyPlayers.length < 2 || lobbyPlayers.some((player) => !player.connected))}
+              <span class="waiting-host-note">
+                <span class="pulse-dot"></span> {t("lobby_waiting_reserved")}
+              </span>
+            {:else if !amIHost}
               <span class="waiting-host-note">
                 <span class="pulse-dot"></span> {t("lobby_waiting_host")}
               </span>
@@ -464,7 +466,7 @@
           </div>
 
           <div class="footer-buttons">
-            {#if amIHost && lobbyPlayers.length < 6}
+            {#if amIHost && competitionMode === "custom" && lobbyPlayers.length < 6}
               <button class="outline-button add-ai-btn" onclick={onAddBot}>
                 <Icon name="bot" size={16} /> {t("lobby_btn_add_ai")}
               </button>
@@ -473,7 +475,7 @@
             {#if amIHost}
               <button
                 class="launch-battle-btn"
-                disabled={lobbyPlayers.length < 2}
+                disabled={lobbyPlayers.length < 2 || (matchOrigin === "matchmaking" && lobbyPlayers.some((player) => !player.connected))}
                 onclick={onStartGame}
               >
                 <Icon name="swords" size={18} /> {t("lobby_btn_launch_campaign")}
@@ -719,124 +721,6 @@
     background: rgba(234, 179, 8, 0.12);
     color: #ffffff;
     border-color: transparent;
-  }
-
-  /* Launch Campaign CTA */
-  .launch-campaign-btn {
-    width: 100%;
-    display: flex;
-    align-items: center;
-    gap: 16px;
-    padding: 16px 20px;
-    background: linear-gradient(135deg, #ca8a04 0%, #854d0e 100%);
-    border: 1px solid #fde047;
-    border-radius: 6px;
-    color: #ffffff;
-    text-align: left;
-    box-shadow: 0 10px 30px rgba(202, 138, 4, 0.32), inset 0 1px 0 rgba(255, 255, 255, 0.25);
-  }
-  .launch-campaign-btn:hover:not(:disabled) {
-    background: linear-gradient(135deg, #eab308 0%, #a16207 100%);
-    border-color: #fef08a;
-    transform: translateY(-1px);
-    box-shadow: 0 14px 36px rgba(234, 179, 8, 0.45);
-  }
-  .launch-icon-box {
-    width: 46px;
-    height: 46px;
-    border-radius: 6px;
-    background: rgba(6, 10, 19, 0.35);
-    border: 1px solid rgba(254, 240, 138, 0.45);
-    display: grid;
-    place-items: center;
-    color: #fef08a;
-    flex-shrink: 0;
-  }
-  .launch-text {
-    display: flex;
-    flex-direction: column;
-    gap: 3px;
-  }
-  .launch-text strong {
-    font-family: var(--font-display);
-    font-size: 1.05rem;
-    letter-spacing: 0.08em;
-    color: #ffffff;
-  }
-  .launch-text small {
-    font-family: var(--font-sans);
-    font-size: 0.76rem;
-    font-weight: 400;
-    color: #fef08a;
-    opacity: 0.92;
-  }
-
-  .tactical-divider {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    color: #64748b;
-    font-family: var(--font-tactical);
-    font-size: 0.7rem;
-    font-weight: 700;
-    letter-spacing: 0.16em;
-  }
-  .tactical-divider::before,
-  .tactical-divider::after {
-    content: "";
-    flex: 1;
-    height: 1px;
-    background: rgba(148, 163, 184, 0.2);
-  }
-
-  .join-operation-box {
-    display: flex;
-    gap: 10px;
-  }
-  .code-input-wrap {
-    flex: 1;
-    display: flex;
-    align-items: center;
-    background: rgba(5, 9, 18, 0.92);
-    border: 1px solid rgba(148, 163, 184, 0.32);
-    border-radius: 5px;
-    padding-left: 12px;
-  }
-  .code-prefix {
-    font-family: var(--font-mono);
-    font-size: 0.78rem;
-    font-weight: 700;
-    color: #eab308;
-    user-select: none;
-  }
-  .code-input-wrap input {
-    border: 0;
-    background: transparent;
-    font-family: var(--font-mono);
-    font-size: 0.95rem;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.12em;
-    width: 100%;
-  }
-  .code-input-wrap input:focus {
-    box-shadow: none;
-  }
-  .join-btn {
-    padding: 0 20px;
-    background: linear-gradient(145deg, #1e293b, #0f172a);
-    border: 1px solid rgba(212, 175, 55, 0.45);
-    color: #fef08a;
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    font-size: 0.85rem;
-    text-transform: uppercase;
-  }
-  .join-btn:hover:not(:disabled) {
-    background: linear-gradient(145deg, #26354d, #162238);
-    border-color: #fde047;
-    color: #ffffff;
   }
 
   /* Side Column Cards */

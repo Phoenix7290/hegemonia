@@ -586,3 +586,4 @@ export function formatCompactTroops(count: number): string {
 
 export * from "./identity.js";
 export * from "./comms.js";
+export * from "./multiplayer.js";
