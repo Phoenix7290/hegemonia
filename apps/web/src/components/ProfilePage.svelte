@@ -1,5 +1,11 @@
 <script lang="ts">
-  import type { Badge, FriendSummary, PlayerStats, PublicProfile } from "@hegemonia/shared";
+  import {
+    calculateLevelProgress,
+    type Badge,
+    type FriendSummary,
+    type PlayerStats,
+    type PublicProfile,
+  } from "@hegemonia/shared";
   import { api, navigate } from "../lib/api";
   import { auth } from "../lib/auth.svelte";
   import { i18n, t } from "../i18n/index.svelte";
@@ -67,6 +73,10 @@
   function percent(value: number | null) {
     return value === null ? "—" : `${value.toFixed(1)}%`;
   }
+
+  let profileLevelProgress = $derived(
+    calculateLevelProgress(profile?.totalXp ?? 0)
+  );
 </script>
 
 {#if loading}
@@ -96,6 +106,10 @@
           >
             @{profile.username}
           </a>
+          <div class="profile-level-badge" title={t("xp_level_tooltip", { level: profile.level || profileLevelProgress.level, xp: profile.totalXp })}>
+            <span class="level-pill"><Icon name="rank" size={12} /> {t("xp_level_badge", { level: profile.level || profileLevelProgress.level })}</span>
+            <span class="level-xp-text">{profile.totalXp} XP</span>
+          </div>
           <p class="enlisted">
             {t("profile_commissioned_since", {
               date: i18n.formatDate(profile.createdAt, { month: "long", year: "numeric" }),
@@ -166,6 +180,11 @@
 
     {#if profile.canViewStats && stats?.career}
       <section class="stats-grid">
+        <article class="xp-stat-card">
+          <span>{t("xp_level_badge", { level: profile.level || profileLevelProgress.level })}</span>
+          <strong>{profile.totalXp} XP</strong>
+          <small>{profileLevelProgress.xpInCurrentLevel} / {profileLevelProgress.xpNeededForNextLevel} XP ({profileLevelProgress.progressPct}%)</small>
+        </article>
         <article>
           <span>{t("profile_stat_campaigns")}</span>
           <strong>{stats.career.matchesPlayed}</strong>
@@ -282,3 +301,35 @@
     {/if}
   </div>
 {/if}
+
+<style>
+  .profile-level-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 4px;
+  }
+  .level-pill {
+    background: rgba(56, 189, 248, 0.18);
+    color: #bae6fd;
+    border: 1px solid rgba(56, 189, 248, 0.45);
+    font-family: var(--font-tactical);
+    font-size: 0.65rem;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    padding: 2px 7px;
+    border-radius: 3px;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .level-xp-text {
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    color: #fde047;
+    font-weight: 700;
+  }
+  .xp-stat-card {
+    border-color: rgba(56, 189, 248, 0.35);
+  }
+</style>

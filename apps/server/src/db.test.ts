@@ -174,6 +174,62 @@ database("persistência PostgreSQL", () => {
     );
     expect(history.rows[0].count).toBe(2);
   });
+
+  it("concede XP e evolui nível atomicamente respeitando Custom < Casual < Ranqueada com idempotência", async () => {
+    const winnerUser = await createUser("xp_winner");
+    const loserUser = await createUser("xp_loser");
+    const state = makeState("pending");
+    state.round = 5;
+
+    const matchId = await matches.createMatch({
+      roomCode: "XP001",
+      seedCommitHash: state.seedCommitHash,
+      competitionMode: "ranked",
+      matchOrigin: "matchmaking",
+      seasonId,
+    });
+    await matches.startMatch(matchId, { ...state, id: matchId }, [
+      participant("p1", winnerUser, "blue"),
+      participant("p2", loserUser, "red"),
+    ]);
+
+    const endState = finishedState(matchId);
+    endState.round = 5;
+    await matches.appendMatchEvent(matchId, 1, "p1", { type: "end_turn" }, endState);
+
+    const grants = await connection.query<{
+      user_id: string;
+      total_xp: number;
+      level_before: number;
+      level_after: number;
+    }>(
+      "SELECT user_id, total_xp, level_before, level_after FROM player_xp_grants WHERE match_id = $1 ORDER BY total_xp DESC",
+      [matchId]
+    );
+
+    expect(grants.rows).toHaveLength(2);
+    // Winner gets 150 (base) + 90 (win) + 90 (1st) = 330 XP
+    expect(grants.rows[0]).toMatchObject({
+      user_id: winnerUser,
+      total_xp: 330,
+      level_before: 1,
+      level_after: 3, // 330 XP >= 303 XP (level 3)
+    });
+    // Loser gets 150 (base) + 50 (2nd) = 200 XP
+    expect(grants.rows[1]).toMatchObject({
+      user_id: loserUser,
+      total_xp: 200,
+      level_before: 1,
+      level_after: 2, // 200 XP >= 100 XP (level 2)
+    });
+
+    const userRows = await connection.query<{ id: string; total_xp: string; level: number }>(
+      "SELECT id, total_xp, level FROM users WHERE id IN ($1, $2) ORDER BY level DESC",
+      [winnerUser, loserUser]
+    );
+    expect(userRows.rows[0]).toMatchObject({ id: winnerUser, total_xp: "330", level: 3 });
+    expect(userRows.rows[1]).toMatchObject({ id: loserUser, total_xp: "200", level: 2 });
+  });
 });
 
 async function createCasualMatch(state: GameState): Promise<string> {
