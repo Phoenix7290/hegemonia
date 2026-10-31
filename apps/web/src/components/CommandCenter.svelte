@@ -477,7 +477,7 @@
 
           <div class="footer-buttons">
             {#if amIHost && competitionMode === "custom" && lobbyPlayers.length < 6}
-              <button class="outline-button add-ai-btn" onclick={onAddBot}>
+              <button class="outline-button add-ai-btn" data-testid="btn-add-bot" onclick={onAddBot}>
                 <Icon name="bot" size={16} /> {t("lobby_btn_add_ai")}
               </button>
             {/if}
@@ -485,6 +485,7 @@
             {#if amIHost}
               <button
                 class="launch-battle-btn"
+                data-testid="btn-start-game"
                 disabled={lobbyPlayers.length < 2 || (matchOrigin === "matchmaking" && lobbyPlayers.some((player) => !player.connected))}
                 onclick={onStartGame}
               >
