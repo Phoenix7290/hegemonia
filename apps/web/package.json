@@ -6,15 +6,18 @@
   "scripts": {
     "dev": "vite --host ::",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test:e2e": "playwright test",
+    "test:ai": "playwright test e2e/exploratory.spec.ts"
   },
   "dependencies": {
-    "@hegemonia/shared": "workspace:*",
-    "@hegemonia/maps": "workspace:*",
     "@hegemonia/engine": "workspace:*",
+    "@hegemonia/maps": "workspace:*",
+    "@hegemonia/shared": "workspace:*",
     "colyseus.js": "^0.16.4"
   },
   "devDependencies": {
+    "@playwright/test": "^1.64.1",
     "@sveltejs/vite-plugin-svelte": "^5.0.3",
     "svelte": "^5.19.9",
     "vite": "^6.1.0"

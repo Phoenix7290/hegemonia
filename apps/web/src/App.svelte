@@ -69,6 +69,7 @@
     getContinentName,
     getSubregionName,
   } from "./i18n/content.svelte";
+  import { installGameDebugHook } from "./lib/debug-hook";
 
   function getOrCreateToken(): string {
     const saved = localStorage.getItem("hegemonia_token");
@@ -160,6 +161,19 @@
 
   // HUD Drawers (Mutually Exclusive on Right Panel to Prevent Overlap)
   let activeRightDrawer = $state<"cards" | "objective" | "audio" | "market" | null>(null);
+
+  // Game State Debug Hook (Design for Testability: Playwright E2E & AI Exploratory QA)
+  const uninstallDebugHook = installGameDebugHook({
+    getGame: () => game,
+    setGame: (nextGame) => {
+      game = nextGame;
+    },
+    getMyPlayerId: () => myPlayerId,
+    sendAction,
+    selectTerritory: (id) => {
+      selectedFromId = id;
+    },
+  });
 
   // Session Resilience & Reconnection State
   let isReconnecting = $state(false);
@@ -553,6 +567,7 @@
   });
 
   onDestroy(() => {
+    uninstallDebugHook();
     stopMatchmakingPolling();
     connectionGeneration++;
     communications.detach();

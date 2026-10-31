@@ -63,7 +63,11 @@
       {@const isOwnedByMe = inspectedTerritory.state.ownerId === myPlayerId}
       {@const inspectedFortLevel = getTerritoryBuildingLevel(inspectedTerritory.state, "fortification")}
       {@const myRes = myPlayerState?.resources ?? { money: 0, steel: 0, oil: 0, gold: 0 }}
-      <div class="recon-inspector-card">
+      <div class="recon-inspector-card" data-testid="territory-command-panel">
+        <div class="recon-panel-superhead">
+          <Icon name="industry" size={11} color="#d4af37" />
+          <span>{t("recon_title")}</span>
+        </div>
         <div class="recon-head">
           {#if inspectedTerritory.owner}
             <FactionFlag color={inspectedTerritory.owner.color} width={20} height={13} />
@@ -292,6 +296,19 @@
     display: flex;
     flex-direction: column;
     gap: 0.22rem;
+  }
+  .recon-panel-superhead {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    font-size: 0.65rem;
+    text-transform: uppercase;
+    font-weight: 800;
+    letter-spacing: 0.05em;
+    color: #d4af37;
+    border-bottom: 1px solid rgba(212, 175, 55, 0.2);
+    padding-bottom: 0.25rem;
+    margin-bottom: 0.15rem;
   }
   .recon-head {
     display: flex;
