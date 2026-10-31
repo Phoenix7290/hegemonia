@@ -539,12 +539,14 @@ export class HegemoniaRoom extends Room {
         const owned = Object.values(gs.territories).filter(
           (t) => t.ownerId === timedOutPlayerId
         );
-        const frontline = owned.filter((t) =>
+        const eligible = owned.filter((t) => !t.isEncircled);
+        const candidatePool = eligible.length > 0 ? eligible : owned;
+        const frontline = candidatePool.filter((t) =>
           mapById
             .get(t.id)!
             .neighbors.some((n) => gs.territories[n].ownerId !== timedOutPlayerId)
         );
-        const target = (frontline.length > 0 ? frontline : owned)[0];
+        const target = (frontline.length > 0 ? frontline : candidatePool)[0];
         if (target) {
           await this.executePlayerAction(timedOutPlayerId, {
             type: "deploy",
@@ -594,18 +596,23 @@ export class HegemoniaRoom extends Room {
         const owned = Object.values(this.gameState.territories).filter(
           (t) => t.ownerId === playerId
         );
-        const frontline = owned.filter((t) =>
+        // HEGEM-75: Only consider unencircled territories capable of receiving reinforcements
+        const eligible = owned.filter((t) => !t.isEncircled);
+        const candidatePool = eligible.length > 0 ? eligible : owned;
+        const frontline = candidatePool.filter((t) =>
           mapById
             .get(t.id)!
             .neighbors.some((n) => this.gameState!.territories[n].ownerId !== playerId)
         );
-        const target = (frontline.length > 0 ? frontline : owned)[0];
-        await this.executePlayerAction(playerId, {
-          type: "deploy",
-          territoryId: target.id,
-          armies: player.unplacedArmies,
-        });
-        return;
+        const target = (frontline.length > 0 ? frontline : candidatePool)[0];
+        if (target) {
+          await this.executePlayerAction(playerId, {
+            type: "deploy",
+            territoryId: target.id,
+            armies: player.unplacedArmies,
+          });
+          return;
+        }
       }
 
       if (this.gameState.pendingConquest) {
@@ -621,6 +628,10 @@ export class HegemoniaRoom extends Room {
           (t) => t.ownerId === playerId && t.armies >= 3
         );
         for (const from of owned) {
+          // HEGEM-25: Skip fatigued infantry territories that conquered this round without blitzkrieg
+          if (from.conqueredTurnRound === this.gameState.round && !from.blitzkriegAvailable) {
+            continue;
+          }
           const enemies = mapById
             .get(from.id)!
             .neighbors.map((n) => this.gameState!.territories[n])
@@ -643,8 +654,30 @@ export class HegemoniaRoom extends Room {
         await this.executePlayerAction(playerId, { type: "end_turn" });
       }
     } catch {
-      // Fallback if stuck
-      if (this.gameState.phase === "attack") {
+      // Fallback if stuck (HEGEM-75: deploy fail-safe to prevent stalls)
+      if (this.gameState.phase === "deploy") {
+        const fallbackTarget = Object.values(this.gameState.territories).find(
+          (t) => t.ownerId === playerId && !t.isEncircled
+        );
+        if (fallbackTarget && player.unplacedArmies > 0) {
+          try {
+            await this.executePlayerAction(playerId, {
+              type: "deploy",
+              territoryId: fallbackTarget.id,
+              armies: player.unplacedArmies,
+            });
+            return;
+          } catch {
+            // Force progression if deploy action still fails
+            player.unplacedArmies = 0;
+            if (this.gameState.round === 1) {
+              await this.executePlayerAction(playerId, { type: "end_turn" }).catch(() => {});
+            } else {
+              this.gameState.phase = "attack";
+            }
+          }
+        }
+      } else if (this.gameState.phase === "attack") {
         await this.executePlayerAction(playerId, { type: "end_attack" });
       } else if (this.gameState.phase === "maneuver") {
         await this.executePlayerAction(playerId, { type: "end_turn" });

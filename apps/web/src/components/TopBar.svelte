@@ -369,7 +369,7 @@
     {/if}
 
     <!-- Global World Tension Gauge (One-way Escalation) -->
-    <div class="world-tension-wrap" title="Tensão Mundial: {game.worldTension ?? 0}% (Alianças Militares em 50%)">
+    <div class="world-tension-wrap" data-testid="world-tension-badge" title="Tensão Mundial: {game.worldTension ?? 0}% (Alianças Militares em 50%)">
       <div class="tension-top-row">
         <span class="tension-title"><Icon name="globe" size={12} /> TENSÃO MUNDIAL</span>
         <strong class="tension-value" class:high-tension={(game.worldTension ?? 0) >= 50}>{game.worldTension ?? 0}%</strong>
@@ -735,6 +735,7 @@
       <div class="hq-buttons">
         <button
           class="hud-btn"
+          data-testid="btn-open-cards"
           class:highlight={Boolean(validTradeTriplet)}
           class:mandatory={Boolean(myPlayerState && myPlayerState.cards.length >= 5)}
           class:active={activeRightDrawer === "cards"}
@@ -746,6 +747,7 @@
 
         <button
           class="hud-btn"
+          data-testid="btn-open-objective"
           class:active={activeRightDrawer === "objective"}
           onclick={() => toggleRightDrawer("objective")}
           title={t("secret_objective_label")}
@@ -755,6 +757,7 @@
 
         <button
           class="hud-btn"
+          data-testid="btn-open-market"
           class:highlight={Boolean(myHasMarket && isMyTurn)}
           class:active={activeRightDrawer === "market"}
           onclick={() => toggleRightDrawer("market")}
@@ -765,6 +768,7 @@
 
         <button
           class="hud-btn"
+          data-testid="btn-open-audio"
           class:active={activeRightDrawer === "audio" || (ui.isMusicPlaying && !ui.isMuted)}
           onclick={() => toggleRightDrawer("audio")}
           title={t("audio_radio_eq")}
@@ -799,28 +803,28 @@
     {#if myPlayerState}
       {@const res = myPlayerState.resources ?? { money: 0, steel: 0, oil: 0, gold: 0 }}
       <div class="hq-economy-bar">
-        <div class="econ-pill money" title={t("res_money")}>
+        <div class="econ-pill money" data-testid="res-money" title={t("res_money")}>
           <Icon name="coins" size={13} />
           <span class="econ-val">${res.money}</span>
           {#if myEconomyIncome && myEconomyIncome.netMoney > 0}
             <span class="econ-delta">+{myEconomyIncome.netMoney}</span>
           {/if}
         </div>
-        <div class="econ-pill steel" title={t("res_steel")}>
+        <div class="econ-pill steel" data-testid="res-steel" title={t("res_steel")}>
           <Icon name="steel" size={13} />
           <span class="econ-val">{res.steel}</span>
           {#if myEconomyIncome && myEconomyIncome.steel > 0}
             <span class="econ-delta">+{myEconomyIncome.steel}</span>
           {/if}
         </div>
-        <div class="econ-pill oil" title={t("res_oil")}>
+        <div class="econ-pill oil" data-testid="res-oil" title={t("res_oil")}>
           <Icon name="oil" size={13} />
           <span class="econ-val">{res.oil}</span>
           {#if myEconomyIncome && myEconomyIncome.oil > 0}
             <span class="econ-delta">+{myEconomyIncome.oil}</span>
           {/if}
         </div>
-        <div class="econ-pill gold" title={t("res_gold")}>
+        <div class="econ-pill gold" data-testid="res-gold" title={t("res_gold")}>
           <Icon name="gold" size={13} />
           <span class="econ-val">{res.gold}</span>
           {#if myEconomyIncome && myEconomyIncome.gold > 0}
@@ -1209,7 +1213,7 @@
 
     <!-- Global Dynamic Market & Allied Trade Drawer (HEGEM-22) -->
     {#if activeRightDrawer === "market" && myPlayerState && game}
-      <div class="floating-drawer market-drawer">
+      <div class="floating-drawer market-drawer" data-testid="market-modal">
         <div class="drawer-header">
           <h4><Icon name="market" size={15} /> {t("market_modal_title")}</h4>
           <button class="btn-close" onclick={() => (activeRightDrawer = null)} aria-label={t("close")}><Icon name="close" size={14} /></button>
@@ -1272,6 +1276,7 @@
                 <div class="commodity-actions">
                   <button
                     class="btn-trade buy"
+                    data-testid="market-buy-{res}"
                     disabled={!canAffordBuy}
                     onclick={() => handleMarketTrade(res, "buy")}
                     title={!isMyTurn ? "Apenas no seu turno" : !canAffordBuy ? "Dinheiro insuficiente" : ""}
@@ -1280,6 +1285,7 @@
                   </button>
                   <button
                     class="btn-trade sell"
+                    data-testid="market-sell-{res}"
                     disabled={!canSell}
                     onclick={() => handleMarketTrade(res, "sell")}
                     title={!isMyTurn ? "Apenas no seu turno" : !canSell ? "Estoque insuficiente" : ""}

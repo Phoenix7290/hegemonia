@@ -28,6 +28,7 @@
   import Icon from "./Icon.svelte";
   import { getTerritoryName } from "../i18n/content.svelte";
   import type { BaseMapMode, MapOverlays } from "../lib/map-preferences.js";
+  import type { IconName } from "../lib/icons.js";
 
   let {
     game,
@@ -92,15 +93,101 @@
     asia_east: "#ec4899",
   };
 
-  const REGION_BANNERS: { label: string; bonus: string; x: number; y: number; color: string }[] = [
-    { label: "AMÉRICA DO NORTE", bonus: "+5", x: 265, y: 125, color: "#f59e0b" },
-    { label: "AMÉRICA DO SUL", bonus: "+2", x: 392, y: 382, color: "#10b981" },
-    { label: "EUROPA", bonus: "+5", x: 645, y: 132, color: "#3b82f6" },
-    { label: "ÁFRICA", bonus: "+3", x: 655, y: 295, color: "#eab308" },
-    { label: "ÁSIA: INDO-ARÁBIA", bonus: "+2", x: 835, y: 228, color: "#f97316" },
-    { label: "ÁSIA: ESTEPES & SIBÉRIA", bonus: "+2", x: 935, y: 108, color: "#06b6d4" },
-    { label: "ÁSIA: LESTE ASIÁTICO", bonus: "+3", x: 995, y: 185, color: "#ec4899" },
-    { label: "OCEANIA", bonus: "+2", x: 1015, y: 375, color: "#a855f7" },
+  interface TheaterBanner {
+    id: string;
+    label: string;
+    shortLabel: string;
+    bonusArmies: number;
+    extraBonus?: { icon: IconName; text: string; color: string };
+    x: number;
+    y: number;
+    color: string;
+    tooltip: string;
+  }
+
+  const REGION_BANNERS: TheaterBanner[] = [
+    {
+      id: "north-america",
+      label: "América do Norte",
+      shortLabel: "AMÉRICA DO NORTE",
+      bonusArmies: 5,
+      x: 180,
+      y: 75,
+      color: "#f59e0b",
+      tooltip: "América do Norte (9 províncias) — Bônus de Teatro: +5 Tropas/turno",
+    },
+    {
+      id: "south-america",
+      label: "América do Sul",
+      shortLabel: "AMÉRICA DO SUL",
+      bonusArmies: 2,
+      x: 295,
+      y: 440,
+      color: "#10b981",
+      tooltip: "América do Sul (4 províncias) — Bônus de Teatro: +2 Tropas/turno",
+    },
+    {
+      id: "europe",
+      label: "Europa",
+      shortLabel: "EUROPA",
+      bonusArmies: 5,
+      extraBonus: { icon: "coins", text: "+$3", color: "#6ee7b7" },
+      x: 520,
+      y: 85,
+      color: "#3b82f6",
+      tooltip: "Europa Ocidental & Oriental (7 províncias) — Bônus de Teatro: +5 Tropas/turno +$3 Geoeconômico",
+    },
+    {
+      id: "africa",
+      label: "África",
+      shortLabel: "ÁFRICA",
+      bonusArmies: 3,
+      x: 545,
+      y: 375,
+      color: "#eab308",
+      tooltip: "África (6 províncias) — Bônus de Teatro: +3 Tropas/turno",
+    },
+    {
+      id: "asia-indo-arabia",
+      label: "Ásia: Indo-Arábia",
+      shortLabel: "INDO-ARÁBIA",
+      bonusArmies: 2,
+      extraBonus: { icon: "oil", text: "+2", color: "#fdba74" },
+      x: 810,
+      y: 335,
+      color: "#f97316",
+      tooltip: "Indo-Arábia (5 províncias) — Bônus de Teatro: +2 Tropas/turno +2 Petróleo",
+    },
+    {
+      id: "asia-steppes",
+      label: "Ásia: Estepes & Sibéria",
+      shortLabel: "ESTEPES & SIBÉRIA",
+      bonusArmies: 2,
+      x: 885,
+      y: 50,
+      color: "#06b6d4",
+      tooltip: "Estepes Centrais & Sibéria (4 províncias) — Bônus de Teatro: +2 Tropas/turno",
+    },
+    {
+      id: "asia-east",
+      label: "Ásia: Leste Asiático",
+      shortLabel: "LESTE ASIÁTICO",
+      bonusArmies: 3,
+      x: 1085,
+      y: 245,
+      color: "#ec4899",
+      tooltip: "Leste Asiático (7 províncias) — Bônus de Teatro: +3 Tropas/turno",
+    },
+    {
+      id: "oceania",
+      label: "Oceania",
+      shortLabel: "OCEANIA",
+      bonusArmies: 2,
+      x: 1015,
+      y: 460,
+      color: "#a855f7",
+      tooltip: "Oceania & Arquipélagos (4 províncias) — Bônus de Teatro: +2 Tropas/turno",
+    },
   ];
 
   function getTerritoryRegionColor(t: { continent: string; subRegion?: string }): string {
@@ -386,6 +473,9 @@
             <!-- svelte-ignore a11y_no_static_element_interactions -->
             <g
               class="territory-group"
+              data-testid={offsetX === 0 ? `territory-${t.id}` : `territory-${t.id}-clone`}
+              data-territory-id={t.id}
+              data-primary-globe={offsetX === 0 ? "true" : undefined}
               onclick={() => onTerritoryClick(t.id)}
               onmouseenter={() => (hoveredTerritoryId = t.id)}
               onmouseleave={() => {
@@ -475,6 +565,7 @@
                 <g
                   transform="translate({t.center[0]}, {t.center[1]}) scale({COMPACT_BADGE_IDS.has(t.id) ? 0.82 : 0.94})"
                   class="division-counter"
+                  data-testid={offsetX === 0 ? `badge-troop-${t.id}` : undefined}
                 >
                   <!-- Capital Crown / Vector Seal (HEGEM-63) -->
                   {#if isCapital}
@@ -752,32 +843,80 @@
             </g>
           {/each}
 
-          <!-- Floating Regional & Sub-Regional Theatre Banners in "regional" Overlay -->
+          <!-- Floating Regional & Sub-Regional Theatre Banners in "regional" Overlay (HEGEM-81 Mini-Insígnias) -->
           {#if effectiveOverlays.regional && !cleanMapMode}
             {#each REGION_BANNERS as rb}
-              <g transform="translate({rb.x}, {rb.y})" pointer-events="none">
+              {@const w = rb.extraBonus ? 84 : 70}
+              <g
+                transform="translate({rb.x}, {rb.y})"
+                class="tactical-theater-badge"
+                pointer-events="auto"
+                data-testid={offsetX === 0 ? `badge-theater-${rb.id}` : undefined}
+              >
+                <title>{rb.tooltip}</title>
+                <!-- Compact gunmetal ribbon base with regional border accent -->
                 <rect
-                  x="-68"
-                  y="-11"
-                  width="136"
-                  height="20"
-                  rx="4"
-                  fill="rgba(6, 10, 18, 0.88)"
+                  x={-w / 2}
+                  y="-7.5"
+                  width={w}
+                  height="15"
+                  rx="3"
+                  fill="rgba(6, 10, 18, 0.94)"
                   stroke={rb.color}
-                  stroke-width="1.5"
+                  stroke-width="1.2"
                 />
+                <!-- Infantry division icon & bonus troops -->
+                <Icon name="infantry" size={8} x={-w / 2 + 3} y={-4} color={rb.color} strokeWidth={1.8} />
                 <text
-                  x="0"
-                  y="-1"
-                  text-anchor="middle"
+                  x={-w / 2 + 13}
+                  y="0"
                   dominant-baseline="central"
-                  fill="#f8fafc"
-                  font-size="7.8"
+                  fill={rb.color}
+                  font-size="6.8"
                   font-weight="900"
-                  letter-spacing="0.06em"
                 >
-                  {rb.label} ({rb.bonus})
+                  +{rb.bonusArmies}
                 </text>
+                <!-- Theater name -->
+                <text
+                  x={-w / 2 + 25}
+                  y="0"
+                  dominant-baseline="central"
+                  fill="#f1f5f9"
+                  font-size="5.6"
+                  font-weight="700"
+                  letter-spacing="0.04em"
+                >
+                  {rb.shortLabel}
+                </text>
+                {#if rb.extraBonus}
+                  <line
+                    x1={w / 2 - 24}
+                    y1="-5"
+                    x2={w / 2 - 24}
+                    y2="5"
+                    stroke="rgba(148, 163, 184, 0.3)"
+                    stroke-width="1"
+                  />
+                  <Icon
+                    name={rb.extraBonus.icon}
+                    size={7.5}
+                    x={w / 2 - 21}
+                    y={-3.75}
+                    color={rb.extraBonus.color}
+                    strokeWidth={1.8}
+                  />
+                  <text
+                    x={w / 2 - 12}
+                    y="0"
+                    dominant-baseline="central"
+                    fill={rb.extraBonus.color}
+                    font-size="6.2"
+                    font-weight="900"
+                  >
+                    {rb.extraBonus.text}
+                  </text>
+                {/if}
               </g>
             {/each}
           {/if}

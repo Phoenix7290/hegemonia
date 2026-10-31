@@ -154,6 +154,7 @@
 
 <aside
   class="war-journal-panel chat-size-{communications.settings.chatSize}"
+  data-testid="war-journal"
   class:collapsed
   class:communications-open={activeTab === "chat" && !collapsed}
 >
@@ -258,6 +259,7 @@
         {#each combatLogs as entry}
           <div
             class="journal-entry kind-{entry.kind}"
+            data-testid="journal-entry"
             style={entry.playerColor ? `border-left-color: ${entry.playerColor};` : ""}
           >
             <div class="entry-top">

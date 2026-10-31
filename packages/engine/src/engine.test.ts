@@ -528,7 +528,7 @@ describe("Diplomacy, Treaties, World Tension and Coalitions", () => {
     }, rng);
 
     expect(state.players[0].infamy).toBe(35);
-    expect(state.worldTension).toBe(15);
+    expect(state.worldTension).toBe(5);
     expect(state.treaties.length).toBe(0);
   });
 
@@ -643,7 +643,7 @@ describe("Diplomacy, Treaties, World Tension and Coalitions", () => {
 
     // Round advanced to 2
     expect(state.round).toBe(2);
-    expect(state.worldTension).toBe(0.5);
+    expect(state.worldTension).toBe(1.5);
     expect(state.players[0].infamy).toBe(5);
   });
 });
@@ -2388,6 +2388,71 @@ describe("Advanced Artillery Mechanics, Maintenance & Escort Vulnerability (HEGE
     expect(state.territories["islandia"].armies).toBe(1);
     expect(state.territories["groenlandia"].artilleryBarrageFiredThisTurn).toBe(true);
     expect(state.log.some((l) => l.includes("BARRAGEM COSTEIRA DE ARTILHARIA"))).toBe(true);
+  });
+
+  describe("HEGEM-76: Calibração da Curva de Tensão Mundial (Alvo: ~100% no Round 25)", () => {
+    it("respects rebalanced tension increments across combat, diplomacy and round rollovers", () => {
+      const rng = createSeededRng("tension-calibration-seed");
+      let state = createGame({
+        id: "tension_test",
+        seed: "tension-calibration-seed",
+        players: [
+          { id: "p1", name: "Alpha", color: "blue" },
+          { id: "p2", name: "Bravo", color: "red" },
+        ],
+      });
+
+      expect(state.worldTension).toBe(0);
+
+      // 1. Round advancement should increase by +1.5%
+      state.round = 1;
+      state.phase = "maneuver";
+      state.turnIndex = state.players.length - 1;
+      const lastPlayer = state.players[state.turnIndex];
+      state = applyAction(state, lastPlayer.id, { type: "end_turn" }, rng);
+      expect(state.round).toBe(2);
+      expect(state.worldTension).toBe(1.5);
+
+      // 2. Artillery barrage should add +0.2%
+      const currP = state.players[state.turnIndex];
+      currP.unplacedArmies = 0;
+      state.phase = "attack";
+      state.territories["brasil"].ownerId = currP.id;
+      state.territories["brasil"].units = unitCounts(1, 0, 1, 0, 0); // 1 infantry + 1 artillery
+      state.territories["brasil"].armies = 2;
+      const otherP = state.players.find((p) => p.id !== currP.id)!;
+      state.territories["venezuela"].ownerId = otherP.id;
+      state.territories["venezuela"].units = unitCounts(3, 0, 0, 0, 0);
+      state.territories["venezuela"].armies = 3;
+
+      state = applyAction(
+        state,
+        currP.id,
+        { type: "artillery_barrage", fromTerritoryId: "brasil", toTerritoryId: "venezuela" },
+        rng
+      );
+      expect(state.worldTension).toBe(1.7);
+
+      // 3. Common conquest should add +0.1%
+      state.territories["brasil"].units = unitCounts(10, 0, 0, 0, 0);
+      state.territories["brasil"].armies = 10;
+      state.territories["venezuela"].units = unitCounts(1, 0, 0, 0, 0);
+      state.territories["venezuela"].armies = 1;
+
+      // Mock roll so attacker rolls 6 and defender rolls 1
+      let rollCount = 0;
+      rng.rollD6 = () => {
+        rollCount++;
+        return rollCount <= 3 ? 6 : 1;
+      };
+      state = applyAction(
+        state,
+        currP.id,
+        { type: "attack", fromTerritoryId: "brasil", toTerritoryId: "venezuela" },
+        rng
+      );
+      expect(state.worldTension).toBe(1.8); // 1.7 + 0.1
+    });
   });
 });
 

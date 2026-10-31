@@ -1466,6 +1466,7 @@ export function applyAction(
       }
 
       fromTerr.artilleryBarrageFiredThisTurn = true;
+      state.worldTension = Math.min(100, Number(((state.worldTension ?? 0) + 0.2).toFixed(1)));
       const rolls = Array.from({ length: fromUnits.artillery }, () => rng.rollD6());
       const hits = rolls.filter((r) => r >= 4).length;
 
@@ -1585,6 +1586,7 @@ export function applyAction(
       // Deduct 1 oil for flight sortie
       currentPlayer.resources.oil -= 1;
       fromTerr.airMissionFlownThisTurn = true;
+      state.worldTension = Math.min(100, Number(((state.worldTension ?? 0) + 0.2).toFixed(1)));
 
       if (action.missionType === "cas") {
         toTerr.casBonusAttackerId = playerId;
@@ -1922,7 +1924,7 @@ export function applyAction(
         toTerr.blitzkriegAvailable =
           attackerCombat.remaining.tank > 0 && (currentPlayer.resources?.oil ?? 0) > 0;
         toTerr.casBonusAttackerId = undefined;
-        state.worldTension = Math.min(100, (state.worldTension ?? 0) + 0.5);
+        state.worldTension = Math.min(100, Number(((state.worldTension ?? 0) + 0.1).toFixed(1)));
 
         // HEGEM-32: If conquered territory had a Level 2 Fortress, it degrades to Level 1 Casamata
         const fortBuilding = toTerr.buildings?.find((b) => b.type === "fortification");
@@ -1948,7 +1950,7 @@ export function applyAction(
           defenderPlayer.capitalLostTurn = state.round;
           defenderPlayer.economicPenaltyMultiplier = 0.5;
           defenderPlayer.moralePenalty = 2;
-          state.worldTension = Math.min(100, (state.worldTension ?? 0) + 20);
+          state.worldTension = Math.min(100, Number(((state.worldTension ?? 0) + 4.0).toFixed(1)));
           currentPlayer.infamy = Math.min(100, (currentPlayer.infamy ?? 0) + 15);
 
           let stolenCardNotice = "";
@@ -2002,7 +2004,7 @@ export function applyAction(
           const defenderPlayer = state.players.find((p) => p.id === defenderId)!;
           defenderPlayer.eliminated = true;
           defenderPlayer.eliminatedBy = playerId;
-          state.worldTension = Math.min(100, (state.worldTension ?? 0) + 25);
+          state.worldTension = Math.min(100, Number(((state.worldTension ?? 0) + 6.0).toFixed(1)));
           currentPlayer.infamy = Math.min(100, (currentPlayer.infamy ?? 0) + 25);
           // Eliminator takes victim's cards
           if (defenderPlayer.cards.length > 0) {
@@ -2290,11 +2292,11 @@ export function applyAction(
       }
 
       actingPlayer.infamy = Math.min(100, (actingPlayer.infamy ?? 0) + 35);
-      state.worldTension = Math.min(100, (state.worldTension ?? 0) + 15);
+      state.worldTension = Math.min(100, Number(((state.worldTension ?? 0) + 5.0).toFixed(1)));
 
       const label = treaty.type === "alliance" ? "Aliança Militar" : "Pacto de Não-Agressão";
       state.log.push(
-        `💥 TRAIÇÃO DIPLOMÁTICA! ${actingPlayer.name} rompeu unilateralmente o ${label} com ${otherP?.name}! (+35% de Infâmia, +15% de Tensão Mundial)`
+        `💥 TRAIÇÃO DIPLOMÁTICA! ${actingPlayer.name} rompeu unilateralmente o ${label} com ${otherP?.name}! (+35% de Infâmia, +5% de Tensão Mundial)`
       );
       break;
     }
@@ -2671,7 +2673,7 @@ function advanceTurn(state: GameState, rng: SeededRng, map: GameMapDef): void {
     ) {
       state.round += 1;
       roundAdvanced = true;
-      state.worldTension = Math.min(100, Number(((state.worldTension ?? 0) + 0.5).toFixed(1)));
+      state.worldTension = Math.min(100, Number(((state.worldTension ?? 0) + 1.5).toFixed(1)));
 
       if (state.investmentRoutes) {
         for (const route of state.investmentRoutes) {

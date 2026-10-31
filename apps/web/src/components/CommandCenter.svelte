@@ -199,48 +199,6 @@
 
         <!-- RIGHT COLUMN: STRATEGIC BRIEFING & LIVE LEADERBOARD -->
         <div class="deck-side-column">
-          <!-- Theatre Specifications -->
-          <section class="deck-card intel-card">
-            <div class="ops-header compact">
-              <span class="eyebrow">{t("deck_params_eyebrow")}</span>
-              <h3>{t("deck_params_title")}</h3>
-            </div>
-
-            <div class="intel-specs-grid">
-              <div class="spec-item">
-                <span class="spec-icon"><Icon name="globe" size={18} /></span>
-                <div>
-                  <strong>{t("deck_spec_territories_title")}</strong>
-                  <small>{t("deck_spec_territories_desc")}</small>
-                </div>
-              </div>
-
-              <div class="spec-item">
-                <span class="spec-icon"><Icon name="target" size={18} /></span>
-                <div>
-                  <strong>{t("deck_spec_objectives_title")}</strong>
-                  <small>{t("deck_spec_objectives_desc")}</small>
-                </div>
-              </div>
-
-              <div class="spec-item">
-                <span class="spec-icon"><Icon name="flag" size={18} /></span>
-                <div>
-                  <strong>{t("deck_spec_asia_title")}</strong>
-                  <small>{t("deck_spec_asia_desc")}</small>
-                </div>
-              </div>
-
-              <div class="spec-item">
-                <span class="spec-icon"><Icon name="lock" size={18} /></span>
-                <div>
-                  <strong>{t("deck_spec_audit_title")}</strong>
-                  <small>{t("deck_spec_audit_desc")}</small>
-                </div>
-              </div>
-            </div>
-          </section>
-
           <!-- Top Commanders Mini Leaderboard -->
           <section class="deck-card mini-rank-card">
             <div class="ops-header compact row-spread">
@@ -477,7 +435,7 @@
 
           <div class="footer-buttons">
             {#if amIHost && competitionMode === "custom" && lobbyPlayers.length < 6}
-              <button class="outline-button add-ai-btn" onclick={onAddBot}>
+              <button class="outline-button add-ai-btn" data-testid="btn-add-bot" onclick={onAddBot}>
                 <Icon name="bot" size={16} /> {t("lobby_btn_add_ai")}
               </button>
             {/if}
@@ -485,6 +443,7 @@
             {#if amIHost}
               <button
                 class="launch-battle-btn"
+                data-testid="btn-start-game"
                 disabled={lobbyPlayers.length < 2 || (matchOrigin === "matchmaking" && lobbyPlayers.some((player) => !player.connected))}
                 onclick={onStartGame}
               >
@@ -756,38 +715,6 @@
     display: flex;
     flex-direction: column;
     gap: 20px;
-  }
-  .intel-specs-grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 12px;
-    margin-top: 14px;
-  }
-  .spec-item {
-    display: flex;
-    align-items: flex-start;
-    gap: 10px;
-    padding: 12px;
-    background: rgba(5, 9, 18, 0.68);
-    border: 1px solid rgba(148, 163, 184, 0.16);
-    border-radius: 5px;
-  }
-  .spec-icon {
-    color: #eab308;
-    margin-top: 2px;
-  }
-  .spec-item strong {
-    display: block;
-    font-family: var(--font-tactical);
-    font-size: 0.84rem;
-    color: #f8fafc;
-  }
-  .spec-item small {
-    display: block;
-    font-size: 0.7rem;
-    color: #94a3b8;
-    line-height: 1.35;
-    margin-top: 2px;
   }
 
   /* Mini Leaderboard */
@@ -1343,9 +1270,6 @@
     }
     .faction-cards-grid {
       grid-template-columns: 1fr 1fr;
-    }
-    .intel-specs-grid {
-      grid-template-columns: 1fr;
     }
     .briefing-footer {
       flex-direction: column;
