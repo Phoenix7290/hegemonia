@@ -11,6 +11,8 @@ export interface UserRow {
   bio: string;
   profile_visibility: ProfileVisibility;
   role: AuthUser["role"];
+  total_xp: string | number;
+  level: number;
   created_at: Date;
 }
 
@@ -29,12 +31,14 @@ export function toAuthUser(row: UserRow): AuthUser {
     bio: row.bio,
     profileVisibility: row.profile_visibility,
     role: row.role,
+    totalXp: Number(row.total_xp || 0),
+    level: Number(row.level || 1),
     createdAt: row.created_at.toISOString(),
   };
 }
 
 const userColumns = `id, email, username, display_name, avatar_url, bio,
-  profile_visibility, role, created_at`;
+  profile_visibility, role, total_xp, level, created_at`;
 
 export async function createUser(input: RegisterInput, passwordHash: string): Promise<AuthUser> {
   const result = await query<UserRow>(
@@ -81,7 +85,7 @@ export async function findSession(tokenHash: Buffer): Promise<SessionIdentity | 
   const result = await query<UserRow & { session_id: string; last_seen_at: Date }>(
     `SELECT s.id AS session_id, s.last_seen_at,
        u.id, u.email, u.username, u.display_name, u.avatar_url, u.bio,
-       u.profile_visibility, u.role, u.created_at
+       u.profile_visibility, u.role, u.total_xp, u.level, u.created_at
      FROM auth_sessions s JOIN users u ON u.id = s.user_id
      WHERE s.token_hash = $1 AND s.revoked_at IS NULL AND s.expires_at > now()
        AND u.is_active AND u.deleted_at IS NULL`,

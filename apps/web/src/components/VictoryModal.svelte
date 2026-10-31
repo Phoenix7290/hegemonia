@@ -1,7 +1,15 @@
 <script lang="ts">
-  import type { GameState, PlayerState } from "@hegemonia/shared";
+  import {
+    calculateLevelProgress,
+    calculateMatchXp,
+    type CompetitionMode,
+    type GameState,
+    type MatchXpBreakdown,
+    type PlayerState,
+  } from "@hegemonia/shared";
   import { i18n, t } from "../i18n/index.svelte";
   import { getFactionName, getObjectiveDescription } from "../i18n/content.svelte";
+  import { auth } from "../lib/auth.svelte";
   import FactionFlag from "./FactionFlag.svelte";
   import Icon from "./Icon.svelte";
 
@@ -9,6 +17,7 @@
     game,
     myPlayerId,
     playerMetrics,
+    competitionMode = "custom",
     amIHost = false,
     onReturnRoomToLobby,
     onReturnToLobby,
@@ -21,6 +30,7 @@
       totalArmies: number;
       sharePct: number;
     }[];
+    competitionMode?: CompetitionMode;
     amIHost?: boolean;
     onReturnRoomToLobby?: () => void;
     onReturnToLobby: () => void;
@@ -39,6 +49,39 @@
       return b.totalArmies - a.totalArmies;
     })
   );
+
+  let myStandingIndex = $derived(
+    sortedStandings.findIndex((row) => row.player.id === myPlayerId)
+  );
+  let myPlacement = $derived(myStandingIndex >= 0 ? myStandingIndex + 1 : sortedStandings.length);
+
+  let xpBreakdown = $derived.by<MatchXpBreakdown>(() => {
+    const totalHumans = game.players.filter((p) => !p.isBot).length;
+    const totalBots = game.players.filter((p) => p.isBot).length;
+    const myPlayer = game.players.find((p) => p.id === myPlayerId);
+
+    return calculateMatchXp({
+      competitionMode: competitionMode ?? "custom",
+      roundsPlayed: game.round,
+      placement: myPlacement,
+      won: isWinnerMe,
+      isBot: Boolean(myPlayer?.isBot),
+      hasAuthenticatedUser: Boolean(auth.user),
+      totalHumanPlayers: totalHumans,
+      totalBotPlayers: totalBots,
+      abandoned: false,
+    });
+  });
+
+  let currentLevelProgress = $derived(
+    calculateLevelProgress(auth.user?.totalXp ?? 0)
+  );
+
+  $effect(() => {
+    if (auth.user) {
+      auth.refresh();
+    }
+  });
 </script>
 
 {#if minimized}
@@ -109,6 +152,78 @@
               </div>
             {/each}
           </div>
+        </div>
+
+        <!-- HEGEM-66: Profile XP & Level Progression Card -->
+        <div class="xp-progression-section">
+          <div class="xp-header">
+            <div class="xp-header-title">
+              <Icon name="rank" size={16} />
+              <h4>{t("xp_progression_title")}</h4>
+              <span class="mode-pill mode-{competitionMode}">
+                {t(`xp_mode_${competitionMode}`)}
+              </span>
+            </div>
+            <span class="xp-hierarchy-hint">{t("xp_hierarchy_info")}</span>
+          </div>
+
+          {#if auth.user && xpBreakdown.eligible}
+            <div class="xp-breakdown-row">
+              <div class="xp-item">
+                <span class="xp-item-label">{t("xp_base_label", { mode: t(`xp_mode_${competitionMode}`) })}</span>
+                <span class="xp-item-val">+{xpBreakdown.baseXp} XP</span>
+              </div>
+              {#if xpBreakdown.winBonus > 0}
+                <div class="xp-item bonus">
+                  <span class="xp-item-label">{t("xp_win_bonus_label")}</span>
+                  <span class="xp-item-val">+{xpBreakdown.winBonus} XP</span>
+                </div>
+              {/if}
+              {#if xpBreakdown.placementBonus > 0}
+                <div class="xp-item bonus">
+                  <span class="xp-item-label">{t("xp_placement_bonus_label", { pos: myPlacement })}</span>
+                  <span class="xp-item-val">+{xpBreakdown.placementBonus} XP</span>
+                </div>
+              {/if}
+              <div class="xp-item total">
+                <span class="xp-item-label">{t("xp_total_earned", { xp: xpBreakdown.totalXp })}</span>
+              </div>
+            </div>
+
+            <!-- Level Progression Bar -->
+            <div class="xp-bar-container">
+              <div class="xp-bar-labels">
+                <span class="current-lvl">{t("xp_level_badge", { level: currentLevelProgress.level })}</span>
+                <span class="xp-numbers">
+                  {currentLevelProgress.xpInCurrentLevel} / {currentLevelProgress.xpNeededForNextLevel} XP
+                </span>
+                <span class="next-lvl">{t("xp_level_badge", { level: currentLevelProgress.level + 1 })}</span>
+              </div>
+              <div class="xp-track">
+                <div class="xp-fill" style="width: {currentLevelProgress.progressPct}%;"></div>
+              </div>
+            </div>
+
+            <p class="xp-disclaimer">{t("xp_progression_disclaimer")}</p>
+          {:else if auth.user && !xpBreakdown.eligible}
+            <div class="xp-ineligible-box">
+              <Icon name="alert" size={14} />
+              <span>
+                {xpBreakdown.ineligibilityReason === "too_short"
+                  ? t("xp_ineligible_too_short")
+                  : xpBreakdown.ineligibilityReason === "majority_bots"
+                    ? t("xp_ineligible_majority_bots")
+                    : xpBreakdown.ineligibilityReason === "abandoned"
+                      ? t("xp_ineligible_abandoned")
+                      : t("xp_ineligible_guest")}
+              </span>
+            </div>
+          {:else}
+            <div class="xp-ineligible-box guest">
+              <Icon name="user" size={14} />
+              <span>{t("xp_ineligible_guest")}</span>
+            </div>
+          {/if}
         </div>
 
         <div class="crypto-audit-box">
@@ -314,6 +429,149 @@
     font-family: var(--font-mono);
     font-size: 0.72rem;
     color: #cbd5e1;
+  }
+
+  /* HEGEM-66: Profile XP & Progression Card */
+  .xp-progression-section {
+    background: rgba(15, 23, 42, 0.7);
+    border: 1px solid rgba(148, 163, 184, 0.2);
+    border-radius: 6px;
+    padding: 12px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .xp-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .xp-header-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: #f8fafc;
+  }
+  .xp-header-title h4 {
+    margin: 0;
+    font-size: 0.88rem;
+    font-family: var(--font-tactical);
+    letter-spacing: 0.05em;
+  }
+  .mode-pill {
+    font-size: 0.65rem;
+    font-family: var(--font-tactical);
+    font-weight: 700;
+    padding: 2px 7px;
+    border-radius: 3px;
+    text-transform: uppercase;
+  }
+  .mode-pill.mode-custom {
+    background: rgba(148, 163, 184, 0.2);
+    color: #cbd5e1;
+    border: 1px solid rgba(148, 163, 184, 0.35);
+  }
+  .mode-pill.mode-casual {
+    background: rgba(56, 189, 248, 0.2);
+    color: #7dd3fc;
+    border: 1px solid rgba(56, 189, 248, 0.4);
+  }
+  .mode-pill.mode-ranked {
+    background: rgba(234, 179, 8, 0.2);
+    color: #fde047;
+    border: 1px solid rgba(234, 179, 8, 0.45);
+  }
+  .xp-hierarchy-hint {
+    font-size: 0.64rem;
+    font-family: var(--font-mono);
+    color: #64748b;
+  }
+  .xp-breakdown-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+    padding: 6px 10px;
+    background: rgba(8, 14, 26, 0.6);
+    border-radius: 4px;
+  }
+  .xp-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-family: var(--font-tactical);
+    font-size: 0.72rem;
+  }
+  .xp-item-label {
+    color: #94a3b8;
+  }
+  .xp-item-val {
+    color: #f8fafc;
+    font-weight: 700;
+  }
+  .xp-item.bonus .xp-item-val {
+    color: #38bdf8;
+  }
+  .xp-item.total {
+    margin-left: auto;
+    font-size: 0.78rem;
+    font-weight: 800;
+    color: #fde047;
+  }
+  .xp-bar-container {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .xp-bar-labels {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.68rem;
+    font-family: var(--font-tactical);
+    font-weight: 700;
+  }
+  .current-lvl {
+    color: #38bdf8;
+  }
+  .xp-numbers {
+    color: #94a3b8;
+    font-family: var(--font-mono);
+    font-size: 0.65rem;
+  }
+  .next-lvl {
+    color: #64748b;
+  }
+  .xp-track {
+    width: 100%;
+    height: 7px;
+    background: rgba(15, 23, 42, 0.9);
+    border: 1px solid rgba(148, 163, 184, 0.25);
+    border-radius: 3px;
+    overflow: hidden;
+  }
+  .xp-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #38bdf8, #eab308);
+    transition: width 0.4s ease;
+  }
+  .xp-disclaimer {
+    font-size: 0.62rem;
+    color: #64748b;
+    margin: 0;
+    font-style: italic;
+  }
+  .xp-ineligible-box {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    background: rgba(15, 23, 42, 0.5);
+    border: 1px dashed rgba(148, 163, 184, 0.3);
+    border-radius: 4px;
+    font-size: 0.72rem;
+    color: #94a3b8;
   }
 
   .crypto-audit-box {

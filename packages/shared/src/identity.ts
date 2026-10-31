@@ -55,6 +55,8 @@ export interface AuthUser {
   bio: string;
   profileVisibility: ProfileVisibility;
   role: "user" | "moderator" | "admin";
+  totalXp: number;
+  level: number;
   createdAt: string;
 }
 
@@ -64,12 +66,29 @@ export interface PublicProfile {
   displayName: string;
   avatarUrl: string | null;
   bio: string | null;
+  totalXp: number;
+  level: number;
   createdAt: string;
   lastSeenAt: string | null;
   isSelf: boolean;
   canViewStats: boolean;
   relationship: "self" | "friends" | "incoming" | "outgoing" | "blocked" | "none";
   mutualFriends: number;
+}
+
+export interface MatchXpGrant {
+  competitionMode: "custom" | "casual" | "ranked";
+  baseXp: number;
+  bonusXp: number;
+  totalXpEarned: number;
+  levelBefore: number;
+  levelAfter: number;
+  didLevelUp: boolean;
+  breakdown: {
+    base: number;
+    winBonus: number;
+    placementBonus: number;
+  };
 }
 
 export interface Badge {

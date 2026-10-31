@@ -15,6 +15,8 @@ interface ProfileRow {
   avatar_url: string | null;
   bio: string;
   profile_visibility: "public" | "friends" | "private";
+  total_xp: string | number;
+  level: number;
   created_at: Date;
   last_seen_at: Date | null;
   relationship_status: string | null;
@@ -25,7 +27,7 @@ interface ProfileRow {
 export async function getProfile(username: string, viewerId: string | null) {
   const result = await query<ProfileRow>(
     `SELECT u.id, u.username, u.display_name, u.avatar_url, u.bio, u.profile_visibility,
-       u.created_at, u.last_seen_at, f.status AS relationship_status,
+       u.total_xp, u.level, u.created_at, u.last_seen_at, f.status AS relationship_status,
        f.requester_id, f.blocked_by
      FROM users u
      LEFT JOIN friendships f ON f.user_low_id = least(u.id, $2::uuid)
@@ -55,6 +57,8 @@ export async function getProfile(username: string, viewerId: string | null) {
     displayName: row.display_name,
     avatarUrl: row.avatar_url,
     bio: canViewStats || isSelf ? row.bio : null,
+    totalXp: Number(row.total_xp || 0),
+    level: Number(row.level || 1),
     createdAt: row.created_at.toISOString(),
     lastSeenAt: canViewStats ? row.last_seen_at?.toISOString() ?? null : null,
     isSelf,
