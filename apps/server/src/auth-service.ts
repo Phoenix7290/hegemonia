@@ -8,6 +8,7 @@ import {
   findUserForLogin,
   revokeAllSessions,
   revokeSession,
+  toAuthUser,
   type SessionIdentity,
 } from "./auth-repository.js";
 
@@ -62,17 +63,7 @@ export async function loginAccount(input: LoginInput, request: { ip?: string; he
   if (!record || !valid) {
     throw new AuthError("Credenciais inválidas.", 401, "invalid_credentials");
   }
-  const user = {
-    id: record.id,
-    email: record.email,
-    username: record.username,
-    displayName: record.display_name,
-    avatarUrl: record.avatar_url,
-    bio: record.bio,
-    profileVisibility: record.profile_visibility,
-    role: record.role,
-    createdAt: record.created_at.toISOString(),
-  } satisfies AuthUser;
+  const user = toAuthUser(record);
   return { user, session: await issueSession(user, request) };
 }
 

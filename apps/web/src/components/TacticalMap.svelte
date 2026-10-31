@@ -14,7 +14,7 @@
 </script>
 
 <script lang="ts">
-  import type { GameState, PlayerColor } from "@hegemonia/shared";
+  import { formatCompactTroops, type GameState, type PlayerColor } from "@hegemonia/shared";
   import {
     CLASSIC_MAP,
     DIRECT_SEA_LINKS,
@@ -392,6 +392,7 @@
                 if (hoveredTerritoryId === t.id) hoveredTerritoryId = null;
               }}
             >
+              <title>{getTerritoryName(t.id)}: {tState.armies} divisões</title>
               <!-- Base Political Fill + Frontier Border -->
               <path
                 d={t.svgPath}
@@ -468,6 +469,8 @@
               {/if}
 
               {#if !cleanMapMode}
+                {@const compactTroops = formatCompactTroops(tState.armies)}
+                {@const troopFontSize = compactTroops.length <= 2 ? 8.2 : compactTroops.length === 3 ? 7.5 : 6.5}
                 <!-- HOI4-STYLE MILITARY DIVISION COUNTER WITH OPTIONAL ECONOMIC SUB-BADGE -->
                 <g
                   transform="translate({t.center[0]}, {t.center[1]}) scale({COMPACT_BADGE_IDS.has(t.id) ? 0.82 : 0.94})"
@@ -542,12 +545,12 @@
                     text-anchor="middle"
                     dominant-baseline="central"
                     fill="#ffffff"
-                    font-size="8.2"
+                    font-size={troopFontSize}
                     font-weight="800"
                     font-family="system-ui, -apple-system, sans-serif"
                     pointer-events="none"
                   >
-                    {tState.armies}
+                    {compactTroops}
                   </text>
 
                   <!-- Fortification Crest (HEGEM-63) -->

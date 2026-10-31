@@ -1069,6 +1069,7 @@
         {game}
         {myPlayerId}
         {playerMetrics}
+        {competitionMode}
         {amIHost}
         onReturnRoomToLobby={() => connectedRoom?.send("return_to_lobby")}
         onReturnToLobby={leaveCurrentRoom}
