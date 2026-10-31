@@ -451,6 +451,7 @@ export interface TurnEconomyBreakdown {
   goldPassiveMoney: number;
   buildingMoney: number;
   investmentMoney: number;
+  artilleryUpkeep: number;
   grossMoney: number;
   economicPenaltyMultiplier: number;
   netMoney: number;
@@ -540,12 +541,21 @@ export function calculateTurnEconomy(
     }
   }
 
+  // Calculate ammunition maintenance for deployed artillery ($1 per active artillery unit, HEGEM-26)
+  let totalArtillery = 0;
+  for (const terr of occupiedTerritories) {
+    if (terr.units?.artillery) {
+      totalArtillery += terr.units.artillery;
+    }
+  }
+  const artilleryUpkeep = totalArtillery * 1;
+
   const grossMoney =
     capitalMoney + tradeHubMoney + goldPassiveMoney + buildingMoney + investmentMoney;
   const economicPenaltyMultiplier = player?.isCapitalLost
     ? (player.economicPenaltyMultiplier ?? 0.5)
     : 1.0;
-  const netMoney = Math.floor(grossMoney * economicPenaltyMultiplier);
+  const netMoney = Math.floor(grossMoney * economicPenaltyMultiplier) - artilleryUpkeep;
 
   return {
     capitalMoney,
@@ -553,6 +563,7 @@ export function calculateTurnEconomy(
     goldPassiveMoney,
     buildingMoney,
     investmentMoney,
+    artilleryUpkeep,
     grossMoney,
     economicPenaltyMultiplier,
     netMoney,
@@ -572,16 +583,22 @@ function collectTurnEconomy(
   if (!player) return econ;
 
   player.resources = player.resources ?? { money: 0, steel: 0, oil: 0, gold: 0 };
-  player.resources.money += econ.netMoney;
+  player.resources.money = Math.max(0, player.resources.money + econ.netMoney);
   player.resources.steel += econ.steel;
   player.resources.oil += econ.oil;
   player.resources.gold += econ.gold;
 
   player.analytics = player.analytics ?? createInitialPlayerAnalytics();
-  player.analytics.totalMoneyEarned += econ.netMoney;
+  player.analytics.totalMoneyEarned += Math.max(0, econ.netMoney);
 
   const parts: string[] = [];
-  if (econ.netMoney > 0) parts.push(`+$${econ.netMoney}`);
+  if (econ.netMoney > 0) {
+    parts.push(
+      `+$${econ.netMoney}${econ.artilleryUpkeep > 0 ? ` (após -$${econ.artilleryUpkeep} manutenção de artilharia)` : ""}`
+    );
+  } else if (econ.netMoney < 0) {
+    parts.push(`-$${Math.abs(econ.netMoney)} (Manutenção de Artilharia)`);
+  }
   if (econ.steel > 0) parts.push(`+${econ.steel} Aço`);
   if (econ.oil > 0) parts.push(`+${econ.oil} Petróleo`);
   if (econ.gold > 0) parts.push(`+${econ.gold} Ouro`);
@@ -1415,8 +1432,17 @@ export function applyAction(
       if (toTerr.ownerId === playerId) throw new Error("Você não pode bombardear seu próprio território.");
 
       const fromDef = mapById.get(fromTerr.id)!;
-      if (!fromDef.neighbors.includes(toTerr.id)) {
-        throw new Error("A artilharia possui alcance máximo de 1 fronteira adjacente.");
+      const isNeighbor = fromDef.neighbors.includes(toTerr.id);
+      const isDirectSea = isSeaLink(fromTerr.id, toTerr.id);
+      if (!isNeighbor && !isDirectSea) {
+        throw new Error("A artilharia possui alcance máximo de 1 fronteira adjacente ou conexão marítima direta.");
+      }
+
+      if (isDirectSea) {
+        const navalCheck = checkNavalBlockade(state, fromTerr.id, toTerr.id, playerId);
+        if (navalCheck.isBlockaded) {
+          throw new Error("A rota marítima está sob bloqueio naval inimigo, impedindo o apoio de fogo costeiro.");
+        }
       }
 
       if (fromTerr.artilleryBarrageFiredThisTurn) {
@@ -1445,10 +1471,11 @@ export function applyAction(
 
       const fromName = fromDef.namePt;
       const toName = mapById.get(toTerr.id)!.namePt;
+      const barragePrefix = isDirectSea ? "🎯 BARRAGEM COSTEIRA DE ARTILHARIA" : "🎯 BARRAGEM DE ARTILHARIA";
 
       if (hits === 0) {
         state.log.push(
-          `🎯 BARRAGEM DE ARTILHARIA: Baterias em ${fromName} dispararam contra ${toName} [${rolls.join(",")}], mas os projéteis erraram o alvo.`
+          `${barragePrefix}: Baterias em ${fromName} dispararam contra ${toName} [${rolls.join(",")}], mas os projéteis erraram o alvo.`
         );
         break;
       }
@@ -1460,13 +1487,13 @@ export function applyAction(
           fort.level = 1;
           remainingHits--;
           state.log.push(
-            `🎯 BARRAGEM DE ARTILHARIA: Disparos de ${fromName} [${rolls.join(",")}] danificaram a Fortaleza em ${toName}, degradando-a para Casamata Nv. 1!`
+            `${barragePrefix}: Disparos de ${fromName} [${rolls.join(",")}] danificaram a Fortaleza em ${toName}, degradando-a para Casamata Nv. 1!`
           );
         } else if (fort.level === 1) {
           toTerr.buildings = toTerr.buildings?.filter((b) => b.type !== "fortification");
           remainingHits--;
           state.log.push(
-            `🎯 BARRAGEM DE ARTILHARIA: Disparos de ${fromName} [${rolls.join(",")}] destruíram a Casamata defensiva em ${toName}!`
+            `${barragePrefix}: Disparos de ${fromName} [${rolls.join(",")}] destruíram a Casamata defensiva em ${toName}!`
           );
         }
       }
@@ -1488,11 +1515,11 @@ export function applyAction(
         }
 
         state.log.push(
-          `🎯 BARRAGEM DE ARTILHARIA: Disparos de ${fromName} [${rolls.join(",")}] destruíram ${killCount} divisão(ões) inimiga(s) em ${toName}!`
+          `${barragePrefix}: Disparos de ${fromName} [${rolls.join(",")}] destruíram ${killCount} divisão(ões) inimiga(s) em ${toName}!`
         );
       } else if (unitsDestroyed === 0 && !fort) {
         state.log.push(
-          `🎯 BARRAGEM DE ARTILHARIA: Disparos de ${fromName} [${rolls.join(",")}] atingiram ${toName}, mas a última guarnição sobreviveu entrincheirada!`
+          `${barragePrefix}: Disparos de ${fromName} [${rolls.join(",")}] atingiram ${toName}, mas a última guarnição sobreviveu entrincheirada!`
         );
       }
       break;
@@ -1782,6 +1809,14 @@ export function applyAction(
         }
       }
 
+      // Unescorted Artillery penalty (HEGEM-26: -1 to defender die if artillery has no infantry/tank escort)
+      let unescortedArtilleryPenalty = false;
+      if (toUnits.artillery > 0 && toUnits.infantry === 0 && toUnits.tank === 0) {
+        unescortedArtilleryPenalty = true;
+        if (defenderDice.length > 0) {
+          defenderDice[0] = Math.max(1, defenderDice[0] - 1);
+        }
+      }
       // HEGEM-32: Territorial Fortification combat modifiers
       // Level 1 (Casamata): +1 to highest defense die
       // Level 2 (Fortaleza): +1 to highest defense die AND -1 to highest enemy attack die
@@ -1852,6 +1887,7 @@ export function applyAction(
         blitzkriegBonus: blitzkriegBonus ? true : undefined,
         encircledDefenderPenalty,
         coastalBombardmentBonus: coastalBombardment ? true : undefined,
+        unescortedArtilleryPenalty: unescortedArtilleryPenalty ? true : undefined,
       };
 
       const fromName = fromDef.namePt;
@@ -1871,8 +1907,11 @@ export function applyAction(
       const casTag = hasCasBonus ? " [✈️ CAS +1 Dado]" : "";
       const coastalTag = coastalBombardment ? " [⚓ Bombardeio Costeiro +1]" : "";
       const encircledTag = encircledDefenderPenalty ? ` [📦 Cerco -${encircledDefenderPenalty} DEF]` : "";
+      const unescortedArtilleryTag = unescortedArtilleryPenalty
+        ? " [💥 Artilharia Desprotegida -1 DEF]"
+        : "";
       state.log.push(
-        `Combate ${fromName} [${attackerDice.join(",")}] vs ${toName}${capitalCombatTag}${fortCombatTag}${lastStandTag}${casTag}${coastalTag}${encircledTag} [${defenderDice.join(",")}] → baixas ATQ:${attackerLosses} DEF:${defenderLosses}`
+        `Combate ${fromName} [${attackerDice.join(",")}] vs ${toName}${capitalCombatTag}${fortCombatTag}${lastStandTag}${casTag}${coastalTag}${encircledTag}${unescortedArtilleryTag} [${defenderDice.join(",")}] → baixas ATQ:${attackerLosses} DEF:${defenderLosses}`
       );
 
       if (conquered) {
