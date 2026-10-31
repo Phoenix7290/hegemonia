@@ -7,7 +7,8 @@
     "dev": "vite --host ::",
     "build": "vite build",
     "preview": "vite preview",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "test:ai": "playwright test e2e/exploratory.spec.ts"
   },
   "dependencies": {
     "@hegemonia/engine": "workspace:*",
