@@ -141,7 +141,7 @@
                   <Icon name="capital" size={13} /> {t("capital_select_btn")}
                 </button>
               {/if}
-              <button class="btn primary-gold" disabled={fromTerr?.isEncircled} onclick={confirmDeploy}>
+              <button class="btn primary-gold" data-testid="btn-confirm-deploy" disabled={fromTerr?.isEncircled} onclick={confirmDeploy}>
                 <Icon name="phase-deploy" size={14} /> {t("deploy_confirm", { count: sliderArmies })}
               </button>
             </div>
@@ -297,6 +297,7 @@
               </button>
               <button
                 class="btn btn-attack"
+                data-testid="btn-confirm-attack"
                 style="flex: 1;"
                 disabled={selectedUnitTotal < 1 || (navalCheck?.isBlockaded ?? false)}
                 onclick={confirmAttack}
@@ -354,6 +355,7 @@
               />
               <button
                 class="btn primary-gold"
+                data-testid="btn-confirm-maneuver"
                 disabled={selectedUnitTotal < 1}
                 onclick={confirmManeuver}
               >
@@ -389,11 +391,11 @@
       <div class="phase-action-slot">
         {#if isMyTurn && !game.winnerId}
           {#if game.phase === "attack" && !game.pendingConquest}
-            <button class="btn secondary" onclick={() => sendAction({ type: "end_attack" })}>
+            <button class="btn secondary" data-testid="btn-end-attack" onclick={() => sendAction({ type: "end_attack" })}>
               {t("advance_to_maneuver")}
             </button>
           {:else if game.phase === "maneuver"}
-            <button class="btn primary-gold" onclick={() => sendAction({ type: "end_turn" })}>
+            <button class="btn primary-gold" data-testid="btn-end-turn" onclick={() => sendAction({ type: "end_turn" })}>
               <Icon name="check" size={15} /> {t("end_turn")}
             </button>
           {/if}

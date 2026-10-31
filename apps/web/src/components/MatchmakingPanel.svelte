@@ -104,7 +104,7 @@
       <span>{t("matchmaking_custom_desc")}</span>
     </div>
 
-    <button class="create-custom" disabled={connecting} onclick={onCreateRoom}>
+    <button class="create-custom" data-testid="btn-create-room" disabled={connecting} onclick={onCreateRoom}>
       <Icon name="users" size={18} />
       <span>{connecting ? t("deck_btn_creating_room") : t("matchmaking_create_custom")}</span>
       <small>{t("matchmaking_rating_off")}</small>
@@ -114,6 +114,7 @@
       <div class="code-input-wrap">
         <span class="code-prefix">OP //</span>
         <input
+          data-testid="room-code-input"
           bind:value={roomCodeInput}
           maxlength="6"
           aria-label={t("deck_room_code_placeholder")}
@@ -121,7 +122,7 @@
           onkeydown={(event) => event.key === "Enter" && onJoinRoom()}
         />
       </div>
-      <button disabled={connecting || !roomCodeInput.trim()} onclick={onJoinRoom}>
+      <button data-testid="btn-join-room" disabled={connecting || !roomCodeInput.trim()} onclick={onJoinRoom}>
         <Icon name="compass" size={16} /> {t("deck_btn_join")}
       </button>
     </div>
