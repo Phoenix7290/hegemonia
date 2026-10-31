@@ -39,13 +39,15 @@ function runSimulation(seed = "hegemonia-sim-2026") {
       continue;
     }
 
-    // 2. Deploy all unplaced armies onto a front-line territory (prioritizing target continents if any)
+    // 2. Deploy all unplaced armies onto an unencircled front-line territory (HEGEM-75)
     if (state.phase === "deploy") {
       const owned = Object.values(state.territories).filter((t) => t.ownerId === player.id);
-      const frontline = owned.filter((t) =>
+      const eligible = owned.filter((t) => !t.isEncircled);
+      const candidatePool = eligible.length > 0 ? eligible : owned;
+      const frontline = candidatePool.filter((t) =>
         mapById.get(t.id)!.neighbors.some((nId) => state.territories[nId].ownerId !== player.id)
       );
-      const candidates = frontline.length > 0 ? frontline : owned;
+      const candidates = frontline.length > 0 ? frontline : candidatePool;
       // Pick the candidate with the weakest adjacent enemy so we can break through
       candidates.sort((a, b) => {
         const minEnemyA = Math.min(
@@ -65,12 +67,14 @@ function runSimulation(seed = "hegemonia-sim-2026") {
         return minEnemyA - minEnemyB;
       });
       const target = candidates[0];
-      state = applyAction(
-        state,
-        player.id,
-        { type: "deploy", territoryId: target.id, armies: player.unplacedArmies },
-        rng
-      );
+      if (target && player.unplacedArmies > 0) {
+        state = applyAction(
+          state,
+          player.id,
+          { type: "deploy", territoryId: target.id, armies: player.unplacedArmies },
+          rng
+        );
+      }
       continue;
     }
 
@@ -101,6 +105,10 @@ function runSimulation(seed = "hegemonia-sim-2026") {
 
       let attackFound = false;
       for (const from of owned) {
+        // HEGEM-25: Skip fatigued infantry territories that conquered this round without blitzkrieg
+        if (from.conqueredTurnRound === state.round && !from.blitzkriegAvailable) {
+          continue;
+        }
         const enemies = mapById
           .get(from.id)!
           .neighbors.map((nId) => state.territories[nId])
@@ -165,7 +173,7 @@ function runSimulation(seed = "hegemonia-sim-2026") {
   if (state.winnerId) {
     const winner = state.players.find((p) => p.id === state.winnerId)!;
     const count = Object.values(state.territories).filter((t) => t.ownerId === winner.id).length;
-    console.log(`🏆 VENCEDOR: ${winner.name} (${winner.color}) com ${count}/42 territórios!`);
+    console.log(`🏆 VENCEDOR: ${winner.name} (${winner.color}) com ${count}/${Object.keys(state.territories).length} territórios!`);
     console.log(`📜 Objetivo cumprido: ${winner.objective.descriptionPt}`);
   } else {
     console.log("Limite de passos atingido.");
