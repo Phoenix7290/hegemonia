@@ -53,8 +53,8 @@ export function installGameDebugHook(ctx: DebugHookContext): () => void {
       const g = ctx.getGame();
       const myId = ctx.getMyPlayerId();
       if (!g || !myId) return;
-      const clone = structuredClone(g);
-      const player = clone.players.find((p) => p.id === myId);
+      const clone = JSON.parse(JSON.stringify(g));
+      const player = clone.players.find((p: any) => p.id === myId);
       if (!player) return;
       player.resources = player.resources ?? { money: 0, steel: 0, oil: 0, gold: 0 };
       if (res.money !== undefined) player.resources.money += res.money;
@@ -66,7 +66,7 @@ export function installGameDebugHook(ctx: DebugHookContext): () => void {
     setTroops: (territoryId, count, composition) => {
       const g = ctx.getGame();
       if (!g || !g.territories[territoryId]) return;
-      const clone = structuredClone(g);
+      const clone = JSON.parse(JSON.stringify(g));
       const terr = clone.territories[territoryId];
       terr.armies = count;
       terr.units = {
@@ -81,7 +81,10 @@ export function installGameDebugHook(ctx: DebugHookContext): () => void {
     setPhase: (phase) => {
       const g = ctx.getGame();
       if (!g) return;
-      const clone = structuredClone(g);
+      const clone = JSON.parse(JSON.stringify(g));
+      const myId = ctx.getMyPlayerId() ?? clone.players[0]?.id;
+      const myIdx = clone.players.findIndex((p: any) => p.id === myId);
+      if (myIdx !== -1) clone.turnIndex = myIdx;
       clone.phase = phase;
       ctx.setGame(clone);
     },
@@ -89,7 +92,7 @@ export function installGameDebugHook(ctx: DebugHookContext): () => void {
     forceScenario: (scenarioName) => {
       const g = ctx.getGame();
       if (!g) return false;
-      const clone = structuredClone(g);
+      const clone = JSON.parse(JSON.stringify(g));
       const myId = ctx.getMyPlayerId() ?? clone.players[0]?.id;
       const myPlayer = clone.players.find((p) => p.id === myId);
       if (!myPlayer) return false;
@@ -122,7 +125,9 @@ export function installGameDebugHook(ctx: DebugHookContext): () => void {
           }
           break;
 
-        case "combat_ready":
+        case "combat_ready": {
+          const myIdx = clone.players.findIndex((p: any) => p.id === myId);
+          if (myIdx !== -1) clone.turnIndex = myIdx;
           // Prepares high troop concentration on Brasil ready to assault
           if (clone.territories["brasil"]) {
             clone.territories["brasil"].ownerId = myId;
@@ -132,6 +137,7 @@ export function installGameDebugHook(ctx: DebugHookContext): () => void {
           clone.round = 2;
           clone.phase = "attack";
           break;
+        }
 
         default:
           return false;

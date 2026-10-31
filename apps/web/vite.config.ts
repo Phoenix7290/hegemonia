@@ -7,4 +7,7 @@ export default defineConfig({
     host: "::",
     port: 5173,
   },
-});
+  test: {
+    exclude: ["e2e/**", "node_modules/**", "dist/**"],
+  },
+} as any);

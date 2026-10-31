@@ -6,6 +6,7 @@
   "scripts": {
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:e2e": "pnpm --filter @hegemonia/web test:e2e",
     "sim": "pnpm --filter @hegemonia/engine sim",
     "setup:audio": "python3 scripts/download-audio.py",
     "dev": "pnpm --parallel --filter @hegemonia/server --filter @hegemonia/web dev",
