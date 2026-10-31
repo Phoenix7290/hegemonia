@@ -48,6 +48,12 @@
   import ActionConsole from "./components/ActionConsole.svelte";
   import TopBar from "./components/TopBar.svelte";
   import TacticalMap, { wrapCamX, clampCamY } from "./components/TacticalMap.svelte";
+  import {
+    loadMapPreferences,
+    saveMapPreferences,
+    type BaseMapMode,
+    type MapOverlays,
+  } from "./lib/map-preferences";
   import { CommunicationsController } from "./lib/communications.svelte";
   import {
     InvalidRoomCodeError,
@@ -119,9 +125,21 @@
     };
   });
 
-  // Map Rendering Mode: "cartographic" (HOI4 physical satellite relief + borders), "geopolitical" (Crisp War colors), "regional" (Continents & Sub-Regions), or "economic" (Resources & Buildings)
-  let mapMode = $state<"cartographic" | "geopolitical" | "regional" | "economic">("cartographic");
+  // Map Preferences (HEGEM-62: Decoupled Base Modes & Overlays with Local Persistence)
+  const initialMapPrefs = loadMapPreferences();
+  let baseMapMode = $state<BaseMapMode>(initialMapPrefs.base);
+  let mapOverlays = $state<MapOverlays>(initialMapPrefs.overlays);
   let cleanMapMode = $state(false);
+
+  $effect(() => {
+    saveMapPreferences({
+      base: baseMapMode,
+      overlays: {
+        regional: mapOverlays.regional,
+        economic: mapOverlays.economic,
+      },
+    });
+  });
 
   // Continuous Wraparound Camera State (in SVG coordinate space: width=1200, height=620)
   let camX = $state(0);
@@ -350,16 +368,16 @@
       pressedKeys.add(k);
     } else if (e.key === "F1" || k === "1") {
       e.preventDefault();
-      mapMode = "geopolitical";
+      baseMapMode = "geopolitical";
     } else if (e.key === "F2" || k === "2") {
       e.preventDefault();
-      mapMode = "cartographic";
+      baseMapMode = "cartographic";
     } else if (e.key === "F3" || k === "3") {
       e.preventDefault();
-      mapMode = "regional";
-    } else if (e.key === "F5" || k === "4" || k === "e") {
+      mapOverlays.regional = !mapOverlays.regional;
+    } else if (k === "4" || k === "e") {
       e.preventDefault();
-      mapMode = mapMode === "economic" ? "cartographic" : "economic";
+      mapOverlays.economic = !mapOverlays.economic;
     } else if (k === "h") {
       e.preventDefault();
       toggleImmersiveMode();
@@ -1031,7 +1049,8 @@
     <TacticalMap
       {game}
       {myPlayerId}
-      {mapMode}
+      {baseMapMode}
+      overlays={mapOverlays}
       {cleanMapMode}
       {highlightObjectiveTerritories}
       {objectiveTargetTerritoryIds}
@@ -1070,7 +1089,8 @@
         {playerMetrics}
         {isImmersiveMode}
         {hudVisibility}
-        bind:mapMode
+        bind:baseMapMode
+        bind:overlays={mapOverlays}
         bind:cleanMapMode
         bind:highlightObjectiveTerritories
         bind:activeRightDrawer

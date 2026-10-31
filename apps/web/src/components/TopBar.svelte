@@ -24,6 +24,7 @@
     PlayerState,
     ResourceType,
   } from "@hegemonia/shared";
+  import type { BaseMapMode, MapOverlays } from "../lib/map-preferences";
 
   const COLOR_HEX: Record<PlayerColor, string> = {
     red: "#ef4444",
@@ -71,7 +72,9 @@
       mapControls: boolean;
       recon: boolean;
     };
-    mapMode: "cartographic" | "geopolitical" | "regional" | "economic";
+    baseMapMode?: BaseMapMode;
+    overlays?: MapOverlays;
+    mapMode?: "cartographic" | "geopolitical" | "regional" | "economic";
     cleanMapMode: boolean;
     highlightObjectiveTerritories: boolean;
     activeRightDrawer?: "cards" | "objective" | "audio" | "market" | null;
@@ -97,6 +100,8 @@
     playerMetrics,
     isImmersiveMode = false,
     hudVisibility,
+    baseMapMode = $bindable("cartographic"),
+    overlays = $bindable({ regional: false, economic: false }),
     mapMode = $bindable(),
     cleanMapMode = $bindable(),
     highlightObjectiveTerritories = $bindable(),
@@ -115,6 +120,17 @@
   let activeDiplomacyTargetId = $state<string | null>(null);
   let showContinents = $state(false);
   let marketBatchQty = $state(1);
+
+  // HEGEM-62: Backward compatibility bridge for callers using legacy mapMode
+  $effect(() => {
+    if (mapMode !== undefined) {
+      mapMode = overlays.economic
+        ? "economic"
+        : overlays.regional
+          ? "regional"
+          : baseMapMode;
+    }
+  });
 
   let activeDiplomacyTarget = $derived(
     game?.players.find((p) => p.id === activeDiplomacyTargetId) ?? null
@@ -814,42 +830,73 @@
       </div>
     {/if}
 
-    <!-- Map Mode Switcher (Cartographic HOI4 vs Geopolitical Clean vs Regional Theatres) + Camera Controls -->
+    <!-- Map Mode Switcher & Overlays (HEGEM-62) + Camera Controls -->
     {#if hudVisibility.mapControls}
       <div class="map-mode-bar">
-        <div class="mode-tabs">
-          <button
-            class="mode-btn"
-            class:active={mapMode === "cartographic"}
-            onclick={() => (mapMode = "cartographic")}
-            title={t("map_mode_cartographic_title")}
-          >
-            {t("map_mode_cartographic")}
-          </button>
-          <button
-            class="mode-btn"
-            class:active={mapMode === "geopolitical"}
-            onclick={() => (mapMode = "geopolitical")}
-            title={t("map_mode_geopolitical_title")}
-          >
-            {t("map_mode_geopolitical")}
-          </button>
-          <button
-            class="mode-btn"
-            class:active={mapMode === "regional"}
-            onclick={() => (mapMode = "regional")}
-            title={t("map_mode_regional_title")}
-          >
-            {t("map_mode_regional")}
-          </button>
-          <button
-            class="mode-btn"
-            class:active={mapMode === "economic"}
-            onclick={() => (mapMode = "economic")}
-            title={t("map_mode_economic_title")}
-          >
-            {t("map_mode_economic")}
-          </button>
+        <!-- Group 1: Base Modes (Segmented Control) -->
+        <div class="mode-group base-group" title={t("map_base_label")}>
+          <span class="group-label">{t("map_base_label")}</span>
+          <div class="segmented-control">
+            <button
+              class="mode-btn base-btn"
+              class:active={baseMapMode === "cartographic"}
+              onclick={() => (baseMapMode = "cartographic")}
+              title={t("map_mode_cartographic_title")}
+            >
+              {t("map_mode_cartographic")}
+            </button>
+            <button
+              class="mode-btn base-btn"
+              class:active={baseMapMode === "geopolitical"}
+              onclick={() => (baseMapMode = "geopolitical")}
+              title={t("map_mode_geopolitical_title")}
+            >
+              {t("map_mode_geopolitical")}
+            </button>
+          </div>
+        </div>
+
+        <div class="mode-divider"></div>
+
+        <!-- Group 2: Overlays (Toggles + Clear) -->
+        <div class="mode-group overlay-group" title={t("map_overlays_label")}>
+          <span class="group-label">{t("map_overlays_label")}</span>
+          <div class="toggle-buttons">
+            <button
+              class="mode-btn overlay-btn"
+              class:active={overlays.regional}
+              onclick={() => (overlays.regional = !overlays.regional)}
+              title={t("map_mode_regional_title")}
+            >
+              <Icon name="globe" size={12} /> {t("map_mode_regional")}
+            </button>
+            <button
+              class="mode-btn overlay-btn"
+              class:active={overlays.economic}
+              onclick={() => (overlays.economic = !overlays.economic)}
+              title={t("map_mode_economic_title")}
+            >
+              <Icon name="coins" size={12} /> {t("map_mode_economic")}
+            </button>
+            {#if overlays.regional || overlays.economic}
+              <button
+                class="mode-btn clear-layers-btn"
+                onclick={() => {
+                  overlays.regional = false;
+                  overlays.economic = false;
+                }}
+                title={t("map_clear_overlays_title")}
+              >
+                <Icon name="close" size={10} /> {t("map_clear_overlays")}
+              </button>
+            {/if}
+          </div>
+        </div>
+
+        <div class="mode-divider"></div>
+
+        <!-- Group 3: Display & Zoom Controls -->
+        <div class="mode-group display-group">
           <button
             class="mode-btn clean-mode-tab"
             class:active={cleanMapMode}
@@ -858,14 +905,32 @@
           >
             <Icon name="eye" size={12} /> {cleanMapMode ? t("mode_clean_active") : t("mode_clean_label")}
           </button>
-        </div>
 
-        <div class="zoom-cluster">
-          <button class="tool-btn" onclick={zoomIn} title="Aproximar (+)">+</button>
-          <button class="tool-btn" onclick={zoomOut} title="Afastar (Q)">-</button>
-          <button class="tool-btn" onclick={resetZoom} title="Centralizar Mapa">RST</button>
+          <div class="zoom-cluster">
+            <button class="tool-btn" onclick={zoomIn} title="Aproximar (+)">+</button>
+            <button class="tool-btn" onclick={zoomOut} title="Afastar (Q)">-</button>
+            <button class="tool-btn" onclick={resetZoom} title="Centralizar Mapa">RST</button>
+          </div>
         </div>
       </div>
+
+      <!-- Contextual Overlay Indicator Chip Bar -->
+      {#if (overlays.regional || overlays.economic) && !cleanMapMode}
+        <div class="contextual-map-legend">
+          {#if overlays.regional}
+            <span class="legend-chip regional-chip">
+              <span class="chip-dot regional-dot"></span>
+              {t("map_mode_regional")}
+            </span>
+          {/if}
+          {#if overlays.economic}
+            <span class="legend-chip econ-chip">
+              <span class="chip-dot econ-dot"></span>
+              {t("map_mode_economic")}
+            </span>
+          {/if}
+        </div>
+      {/if}
     {/if}
 
     <!-- Audio Equalizer Drawer (HEGEM-10: Independent Music + SFX Sliders + Master Mute) -->
@@ -2301,20 +2366,40 @@
     opacity: 0.88;
   }
 
-  /* Map Mode Bar */
+  /* Map Mode Bar & Overlays (HEGEM-62) */
   .map-mode-bar {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    gap: 0.35rem;
+    gap: 0.45rem;
     flex-wrap: wrap;
-    padding-top: 0.2rem;
+    padding-top: 0.25rem;
     border-top: 1px solid rgba(148, 163, 184, 0.14);
   }
-  .mode-tabs {
-    display: flex;
-    gap: 0.22rem;
-    flex-wrap: wrap;
+  .mode-group {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+  }
+  .group-label {
+    font-size: 0.58rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #64748b;
+    font-weight: 700;
+    font-family: var(--font-tactical);
+    user-select: none;
+  }
+  .segmented-control,
+  .toggle-buttons {
+    display: inline-flex;
+    gap: 0.2rem;
+    align-items: center;
+  }
+  .mode-divider {
+    width: 1px;
+    height: 16px;
+    background: rgba(148, 163, 184, 0.2);
   }
   .mode-btn {
     background: rgba(15, 23, 42, 0.8);
@@ -2326,6 +2411,10 @@
     padding: 0.2rem 0.42rem;
     border-radius: 3px;
     cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    transition: all 0.15s ease;
   }
   .mode-btn:hover {
     color: #f8fafc;
@@ -2336,6 +2425,23 @@
     border-color: #fde047;
     color: #fef08a;
   }
+  .mode-btn.overlay-btn.active {
+    background: rgba(56, 189, 248, 0.16);
+    border-color: #38bdf8;
+    color: #bae6fd;
+  }
+  .mode-btn.clear-layers-btn {
+    font-size: 0.6rem;
+    padding: 0.18rem 0.35rem;
+    border: 1px dashed rgba(248, 113, 113, 0.4);
+    color: #fca5a5;
+    background: rgba(15, 23, 42, 0.6);
+  }
+  .mode-btn.clear-layers-btn:hover {
+    border-color: #ef4444;
+    color: #fee2e2;
+    background: rgba(239, 68, 68, 0.2);
+  }
   .mode-btn.clean-mode-tab {
     display: inline-flex;
     align-items: center;
@@ -2344,6 +2450,38 @@
   .zoom-cluster {
     display: flex;
     gap: 0.2rem;
+  }
+  .contextual-map-legend {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.15rem 0.5rem;
+    background: rgba(15, 23, 42, 0.75);
+    border: 1px solid rgba(148, 163, 184, 0.15);
+    border-radius: 3px;
+    font-size: 0.62rem;
+    font-family: var(--font-tactical);
+    color: #94a3b8;
+    animation: fadeIn 0.15s ease;
+  }
+  .legend-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    font-weight: 600;
+  }
+  .chip-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+  }
+  .regional-dot {
+    background: #38bdf8;
+    box-shadow: 0 0 4px #38bdf8;
+  }
+  .econ-dot {
+    background: #f59e0b;
+    box-shadow: 0 0 4px #f59e0b;
   }
   .tool-btn {
     background: rgba(15, 23, 42, 0.8);
