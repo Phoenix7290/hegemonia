@@ -97,15 +97,19 @@ export const enMap: TranslationCatalog = {
   obj_rp_mongol_empire: "Mongol Empire: Conquer Mongolia, China, Kazakhstan, Omsk, Siberia, Moscow and Poland.",
   obj_rp_pan_african: "Pan-African Union: Conquer all of Africa, plus Brazil and Venezuela.",
 
-  // Map Modes
+  // Map Modes & Overlays (HEGEM-62)
+  map_base_label: "Base",
+  map_overlays_label: "Layers",
+  map_clear_overlays: "Clear",
+  map_clear_overlays_title: "Disable all active overlay layers",
   map_mode_cartographic: "Cartographic",
   map_mode_geopolitical: "Geopolitical",
   map_mode_regional: "Regional",
   map_mode_economic: "Economic",
   map_mode_cartographic_title: "Satellite Physical Cartographic Mode (Key 2 / F2)",
   map_mode_geopolitical_title: "Clean Geopolitical Mode (Key 1 / F1)",
-  map_mode_regional_title: "Regions & Sub-Regions Mode (Key 3 / F3)",
-  map_mode_economic_title: "Economic Mode: Resources & Infrastructure (Key E / F5)",
+  map_mode_regional_title: "Toggle Regions & Sub-Regions Overlay (Key 3 / F3)",
+  map_mode_economic_title: "Toggle Economic Overlay: Resources & Infrastructure (Key E / 4)",
   map_mode_clean_title: "Toggle Clean Map View (Hide Troops and Labels - Key F4)",
 
 amazonia: "Amazonia",

@@ -27,11 +27,14 @@
   } from "@hegemonia/engine";
   import Icon from "./Icon.svelte";
   import { getTerritoryName } from "../i18n/content.svelte";
+  import type { BaseMapMode, MapOverlays } from "../lib/map-preferences.js";
 
   let {
     game,
     myPlayerId,
-    mapMode = "cartographic",
+    baseMapMode = "cartographic",
+    overlays = { regional: false, economic: false },
+    mapMode,
     cleanMapMode = false,
     highlightObjectiveTerritories = false,
     objectiveTargetTerritoryIds = new Set<string>(),
@@ -45,6 +48,8 @@
   }: {
     game: GameState;
     myPlayerId: string | null;
+    baseMapMode?: BaseMapMode;
+    overlays?: MapOverlays;
     mapMode?: "cartographic" | "geopolitical" | "regional" | "economic";
     cleanMapMode?: boolean;
     highlightObjectiveTerritories?: boolean;
@@ -57,6 +62,15 @@
     camY?: number;
     onTerritoryClick: (terrId: string) => void;
   } = $props();
+
+  const effectiveBaseMode = $derived<BaseMapMode>(
+    baseMapMode ?? (mapMode === "geopolitical" ? "geopolitical" : "cartographic")
+  );
+
+  const effectiveOverlays = $derived<MapOverlays>({
+    regional: overlays?.regional ?? (mapMode === "regional"),
+    economic: overlays?.economic ?? (mapMode === "economic"),
+  });
 
   const COLOR_HEX: Record<PlayerColor, string> = {
     blue: "#3b82f6",
@@ -241,7 +255,7 @@
         y={-MAP_HEIGHT}
         width={MAP_WIDTH * 5}
         height={MAP_HEIGHT * 3}
-        fill={mapMode === "cartographic" ? "#061121" : "#08172e"}
+        fill={effectiveBaseMode === "cartographic" ? "#061121" : "#08172e"}
       />
       <rect
         x={-MAP_WIDTH * 2}
@@ -254,7 +268,7 @@
       <!-- 3 HORIZONTAL WORLD COPIES (-1200, 0, +1200) FOR CONTINUOUS EU4/HOI4 GLOBE WRAPPING -->
       {#each [-MAP_WIDTH, 0, MAP_WIDTH] as offsetX (offsetX)}
         <g class="world-copy" transform="translate({offsetX}, 0)">
-          {#if mapMode === "cartographic"}
+          {#if effectiveBaseMode === "cartographic"}
             <!-- NASA Blue Marble Topography + Ocean Bathymetry Satellite Raster Layer (Exact Equirectangular Match: x=0..1200, y=20..620) -->
             <image
               href="/maps/world-relief.jpg"
@@ -293,7 +307,7 @@
               y1={ta.center[1]}
               x2={tb.center[0]}
               y2={tb.center[1]}
-              stroke={mapMode === "cartographic" ? "rgba(224, 242, 254, 0.65)" : "#64748b"}
+              stroke={effectiveBaseMode === "cartographic" ? "rgba(224, 242, 254, 0.65)" : "#64748b"}
               stroke-dasharray="3.5,4"
               stroke-width="1.35"
               pointer-events="none"
@@ -310,7 +324,7 @@
               y1={tw.center[1]}
               x2={te.center[0] - MAP_WIDTH}
               y2={te.center[1]}
-              stroke={mapMode === "cartographic" ? "rgba(224, 242, 254, 0.72)" : "#94a3b8"}
+              stroke={effectiveBaseMode === "cartographic" ? "rgba(224, 242, 254, 0.72)" : "#94a3b8"}
               stroke-dasharray="4,4"
               stroke-width="1.5"
               pointer-events="none"
@@ -339,12 +353,7 @@
                     : (t.tradeBonus && t.tradeBonus > 0)
                       ? "#064e3b"
                       : "#18181b"}
-            {@const activeFill =
-              mapMode === "regional"
-                ? regionColor
-                : mapMode === "economic"
-                  ? economicProfileColor
-                  : ownerColor}
+            {@const activeFill = ownerColor}
             {@const isSelected = selectedFromId === t.id || selectedToId === t.id}
             {@const fromTerrState = selectedFromId ? game.territories[selectedFromId] : null}
             {@const isAirliftDest =
@@ -384,7 +393,7 @@
               }}
             >
               <title>{getTerritoryName(t.id)}: {tState.armies} divisões</title>
-              <!-- Political or Regional Fill + Frontier Border -->
+              <!-- Base Political Fill + Frontier Border -->
               <path
                 d={t.svgPath}
                 fill={isObjOwned ? "#059669" : isObjPending ? "#dc2626" : activeFill}
@@ -392,13 +401,9 @@
                   ? "0.85"
                   : isSelected
                     ? "0.88"
-                    : mapMode === "cartographic"
+                    : effectiveBaseMode === "cartographic"
                       ? "0.42"
-                      : mapMode === "regional"
-                        ? "0.72"
-                        : mapMode === "economic"
-                          ? "0.76"
-                          : "0.84"}
+                      : "0.84"}
                 stroke={isSelected
                   ? "#ffffff"
                   : isValidTarget
@@ -407,7 +412,7 @@
                       ? "#ef4444"
                       : isObjOwned
                         ? "#10b981"
-                        : mapMode === "cartographic" || mapMode === "economic"
+                        : effectiveBaseMode === "cartographic"
                           ? ownerColor
                           : "rgba(9, 13, 22, 0.9)"}
                 stroke-width={isSelected
@@ -416,7 +421,7 @@
                     ? "2.4"
                     : isObjOwned
                       ? "2.0"
-                      : mapMode === "cartographic"
+                      : effectiveBaseMode === "cartographic"
                         ? "1.6"
                         : "1.0"}
                 stroke-linejoin="round"
@@ -430,7 +435,7 @@
                 style={isObjDimmed ? "opacity: 0.28; transition: opacity 0.25s ease;" : "transition: opacity 0.25s ease;"}
               />
 
-              {#if mapMode === "cartographic"}
+              {#if effectiveBaseMode === "cartographic"}
                 <!-- Crisp Dark Inner Frontier Line so Neighboring Same-Color Provinces Remain Distinct Over Satellite Terrain -->
                 <path
                   d={t.svgPath}
@@ -441,155 +446,36 @@
                 />
               {/if}
 
+              <!-- OVERLAY: Regional Continental Tint -->
+              {#if effectiveOverlays.regional}
+                <path
+                  d={t.svgPath}
+                  fill={regionColor}
+                  fill-opacity={effectiveBaseMode === "cartographic" ? "0.32" : "0.26"}
+                  stroke="none"
+                  pointer-events="none"
+                />
+              {/if}
+
+              <!-- OVERLAY: Economic Resource Ambient Glow -->
+              {#if effectiveOverlays.economic && t.resource}
+                <path
+                  d={t.svgPath}
+                  fill={t.resource === "gold" ? "#eab308" : t.resource === "oil" ? "#f97316" : "#94a3b8"}
+                  fill-opacity="0.16"
+                  stroke="none"
+                  pointer-events="none"
+                />
+              {/if}
+
               {#if !cleanMapMode}
-                {#if mapMode === "economic"}
-                  {@const maxSlots = isCapital ? 3 : 2}
-                  {@const bldgs = tState.buildings ?? []}
-                  <!-- ECONOMIC MAP MODE: RESOURCE PROFILE + BUILDING SLOTS (HEGEM-58) -->
-                  <g
-                    transform="translate({t.center[0]}, {t.center[1]}) scale({COMPACT_BADGE_IDS.has(t.id) ? 0.84 : 0.96})"
-                    class="economic-counter"
-                  >
-                    <!-- Base Frame -->
-                    <rect
-                      x="-22"
-                      y="-9.5"
-                      width="44"
-                      height="19"
-                      rx="2.8"
-                      fill="#090e1a"
-                      stroke={isCapital
-                        ? "#f59e0b"
-                        : isSelected
-                          ? "#ffffff"
-                          : isValidTarget
-                            ? "#facc15"
-                            : ownerColor}
-                      stroke-width={isCapital || isSelected || isValidTarget ? "1.6" : "1.1"}
-                      filter="drop-shadow(0 2px 4px rgba(0,0,0,0.85))"
-                    />
-
-                    <!-- Resource Icon on Left (Unified 24x24 Design System Plate) -->
-                    {#if t.resource === "gold"}
-                      <g transform="translate(-14, 0)">
-                        <circle cx="0" cy="0" r="5.2" fill="#2e1b05" stroke="#facc15" stroke-width="0.85" />
-                        <Icon name="gold" size={8} x={-4} y={-4} color="#fde047" strokeWidth={2} />
-                      </g>
-                    {:else if t.resource === "steel"}
-                      <g transform="translate(-14, 0)">
-                        <circle cx="0" cy="0" r="5.2" fill="#0f172a" stroke="#94a3b8" stroke-width="0.85" />
-                        <Icon name="steel" size={8} x={-4} y={-4} color="#e2e8f0" strokeWidth={2} />
-                      </g>
-                    {:else if t.resource === "oil"}
-                      <g transform="translate(-14, 0)">
-                        <circle cx="0" cy="0" r="5.2" fill="#321202" stroke="#f97316" stroke-width="0.85" />
-                        <Icon name="oil" size={8} x={-4} y={-4} color="#fdba74" strokeWidth={2} />
-                      </g>
-                    {:else if t.tradeBonus && t.tradeBonus > 0}
-                      <g transform="translate(-14, 0)">
-                        <circle cx="0" cy="0" r="5.2" fill="#042f2e" stroke="#10b981" stroke-width="0.85" />
-                        <Icon name="coins" size={8} x={-4} y={-4} color="#6ee7b7" strokeWidth={2} />
-                      </g>
-                    {:else}
-                      <g transform="translate(-14, 0)">
-                        <circle cx="0" cy="0" r="3.2" fill="#0f172a" stroke="rgba(148, 163, 184, 0.45)" stroke-width="0.75" />
-                      </g>
-                    {/if}
-
-                    <!-- Divider Line -->
-                    <line x1="-7.5" y1="-8" x2="-7.5" y2="8" stroke="rgba(148, 163, 184, 0.3)" stroke-width="0.7" />
-
-                    <!-- Building Slots on Right (2 for regular, 3 for active Capital) -->
-                    <g transform="translate(6.2, 0)">
-                      {#each Array(maxSlots) as _, slotIdx}
-                        {@const b = bldgs[slotIdx]}
-                        {@const slotX = (slotIdx - (maxSlots - 1) / 2) * 8.6}
-                        <g transform="translate({slotX}, 0)">
-                          {#if b}
-                            <rect
-                              x="-3.8"
-                              y="-4.6"
-                              width="7.6"
-                              height="9.2"
-                              rx="1.4"
-                              fill={b.type === "market"
-                                ? "#451a03"
-                                : b.type === "industry"
-                                  ? "#1e293b"
-                                  : b.type === "fortification"
-                                    ? (b.level === 2 ? "#082f49" : "#1e293b")
-                                    : b.type === "airfield"
-                                      ? "#172554"
-                                      : "#042f2e"}
-                              stroke={b.type === "market"
-                                ? "#f59e0b"
-                                : b.type === "industry"
-                                  ? "#fb923c"
-                                  : b.type === "fortification"
-                                    ? (b.level === 2 ? "#38bdf8" : "#94a3b8")
-                                    : b.type === "airfield"
-                                      ? "#60a5fa"
-                                      : "#2dd4bf"}
-                              stroke-width="0.8"
-                            />
-                            <Icon
-                              name={b.type === "fortification"
-                                ? (b.level === 2 ? "fortification-l2" : "fortification")
-                                : b.type}
-                              size={6.2}
-                              x={-3.1}
-                              y={-3.1}
-                              color={b.type === "market"
-                                ? "#fde047"
-                                : b.type === "industry"
-                                  ? "#fdba74"
-                                  : b.type === "fortification"
-                                    ? (b.level === 2 ? "#7dd3fc" : "#e2e8f0")
-                                    : b.type === "airfield"
-                                      ? "#93c5fd"
-                                      : "#5eead4"}
-                              strokeWidth={2.1}
-                            />
-                          {:else}
-                            <rect
-                              x="-3.5"
-                              y="-4.5"
-                              width="7"
-                              height="9"
-                              rx="1.2"
-                              fill="rgba(15, 23, 42, 0.4)"
-                              stroke="rgba(148, 163, 184, 0.35)"
-                              stroke-dasharray="1.2, 1"
-                              stroke-width="0.6"
-                            />
-                          {/if}
-                        </g>
-                      {/each}
-                    </g>
-
-                    <!-- Territory Label Underneath -->
-                    <text
-                      x="0"
-                      y="15.2"
-                      text-anchor="middle"
-                      fill={isCapital ? "#fde047" : "#e2e8f0"}
-                      font-size="6.0"
-                      font-weight="700"
-                      letter-spacing="0.01em"
-                      pointer-events="none"
-                      style="paint-order: stroke; stroke: #050912; stroke-width: 2.2px; stroke-linejoin: round;"
-                    >
-                      {getTerritoryName(t.id)}
-                    </text>
-                  </g>
-                {:else}
-                  {@const compactTroops = formatCompactTroops(tState.armies)}
-                  {@const troopFontSize = compactTroops.length <= 2 ? 8.2 : compactTroops.length === 3 ? 7.5 : 6.5}
-                  <!-- HOI4-STYLE MILITARY DIVISION COUNTER (COMPACT FLAG + TROOP COUNT) -->
-                  <g
-                    transform="translate({t.center[0]}, {t.center[1]}) scale({COMPACT_BADGE_IDS.has(t.id) ? 0.82 : 0.94})"
-                    class="division-counter"
-                  >
+                {@const compactTroops = formatCompactTroops(tState.armies)}
+                {@const troopFontSize = compactTroops.length <= 2 ? 8.2 : compactTroops.length === 3 ? 7.5 : 6.5}
+                <!-- HOI4-STYLE MILITARY DIVISION COUNTER WITH OPTIONAL ECONOMIC SUB-BADGE -->
+                <g
+                  transform="translate({t.center[0]}, {t.center[1]}) scale({COMPACT_BADGE_IDS.has(t.id) ? 0.82 : 0.94})"
+                  class="division-counter"
+                >
                   <!-- Capital Crown / Vector Seal (HEGEM-63) -->
                   {#if isCapital}
                     <g transform="translate(0, -10.2)">
@@ -706,10 +592,126 @@
                     </g>
                   {/if}
 
+                  <!-- Attached Economic Sub-Badge (Overlay: Economic) -->
+                  {#if effectiveOverlays.economic}
+                    {@const maxSlots = isCapital ? 3 : 2}
+                    {@const bldgs = tState.buildings ?? []}
+                    <g transform="translate(0, 11.5)" class="economic-sub-badge" pointer-events="none">
+                      <rect
+                        x="-20"
+                        y="-4.6"
+                        width="40"
+                        height="9.4"
+                        rx="2"
+                        fill="#090e1a"
+                        stroke="rgba(148, 163, 184, 0.45)"
+                        stroke-width="0.75"
+                        filter="drop-shadow(0 1px 2px rgba(0,0,0,0.85))"
+                      />
+                      <!-- Resource Icon on Left -->
+                      {#if t.resource === "gold"}
+                        <g transform="translate(-13.5, 0)">
+                          <circle cx="0" cy="0" r="3.2" fill="#2e1b05" stroke="#facc15" stroke-width="0.6" />
+                          <Icon name="gold" size={5} x={-2.5} y={-2.5} color="#fde047" strokeWidth={2} />
+                        </g>
+                      {:else if t.resource === "steel"}
+                        <g transform="translate(-13.5, 0)">
+                          <circle cx="0" cy="0" r="3.2" fill="#0f172a" stroke="#94a3b8" stroke-width="0.6" />
+                          <Icon name="steel" size={5} x={-2.5} y={-2.5} color="#e2e8f0" strokeWidth={2} />
+                        </g>
+                      {:else if t.resource === "oil"}
+                        <g transform="translate(-13.5, 0)">
+                          <circle cx="0" cy="0" r="3.2" fill="#321202" stroke="#f97316" stroke-width="0.6" />
+                          <Icon name="oil" size={5} x={-2.5} y={-2.5} color="#fdba74" strokeWidth={2} />
+                        </g>
+                      {:else if t.tradeBonus && t.tradeBonus > 0}
+                        <g transform="translate(-13.5, 0)">
+                          <circle cx="0" cy="0" r="3.2" fill="#042f2e" stroke="#10b981" stroke-width="0.6" />
+                          <Icon name="coins" size={5} x={-2.5} y={-2.5} color="#6ee7b7" strokeWidth={2} />
+                        </g>
+                      {:else}
+                        <g transform="translate(-13.5, 0)">
+                          <circle cx="0" cy="0" r="1.8" fill="#0f172a" stroke="rgba(148, 163, 184, 0.35)" stroke-width="0.5" />
+                        </g>
+                      {/if}
+
+                      <!-- Divider Line -->
+                      <line x1="-8" y1="-3.8" x2="-8" y2="3.8" stroke="rgba(148, 163, 184, 0.25)" stroke-width="0.6" />
+
+                      <!-- Building Slots on Right -->
+                      <g transform="translate(4.5, 0)">
+                        {#each Array(maxSlots) as _, slotIdx}
+                          {@const b = bldgs[slotIdx]}
+                          {@const slotX = (slotIdx - (maxSlots - 1) / 2) * 7.2}
+                          <g transform="translate({slotX}, 0)">
+                            {#if b}
+                              <rect
+                                x="-2.8"
+                                y="-3.4"
+                                width="5.6"
+                                height="6.8"
+                                rx="1"
+                                fill={b.type === "market"
+                                  ? "#451a03"
+                                  : b.type === "industry"
+                                    ? "#1e293b"
+                                    : b.type === "fortification"
+                                      ? (b.level === 2 ? "#082f49" : "#1e293b")
+                                      : b.type === "airfield"
+                                        ? "#172554"
+                                        : "#042f2e"}
+                                stroke={b.type === "market"
+                                  ? "#f59e0b"
+                                  : b.type === "industry"
+                                    ? "#fb923c"
+                                    : b.type === "fortification"
+                                      ? (b.level === 2 ? "#38bdf8" : "#94a3b8")
+                                      : b.type === "airfield"
+                                        ? "#60a5fa"
+                                        : "#2dd4bf"}
+                                stroke-width="0.6"
+                              />
+                              <Icon
+                                name={b.type === "fortification"
+                                  ? (b.level === 2 ? "fortification-l2" : "fortification")
+                                  : b.type}
+                                size={4.6}
+                                x={-2.3}
+                                y={-2.3}
+                                color={b.type === "market"
+                                  ? "#fde047"
+                                  : b.type === "industry"
+                                    ? "#fdba74"
+                                    : b.type === "fortification"
+                                      ? (b.level === 2 ? "#7dd3fc" : "#e2e8f0")
+                                      : b.type === "airfield"
+                                        ? "#93c5fd"
+                                        : "#5eead4"}
+                                strokeWidth={2}
+                              />
+                            {:else}
+                              <rect
+                                x="-2.6"
+                                y="-3.2"
+                                width="5.2"
+                                height="6.4"
+                                rx="0.9"
+                                fill="rgba(15, 23, 42, 0.4)"
+                                stroke="rgba(148, 163, 184, 0.3)"
+                                stroke-dasharray="1, 0.8"
+                                stroke-width="0.5"
+                              />
+                            {/if}
+                          </g>
+                        {/each}
+                      </g>
+                    </g>
+                  {/if}
+
                   <!-- Territory Label Underneath Counter -->
                   <text
                     x="0"
-                    y="11.2"
+                    y={effectiveOverlays.economic ? 20.8 : 11.2}
                     text-anchor="middle"
                     fill={isCapital ? "#fde047" : "#e2e8f0"}
                     font-size="6.2"
@@ -721,8 +723,8 @@
                     {getTerritoryName(t.id)}
                   </text>
 
-                  <!-- Structural Indicators (Dots for constructed infrastructure) -->
-                  {#if tState.buildings && tState.buildings.length > 0}
+                  <!-- Structural Indicators (Dots for constructed infrastructure, only shown if economic overlay is off) -->
+                  {#if !effectiveOverlays.economic && tState.buildings && tState.buildings.length > 0}
                     <g transform="translate(0, 16.5)" pointer-events="none">
                       {#each tState.buildings as b, bIdx}
                         {@const xOffset = (bIdx - (tState.buildings.length - 1) / 2) * 5.2}
@@ -746,13 +748,12 @@
                     </g>
                   {/if}
                 </g>
-                {/if}
               {/if}
             </g>
           {/each}
 
-          <!-- Floating Regional & Sub-Regional Theatre Banners in "regional" Map Mode -->
-          {#if mapMode === "regional" && !cleanMapMode}
+          <!-- Floating Regional & Sub-Regional Theatre Banners in "regional" Overlay -->
+          {#if effectiveOverlays.regional && !cleanMapMode}
             {#each REGION_BANNERS as rb}
               <g transform="translate({rb.x}, {rb.y})" pointer-events="none">
                 <rect
@@ -833,8 +834,7 @@
   .territory-group:hover path:first-child {
     filter: brightness(1.25);
   }
-  .division-counter,
-  .economic-counter {
+  .division-counter {
     pointer-events: none;
   }
 </style>
