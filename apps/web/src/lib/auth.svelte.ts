@@ -21,6 +21,15 @@ class AuthStore {
     await api<void>("/api/auth/logout", { method: "POST" });
     this.user = null;
   }
+
+  async refresh(): Promise<void> {
+    try {
+      const result = await api<{ user: AuthUser | null }>("/api/auth/me");
+      this.user = result.user;
+    } catch {
+      // Ignored if offline or unauthorized
+    }
+  }
 }
 
 export const auth = new AuthStore();

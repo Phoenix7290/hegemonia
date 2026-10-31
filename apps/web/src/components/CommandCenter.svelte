@@ -1,11 +1,12 @@
 <script lang="ts">
-  import type {
-    CompetitionMode,
-    LeaderboardRow,
-    MatchOrigin,
-    MatchmakingStatus,
-    PlayerColor,
-    PublicQueueMode,
+  import {
+    calculateLevelProgress,
+    type CompetitionMode,
+    type LeaderboardRow,
+    type MatchOrigin,
+    type MatchmakingStatus,
+    type PlayerColor,
+    type PublicQueueMode,
   } from "@hegemonia/shared";
   import { api, navigate } from "../lib/api";
   import { auth } from "../lib/auth.svelte";
@@ -96,6 +97,9 @@
   let myLobbyEntry = $derived(lobbyPlayers.find((p) => p.token === myPlayerId) ?? null);
   let amIHost = $derived(Boolean(myLobbyEntry?.isHost));
   let emptySlotsCount = $derived(Math.max(0, 6 - lobbyPlayers.length));
+  let userLevelProgress = $derived(
+    calculateLevelProgress(auth.user?.totalXp ?? 0)
+  );
 
   function copyRoomCode() {
     if (!roomCode) return;
@@ -143,9 +147,15 @@
                 <div class="cid-badges">
                   <span class="status-pill verified"><Icon name="shield" size={12} /> {t("deck_verified_account")}</span>
                   <span class="status-pill ranked">{t("deck_ranked_active")}</span>
+                  <span class="status-pill level-pill" title={t("xp_level_tooltip", { level: auth.user.level || userLevelProgress.level, xp: auth.user.totalXp ?? 0 })}>
+                    <Icon name="rank" size={11} /> {t("xp_level_badge", { level: auth.user.level || userLevelProgress.level })}
+                  </span>
                 </div>
                 <strong>{auth.user.displayName}</strong>
                 <small>@{auth.user.username}</small>
+                <div class="xp-mini-track" title="{userLevelProgress.xpInCurrentLevel} / {userLevelProgress.xpNeededForNextLevel} XP ({userLevelProgress.progressPct}%)">
+                  <div class="xp-mini-fill" style="width: {userLevelProgress.progressPct}%;"></div>
+                </div>
               </div>
               <button
                 class="outline-button cid-action"
@@ -660,6 +670,24 @@
     background: rgba(16, 185, 129, 0.18);
     color: #6ee7b7;
     border: 1px solid rgba(16, 185, 129, 0.4);
+  }
+  .status-pill.level-pill {
+    background: rgba(56, 189, 248, 0.18);
+    color: #bae6fd;
+    border: 1px solid rgba(56, 189, 248, 0.45);
+  }
+  .xp-mini-track {
+    width: 100%;
+    height: 3px;
+    background: rgba(148, 163, 184, 0.2);
+    border-radius: 2px;
+    overflow: hidden;
+    margin-top: 4px;
+  }
+  .xp-mini-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #38bdf8, #f59e0b);
+    transition: width 0.3s ease;
   }
   .cid-meta strong {
     font-family: var(--font-tactical);
