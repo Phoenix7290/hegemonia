@@ -26,7 +26,12 @@
     getTerritoryBuildingLevel,
   } from "@hegemonia/engine";
   import Icon from "./Icon.svelte";
-  import { getTerritoryName } from "../i18n/content.svelte";
+  import { t } from "../i18n/index.svelte";
+  import {
+    getTerritoryName,
+    getContinentName,
+    getSubregionName,
+  } from "../i18n/content.svelte";
   import type { BaseMapMode, MapOverlays } from "../lib/map-preferences.js";
   import type { IconName } from "../lib/icons.js";
 
@@ -95,100 +100,182 @@
 
   interface TheaterBanner {
     id: string;
-    label: string;
-    shortLabel: string;
+    continent: string;
+    subRegion?: string;
+    shortKey: string;
+    doctrineKey: string;
     bonusArmies: number;
-    extraBonus?: { icon: IconName; text: string; color: string };
+    extraBonus?: { icon: IconName; text: string; color: string; labelKey: string };
     x: number;
     y: number;
     color: string;
-    tooltip: string;
   }
 
+  // Ocean & Coastal Void Anchors (HEGEM-77 & HEGEM-81): Zero collision with land territory badges
   const REGION_BANNERS: TheaterBanner[] = [
     {
       id: "north-america",
-      label: "América do Norte",
-      shortLabel: "AMÉRICA DO NORTE",
-      bonusArmies: 5,
-      x: 180,
-      y: 75,
+      continent: "north_america",
+      shortKey: "theater_short_north_america",
+      doctrineKey: "theater_doctrine_north_america",
+      bonusArmies: 6,
+      x: 145,
+      y: 222,
       color: "#f59e0b",
-      tooltip: "América do Norte (9 províncias) — Bônus de Teatro: +5 Tropas/turno",
     },
     {
       id: "south-america",
-      label: "América do Sul",
-      shortLabel: "AMÉRICA DO SUL",
-      bonusArmies: 2,
-      x: 295,
-      y: 440,
+      continent: "south_america",
+      shortKey: "theater_short_south_america",
+      doctrineKey: "theater_doctrine_south_america",
+      bonusArmies: 3,
+      x: 292,
+      y: 405,
       color: "#10b981",
-      tooltip: "América do Sul (4 províncias) — Bônus de Teatro: +2 Tropas/turno",
     },
     {
       id: "europe",
-      label: "Europa",
-      shortLabel: "EUROPA",
-      bonusArmies: 5,
-      extraBonus: { icon: "coins", text: "+$3", color: "#6ee7b7" },
-      x: 520,
-      y: 85,
+      continent: "europe",
+      shortKey: "theater_short_europe",
+      doctrineKey: "theater_doctrine_europe",
+      bonusArmies: 6,
+      extraBonus: {
+        icon: "coins",
+        text: "+$3",
+        color: "#6ee7b7",
+        labelKey: "theater_bonus_economy_label",
+      },
+      x: 500,
+      y: 152,
       color: "#3b82f6",
-      tooltip: "Europa Ocidental & Oriental (7 províncias) — Bônus de Teatro: +5 Tropas/turno +$3 Geoeconômico",
     },
     {
       id: "africa",
-      label: "África",
-      shortLabel: "ÁFRICA",
-      bonusArmies: 3,
-      x: 545,
-      y: 375,
+      continent: "africa",
+      shortKey: "theater_short_africa",
+      doctrineKey: "theater_doctrine_africa",
+      bonusArmies: 4,
+      x: 534,
+      y: 350,
       color: "#eab308",
-      tooltip: "África (6 províncias) — Bônus de Teatro: +3 Tropas/turno",
     },
     {
       id: "asia-indo-arabia",
-      label: "Ásia: Indo-Arábia",
-      shortLabel: "INDO-ARÁBIA",
+      continent: "asia",
+      subRegion: "asia_indo_arabia",
+      shortKey: "theater_short_asia_indo_arabia",
+      doctrineKey: "theater_doctrine_asia_indo_arabia",
       bonusArmies: 2,
-      extraBonus: { icon: "oil", text: "+2", color: "#fdba74" },
-      x: 810,
-      y: 335,
+      extraBonus: {
+        icon: "oil",
+        text: "+2",
+        color: "#fdba74",
+        labelKey: "theater_bonus_resources_label",
+      },
+      x: 808,
+      y: 312,
       color: "#f97316",
-      tooltip: "Indo-Arábia (5 províncias) — Bônus de Teatro: +2 Tropas/turno +2 Petróleo",
     },
     {
       id: "asia-steppes",
-      label: "Ásia: Estepes & Sibéria",
-      shortLabel: "ESTEPES & SIBÉRIA",
+      continent: "asia",
+      subRegion: "asia_steppes",
+      shortKey: "theater_short_asia_steppes",
+      doctrineKey: "theater_doctrine_asia_steppes",
       bonusArmies: 2,
-      x: 885,
-      y: 50,
+      extraBonus: {
+        icon: "steel",
+        text: "+1",
+        color: "#cbd5e1",
+        labelKey: "theater_bonus_resources_label",
+      },
+      x: 880,
+      y: 42,
       color: "#06b6d4",
-      tooltip: "Estepes Centrais & Sibéria (4 províncias) — Bônus de Teatro: +2 Tropas/turno",
     },
     {
       id: "asia-east",
-      label: "Ásia: Leste Asiático",
-      shortLabel: "LESTE ASIÁTICO",
-      bonusArmies: 3,
-      x: 1085,
-      y: 245,
+      continent: "asia",
+      subRegion: "asia_east",
+      shortKey: "theater_short_asia_east",
+      doctrineKey: "theater_doctrine_asia_east",
+      bonusArmies: 4,
+      x: 1134,
+      y: 222,
       color: "#ec4899",
-      tooltip: "Leste Asiático (7 províncias) — Bônus de Teatro: +3 Tropas/turno",
     },
     {
       id: "oceania",
-      label: "Oceania",
-      shortLabel: "OCEANIA",
+      continent: "oceania",
+      shortKey: "theater_short_oceania",
+      doctrineKey: "theater_doctrine_oceania",
       bonusArmies: 2,
-      x: 1015,
-      y: 460,
+      x: 936,
+      y: 416,
       color: "#a855f7",
-      tooltip: "Oceania & Arquipélagos (4 províncias) — Bônus de Teatro: +2 Tropas/turno",
     },
   ];
+
+  let hoveredTheaterId = $state<string | null>(null);
+
+  function getTheaterTitle(rb: TheaterBanner): string {
+    if (rb.subRegion) {
+      return `${getContinentName(rb.continent)}: ${getSubregionName(rb.subRegion)}`;
+    }
+    return getContinentName(rb.continent);
+  }
+
+  function getTheaterStats(rb: TheaterBanner) {
+    const terrs = CLASSIC_MAP.territories.filter((t) =>
+      rb.subRegion ? t.subRegion === rb.subRegion : t.continent === rb.continent
+    );
+    const total = terrs.length;
+    const countsByOwner = new Map<string, number>();
+    let myCount = 0;
+
+    for (const terr of terrs) {
+      const ownerId = game.territories[terr.id]?.ownerId;
+      if (ownerId) {
+        countsByOwner.set(ownerId, (countsByOwner.get(ownerId) ?? 0) + 1);
+        if (ownerId === myPlayerId) myCount++;
+      }
+    }
+
+    let leaderId: string | null = null;
+    let leaderCount = 0;
+    for (const [ownerId, count] of countsByOwner.entries()) {
+      if (count > leaderCount) {
+        leaderCount = count;
+        leaderId = ownerId;
+      }
+    }
+
+    const leaderPlayer = leaderId ? game.players.find((p) => p.id === leaderId) ?? null : null;
+    const isHegemonyActive = total > 0 && leaderCount === total;
+    const statusLabel = isHegemonyActive ? t("theater_status_active") : t("theater_status_contested");
+    const summaryText = t("theater_progress_summary", {
+      controlled: leaderCount,
+      total,
+      status: statusLabel,
+    });
+
+    return {
+      total,
+      myCount,
+      leaderCount,
+      leaderPlayer,
+      isHegemonyActive,
+      statusLabel,
+      summaryText,
+    };
+  }
+
+  let activeTheaterBanner = $derived(
+    hoveredTheaterId ? REGION_BANNERS.find((b) => b.id === hoveredTheaterId) ?? null : null
+  );
+  let activeTheaterStats = $derived(
+    activeTheaterBanner ? getTheaterStats(activeTheaterBanner) : null
+  );
 
   function getTerritoryRegionColor(t: { continent: string; subRegion?: string }): string {
     if (t.subRegion && REGION_COLOR_HEX[t.subRegion]) {
@@ -200,13 +287,27 @@
   const COMPACT_BADGE_IDS = new Set([
     "islandia",
     "inglaterra",
+    "suecia",
     "alemanha",
     "polonia",
     "balcas",
     "franca",
+    "espanha",
+    "italia",
+    "argelia",
     "egito",
+    "nigeria",
+    "sudao",
+    "congo",
+    "mocambique",
+    "sao_paulo",
+    "california",
+    "texas",
+    "nova_york",
+    "ottawa",
     "tchita",
     "mongolia",
+    "pequim",
     "vietna",
     "borneu",
     "sumatra",
@@ -214,6 +315,22 @@
     "madagascar",
     "havai",
   ]);
+
+  // Optical badge anchor offsets in dense continental clusters (HEGEM-77)
+  const BADGE_ANCHOR_OFFSETS: Record<string, [number, number]> = {
+    inglaterra: [-6, -5],
+    franca: [-2, -1],
+    espanha: [-8, 5],
+    alemanha: [0, -4],
+    italia: [-1, 5],
+    polonia: [3, -4],
+    balcas: [5, 3],
+    congo: [-5, -4],
+    mocambique: [4, 4],
+    tchita: [3, -4],
+    mongolia: [-5, -1],
+    pequim: [6, 3],
+  };
 
   const territoryById = new Map(CLASSIC_MAP.territories.map((t) => [t.id, t]));
 
@@ -297,9 +414,79 @@
   {#if cleanMapMode}
     <div class="clean-map-indicator">
       <Icon name="eye" size={13} />
-      <span>Visão Limpa Ativa — Pressione <strong>F4</strong> para restaurar marcadores</span>
+      <span>{t("clean_map_indicator_text")}</span>
     </div>
   {/if}
+
+  {#if effectiveOverlays.regional && !cleanMapMode && activeTheaterBanner && activeTheaterStats}
+    <aside
+      class="theater-tactical-tooltip"
+      style="--theater-accent: {activeTheaterBanner.color};"
+      data-testid="theater-tactical-tooltip"
+    >
+      <div class="ttt-header">
+        <div class="ttt-title-group">
+          <span class="ttt-eyebrow">{t("theater_tooltip_eyebrow")}</span>
+          <h4>{getTheaterTitle(activeTheaterBanner)}</h4>
+        </div>
+        <span
+          class="ttt-status-pill"
+          class:active={activeTheaterStats.isHegemonyActive}
+        >
+          <Icon name={activeTheaterStats.isHegemonyActive ? "crown" : "swords"} size={11} />
+          {activeTheaterStats.statusLabel}
+        </span>
+      </div>
+
+      <div class="ttt-progress-block">
+        <div class="ttt-progress-meta">
+          <strong>{activeTheaterStats.summaryText}</strong>
+          <div class="ttt-control-sub">
+            <span>{t("theater_your_control", { count: activeTheaterStats.myCount, total: activeTheaterStats.total })}</span>
+            {#if activeTheaterStats.leaderPlayer}
+              <span>• {t("theater_leader_control", { name: activeTheaterStats.leaderPlayer.name, count: activeTheaterStats.leaderCount, total: activeTheaterStats.total })}</span>
+            {/if}
+          </div>
+        </div>
+        <div class="ttt-progress-track">
+          <div
+            class="ttt-progress-fill"
+            style="width: {Math.round((activeTheaterStats.leaderCount / Math.max(1, activeTheaterStats.total)) * 100)}%; background: {activeTheaterBanner.color};"
+          ></div>
+        </div>
+      </div>
+
+      <div class="ttt-bonuses-grid">
+        <div class="ttt-bonus-item">
+          <span class="ttt-bonus-icon" style="color: {activeTheaterBanner.color};">
+            <Icon name="infantry" size={14} />
+          </span>
+          <div class="ttt-bonus-copy">
+            <small>{t("theater_bonus_divisions_label")}</small>
+            <strong>{t("theater_bonus_divisions_val", { count: activeTheaterBanner.bonusArmies })}</strong>
+          </div>
+        </div>
+
+        {#if activeTheaterBanner.extraBonus}
+          <div class="ttt-bonus-item">
+            <span class="ttt-bonus-icon" style="color: {activeTheaterBanner.extraBonus.color};">
+              <Icon name={activeTheaterBanner.extraBonus.icon} size={14} />
+            </span>
+            <div class="ttt-bonus-copy">
+              <small>{t(activeTheaterBanner.extraBonus.labelKey)}</small>
+              <strong style="color: {activeTheaterBanner.extraBonus.color};">{activeTheaterBanner.extraBonus.text}</strong>
+            </div>
+          </div>
+        {/if}
+      </div>
+
+      <p class="ttt-doctrine-note">
+        <Icon name="shield" size={12} color={activeTheaterBanner.color} />
+        <span>{t(activeTheaterBanner.doctrineKey)}</span>
+      </p>
+    </aside>
+  {/if}
+
   <svg
     viewBox="0 0 {MAP_WIDTH} {MAP_HEIGHT}"
     preserveAspectRatio="xMidYMid slice"
@@ -352,7 +539,7 @@
         fill="url(#tactical-grid)"
       />
 
-      <!-- 3 HORIZONTAL WORLD COPIES (-1200, 0, +1200) FOR CONTINUOUS EU4/HOI4 GLOBE WRAPPING -->
+      <!-- LAYER 1: 3 HORIZONTAL WORLD COPIES (-1200, 0, +1200) BASE RELIEF & SEA ROUTES -->
       {#each [-MAP_WIDTH, 0, MAP_WIDTH] as offsetX (offsetX)}
         <g class="world-copy" transform="translate({offsetX}, 0)">
           {#if effectiveBaseMode === "cartographic"}
@@ -421,149 +608,306 @@
         </g>
       {/each}
 
-      <!-- TERRITORY PASS: after all world-copy backgrounds -->
+      <!-- LAYER 2..5: STRICT Z-INDEX HIERARCHY PER WORLD COPY (HEGEM-77 & HEGEM-81) -->
       {#each [-MAP_WIDTH, 0, MAP_WIDTH] as offsetX (offsetX)}
         <g class="world-copy" transform="translate({offsetX}, 0)">
-          <!-- 44 Natural Earth Admin-1 & Admin-0 Geopolitical Territories -->
-          {#each CLASSIC_MAP.territories as t (t.id)}
-            {@const tState = game.territories[t.id]}
-            {@const owner = game.players.find((p) => p.id === tState.ownerId)}
-            {@const ownerColor = owner ? COLOR_HEX[owner.color] : "#334155"}
-            {@const regionColor = getTerritoryRegionColor(t as any)}
-            {@const economicProfileColor =
-              t.resource === "gold"
-                ? "#854d0e"
-                : t.resource === "oil"
-                  ? "#451a03"
-                  : t.resource === "steel"
-                    ? "#1e293b"
-                    : (t.tradeBonus && t.tradeBonus > 0)
-                      ? "#064e3b"
-                      : "#18181b"}
-            {@const activeFill = ownerColor}
-            {@const isSelected = selectedFromId === t.id || selectedToId === t.id}
-            {@const fromTerrState = selectedFromId ? game.territories[selectedFromId] : null}
-            {@const isAirliftDest =
-              Boolean(selectedFromId) &&
-              t.id !== selectedFromId &&
-              game.phase === "maneuver" &&
-              tState.ownerId === myPlayerId &&
-              Boolean(fromTerrState && hasTerritoryBuilding(fromTerrState, "airfield")) &&
-              hasTerritoryBuilding(tState, "airfield") &&
-              !fromTerrState?.airliftedThisTurn}
-            {@const isValidTarget =
-              selectedFromId &&
-              ((game.phase === "attack" &&
-                tState.ownerId !== myPlayerId &&
-                (fromTerrState?.armies ?? 0) >= 2 &&
-                territoryById.get(selectedFromId)?.neighbors.includes(t.id)) ||
-               (game.phase === "maneuver" &&
+          <!-- PASS A (Layers 2 & 3): Political Polygons, Regional Illuminated Borders & Economic Ambient Glow -->
+          <g class="layer-territory-polygons">
+            {#each CLASSIC_MAP.territories as t (t.id)}
+              {@const tState = game.territories[t.id]}
+              {@const owner = game.players.find((p) => p.id === tState.ownerId)}
+              {@const ownerColor = owner ? COLOR_HEX[owner.color] : "#334155"}
+              {@const regionColor = getTerritoryRegionColor(t as any)}
+              {@const activeFill = ownerColor}
+              {@const isSelected = selectedFromId === t.id || selectedToId === t.id}
+              {@const fromTerrState = selectedFromId ? game.territories[selectedFromId] : null}
+              {@const isAirliftDest =
+                Boolean(selectedFromId) &&
+                t.id !== selectedFromId &&
+                game.phase === "maneuver" &&
                 tState.ownerId === myPlayerId &&
-                (territoryById.get(selectedFromId)?.neighbors.includes(t.id) || isAirliftDest)))}
-            {@const isObjTarget = highlightObjectiveTerritories && objectiveTargetTerritoryIds.has(t.id)}
-            {@const isObjOwned = isObjTarget && tState.ownerId === myPlayerId}
-            {@const isObjPending = isObjTarget && tState.ownerId !== myPlayerId}
-            {@const isObjDimmed = highlightObjectiveTerritories && objectiveTargetTerritoryIds.size > 0 && !isObjTarget}
-            {@const isCapital = owner?.capitalTerritoryId === t.id}
-            {@const originalCapitalOwner = game.players.find((p) => p.capitalTerritoryId === t.id)}
-            {@const isFallenCapital = originalCapitalOwner && originalCapitalOwner.id !== tState.ownerId}
-            {@const fortLevel = getTerritoryBuildingLevel(tState, "fortification")}
+                Boolean(fromTerrState && hasTerritoryBuilding(fromTerrState, "airfield")) &&
+                hasTerritoryBuilding(tState, "airfield") &&
+                !fromTerrState?.airliftedThisTurn}
+              {@const isValidTarget =
+                selectedFromId &&
+                ((game.phase === "attack" &&
+                  tState.ownerId !== myPlayerId &&
+                  (fromTerrState?.armies ?? 0) >= 2 &&
+                  territoryById.get(selectedFromId)?.neighbors.includes(t.id)) ||
+                 (game.phase === "maneuver" &&
+                  tState.ownerId === myPlayerId &&
+                  (territoryById.get(selectedFromId)?.neighbors.includes(t.id) || isAirliftDest)))}
+              {@const isObjTarget = highlightObjectiveTerritories && objectiveTargetTerritoryIds.has(t.id)}
+              {@const isObjOwned = isObjTarget && tState.ownerId === myPlayerId}
+              {@const isObjPending = isObjTarget && tState.ownerId !== myPlayerId}
+              {@const isObjDimmed = highlightObjectiveTerritories && objectiveTargetTerritoryIds.size > 0 && !isObjTarget}
 
-            <!-- svelte-ignore a11y_click_events_have_key_events -->
-            <!-- svelte-ignore a11y_no_static_element_interactions -->
-            <g
-              class="territory-group"
-              data-testid={offsetX === 0 ? `territory-${t.id}` : `territory-${t.id}-clone`}
-              data-territory-id={t.id}
-              data-primary-globe={offsetX === 0 ? "true" : undefined}
-              onclick={() => onTerritoryClick(t.id)}
-              onmouseenter={() => (hoveredTerritoryId = t.id)}
-              onmouseleave={() => {
-                if (hoveredTerritoryId === t.id) hoveredTerritoryId = null;
-              }}
-            >
-              <title>{getTerritoryName(t.id)}: {tState.armies} divisões</title>
-              <!-- Base Political Fill + Frontier Border -->
-              <path
-                d={t.svgPath}
-                fill={isObjOwned ? "#059669" : isObjPending ? "#dc2626" : activeFill}
-                fill-opacity={isObjTarget
-                  ? "0.85"
-                  : isSelected
-                    ? "0.88"
-                    : effectiveBaseMode === "cartographic"
-                      ? "0.42"
-                      : "0.84"}
-                stroke={isSelected
-                  ? "#ffffff"
-                  : isValidTarget
-                    ? "#facc15"
-                    : isObjPending
-                      ? "#ef4444"
-                      : isObjOwned
-                        ? "#10b981"
-                        : effectiveBaseMode === "cartographic"
-                          ? ownerColor
-                          : "rgba(9, 13, 22, 0.9)"}
-                stroke-width={isSelected
-                  ? "2.6"
-                  : isValidTarget || isObjPending
-                    ? "2.4"
-                    : isObjOwned
-                      ? "2.0"
+              <!-- svelte-ignore a11y_click_events_have_key_events -->
+              <!-- svelte-ignore a11y_no_static_element_interactions -->
+              <g
+                class="territory-group"
+                data-testid={offsetX === 0 ? `territory-${t.id}` : `territory-${t.id}-clone`}
+                data-territory-id={t.id}
+                data-primary-globe={offsetX === 0 ? "true" : undefined}
+                onclick={() => onTerritoryClick(t.id)}
+                onmouseenter={() => (hoveredTerritoryId = t.id)}
+                onmouseleave={() => {
+                  if (hoveredTerritoryId === t.id) hoveredTerritoryId = null;
+                }}
+              >
+                <title>{getTerritoryName(t.id)}: {tState.armies} divisões</title>
+                <!-- Base Political Fill + Frontier Border -->
+                <path
+                  d={t.svgPath}
+                  fill={isObjOwned ? "#059669" : isObjPending ? "#dc2626" : activeFill}
+                  fill-opacity={isObjTarget
+                    ? "0.85"
+                    : isSelected
+                      ? "0.88"
                       : effectiveBaseMode === "cartographic"
-                        ? "1.6"
-                        : "1.0"}
-                stroke-linejoin="round"
-                filter={isSelected || isValidTarget
-                  ? "url(#glow-gold)"
-                  : isObjPending
-                    ? "url(#glow-red)"
-                    : isObjOwned
-                      ? "url(#glow-green)"
-                      : undefined}
-                style={isObjDimmed ? "opacity: 0.28; transition: opacity 0.25s ease;" : "transition: opacity 0.25s ease;"}
-              />
-
-              {#if effectiveBaseMode === "cartographic"}
-                <!-- Crisp Dark Inner Frontier Line so Neighboring Same-Color Provinces Remain Distinct Over Satellite Terrain -->
-                <path
-                  d={t.svgPath}
-                  fill="none"
-                  stroke="rgba(6, 10, 18, 0.78)"
-                  stroke-width="0.7"
-                  pointer-events="none"
+                        ? "0.42"
+                        : "0.84"}
+                  stroke={isSelected
+                    ? "#ffffff"
+                    : isValidTarget
+                      ? "#facc15"
+                      : isObjPending
+                        ? "#ef4444"
+                        : isObjOwned
+                          ? "#10b981"
+                          : effectiveBaseMode === "cartographic"
+                            ? ownerColor
+                            : "rgba(9, 13, 22, 0.9)"}
+                  stroke-width={isSelected
+                    ? "2.6"
+                    : isValidTarget || isObjPending
+                      ? "2.4"
+                      : isObjOwned
+                        ? "2.0"
+                        : effectiveBaseMode === "cartographic"
+                          ? "1.6"
+                          : "1.0"}
+                  stroke-linejoin="round"
+                  filter={isSelected || isValidTarget
+                    ? "url(#glow-gold)"
+                    : isObjPending
+                      ? "url(#glow-red)"
+                      : isObjOwned
+                        ? "url(#glow-green)"
+                        : undefined}
+                  style={isObjDimmed ? "opacity: 0.28; transition: opacity 0.25s ease;" : "transition: opacity 0.25s ease;"}
                 />
-              {/if}
 
-              <!-- OVERLAY: Regional Continental Tint -->
-              {#if effectiveOverlays.regional}
-                <path
-                  d={t.svgPath}
-                  fill={regionColor}
-                  fill-opacity={effectiveBaseMode === "cartographic" ? "0.32" : "0.26"}
-                  stroke="none"
-                  pointer-events="none"
-                />
-              {/if}
+                {#if effectiveBaseMode === "cartographic"}
+                  <!-- Crisp Dark Inner Frontier Line so Neighboring Same-Color Provinces Remain Distinct Over Satellite Terrain -->
+                  <path
+                    d={t.svgPath}
+                    fill="none"
+                    stroke="rgba(6, 10, 18, 0.78)"
+                    stroke-width="0.7"
+                    pointer-events="none"
+                  />
+                {/if}
 
-              <!-- OVERLAY: Economic Resource Ambient Glow -->
-              {#if effectiveOverlays.economic && t.resource}
-                <path
-                  d={t.svgPath}
-                  fill={t.resource === "gold" ? "#eab308" : t.resource === "oil" ? "#f97316" : "#94a3b8"}
-                  fill-opacity="0.16"
-                  stroke="none"
-                  pointer-events="none"
-                />
-              {/if}
+                <!-- OVERLAY: Regional Continental Tint + Illuminated Theater Border (HEGEM-77) -->
+                {#if effectiveOverlays.regional}
+                  <path
+                    d={t.svgPath}
+                    fill={regionColor}
+                    fill-opacity={effectiveBaseMode === "cartographic" ? "0.28" : "0.24"}
+                    stroke={regionColor}
+                    stroke-opacity="0.72"
+                    stroke-width="1.35"
+                    stroke-linejoin="round"
+                    pointer-events="none"
+                  />
+                {/if}
 
-              {#if !cleanMapMode}
+                <!-- OVERLAY: Economic Resource Ambient Glow -->
+                {#if effectiveOverlays.economic && t.resource}
+                  <path
+                    d={t.svgPath}
+                    fill={t.resource === "gold" ? "#eab308" : t.resource === "oil" ? "#f97316" : "#94a3b8"}
+                    fill-opacity="0.16"
+                    stroke="none"
+                    pointer-events="none"
+                  />
+                {/if}
+              </g>
+            {/each}
+          </g>
+
+          <!-- PASS B (Layer 4): Compact Ocean/Coastal Theater Insignias (HEGEM-81 & HEGEM-77) -->
+          {#if effectiveOverlays.regional && !cleanMapMode}
+            <g class="layer-theater-insignias">
+              {#each REGION_BANNERS as rb (rb.id)}
+                {@const shortLabel = t(rb.shortKey)}
+                {@const stats = getTheaterStats(rb)}
+                {@const isHovered = hoveredTheaterId === rb.id}
+                {@const leftZoneW = 23.5}
+                {@const labelWidth = Math.max(28, Math.ceil(shortLabel.length * 3.65) + 7)}
+                {@const rightZoneW = rb.extraBonus ? (rb.extraBonus.text.length >= 3 ? 25.5 : 21.5) : 0}
+                {@const w = leftZoneW + labelWidth + rightZoneW + (rb.extraBonus ? 0 : 2.5)}
+                {@const leftEdge = -w / 2}
+                {@const divLeftX = leftEdge + leftZoneW}
+                {@const labelCenterX = divLeftX + labelWidth / 2}
+                {@const divRightX = divLeftX + labelWidth}
+                <!-- svelte-ignore a11y_click_events_have_key_events -->
+                <!-- svelte-ignore a11y_no_static_element_interactions -->
+                <g
+                  transform="translate({rb.x}, {rb.y})"
+                  class="tactical-theater-badge"
+                  class:is-hovered={isHovered}
+                  pointer-events="auto"
+                  data-testid={offsetX === 0 ? `badge-theater-${rb.id}` : undefined}
+                  onmouseenter={() => (hoveredTheaterId = rb.id)}
+                  onmouseleave={() => {
+                    if (hoveredTheaterId === rb.id) hoveredTheaterId = null;
+                  }}
+                  onclick={(e) => {
+                    e.stopPropagation();
+                    hoveredTheaterId = hoveredTheaterId === rb.id ? null : rb.id;
+                  }}
+                >
+                  <title>{getTheaterTitle(rb)} ({stats.summaryText}) — +{rb.bonusArmies}{rb.extraBonus ? ` ${rb.extraBonus.text}` : ""}</title>
+                  <!-- Compact gunmetal ribbon base with regional border accent -->
+                  <rect
+                    x={leftEdge}
+                    y="-7"
+                    width={w}
+                    height="14"
+                    rx="2.8"
+                    fill="rgba(6, 10, 18, 0.94)"
+                    stroke={rb.color}
+                    stroke-width={isHovered || stats.isHegemonyActive ? "1.5" : "1.1"}
+                    filter="drop-shadow(0 2px 4px rgba(0,0,0,0.85))"
+                  />
+                  <!-- Left Regional Color Accent Bar -->
+                  <rect
+                    x={leftEdge + 1.4}
+                    y="-5.2"
+                    width="2.0"
+                    height="10.4"
+                    rx="1"
+                    fill={rb.color}
+                  />
+                  <!-- Left Zone: Infantry division icon & bonus troops -->
+                  <Icon name="infantry" size={6.8} x={leftEdge + 4.8} y={-3.4} color={rb.color} strokeWidth={1.9} />
+                  <text
+                    x={leftEdge + 12.8}
+                    y="0.3"
+                    text-anchor="start"
+                    dominant-baseline="central"
+                    fill={rb.color}
+                    font-size="6.0"
+                    font-weight="900"
+                    font-family="system-ui, -apple-system, sans-serif"
+                  >
+                    +{rb.bonusArmies}
+                  </text>
+                  <!-- Divider between Left Bonus & Theater Code -->
+                  <line
+                    x1={divLeftX}
+                    y1="-4.6"
+                    x2={divLeftX}
+                    y2="4.6"
+                    stroke="rgba(148, 163, 184, 0.28)"
+                    stroke-width="0.75"
+                  />
+                  <!-- Center Zone: Theater short code centered in its dynamic cell -->
+                  <text
+                    x={labelCenterX}
+                    y="0.3"
+                    text-anchor="middle"
+                    dominant-baseline="central"
+                    fill="#f8fafc"
+                    font-size="5.0"
+                    font-weight="800"
+                    letter-spacing="0.03em"
+                    font-family="system-ui, -apple-system, sans-serif"
+                  >
+                    {shortLabel}
+                  </text>
+                  {#if rb.extraBonus}
+                    <!-- Divider between Theater Code & Extra Geoeconomic Bonus -->
+                    <line
+                      x1={divRightX}
+                      y1="-4.6"
+                      x2={divRightX}
+                      y2="4.6"
+                      stroke="rgba(148, 163, 184, 0.28)"
+                      stroke-width="0.75"
+                    />
+                    <Icon
+                      name={rb.extraBonus.icon}
+                      size={6.8}
+                      x={divRightX + 2.4}
+                      y={-3.4}
+                      color={rb.extraBonus.color}
+                      strokeWidth={1.9}
+                    />
+                    <text
+                      x={divRightX + 10.4}
+                      y="0.3"
+                      text-anchor="start"
+                      dominant-baseline="central"
+                      fill={rb.extraBonus.color}
+                      font-size="6.0"
+                      font-weight="900"
+                      font-family="system-ui, -apple-system, sans-serif"
+                    >
+                      {rb.extraBonus.text}
+                    </text>
+                  {/if}
+                </g>
+              {/each}
+            </g>
+          {/if}
+
+          <!-- PASS C (Layer 5 - Top of Stack): Military Division Badges, Compact Economic Slots & Territory Labels (HEGEM-77) -->
+          {#if !cleanMapMode}
+            <g class="layer-territory-badges">
+              {#each CLASSIC_MAP.territories as t (t.id)}
+                {@const tState = game.territories[t.id]}
+                {@const owner = game.players.find((p) => p.id === tState.ownerId)}
+                {@const ownerColor = owner ? COLOR_HEX[owner.color] : "#334155"}
+                {@const isSelected = selectedFromId === t.id || selectedToId === t.id}
+                {@const fromTerrState = selectedFromId ? game.territories[selectedFromId] : null}
+                {@const isAirliftDest =
+                  Boolean(selectedFromId) &&
+                  t.id !== selectedFromId &&
+                  game.phase === "maneuver" &&
+                  tState.ownerId === myPlayerId &&
+                  Boolean(fromTerrState && hasTerritoryBuilding(fromTerrState, "airfield")) &&
+                  hasTerritoryBuilding(tState, "airfield") &&
+                  !fromTerrState?.airliftedThisTurn}
+                {@const isValidTarget =
+                  selectedFromId &&
+                  ((game.phase === "attack" &&
+                    tState.ownerId !== myPlayerId &&
+                    (fromTerrState?.armies ?? 0) >= 2 &&
+                    territoryById.get(selectedFromId)?.neighbors.includes(t.id)) ||
+                   (game.phase === "maneuver" &&
+                    tState.ownerId === myPlayerId &&
+                    (territoryById.get(selectedFromId)?.neighbors.includes(t.id) || isAirliftDest)))}
+                {@const isObjTarget = highlightObjectiveTerritories && objectiveTargetTerritoryIds.has(t.id)}
+                {@const isObjOwned = isObjTarget && tState.ownerId === myPlayerId}
+                {@const isObjPending = isObjTarget && tState.ownerId !== myPlayerId}
+                {@const isCapital = owner?.capitalTerritoryId === t.id}
+                {@const originalCapitalOwner = game.players.find((p) => p.capitalTerritoryId === t.id)}
+                {@const isFallenCapital = originalCapitalOwner && originalCapitalOwner.id !== tState.ownerId}
+                {@const fortLevel = getTerritoryBuildingLevel(tState, "fortification")}
                 {@const compactTroops = formatCompactTroops(tState.armies)}
                 {@const troopFontSize = compactTroops.length <= 2 ? 8.2 : compactTroops.length === 3 ? 7.5 : 6.5}
-                <!-- HOI4-STYLE MILITARY DIVISION COUNTER WITH OPTIONAL ECONOMIC SUB-BADGE -->
+                {@const isCompact = COMPACT_BADGE_IDS.has(t.id)}
+                {@const anchorOffset = BADGE_ANCHOR_OFFSETS[t.id] ?? [0, 0]}
+                {@const badgeX = t.center[0] + anchorOffset[0]}
+                {@const badgeY = t.center[1] + anchorOffset[1]}
+
+                <!-- HOI4-STYLE MILITARY DIVISION COUNTER WITH OPTIONAL COMPACT ECONOMIC SUB-BADGE -->
                 <g
-                  transform="translate({t.center[0]}, {t.center[1]}) scale({COMPACT_BADGE_IDS.has(t.id) ? 0.82 : 0.94})"
+                  transform="translate({badgeX}, {badgeY}) scale({isCompact ? 0.80 : 0.92})"
                   class="division-counter"
                   data-testid={offsetX === 0 ? `badge-troop-${t.id}` : undefined}
                 >
@@ -592,14 +936,14 @@
                       : isFallenCapital
                         ? "#ef4444"
                         : isSelected
-                          ? "#ffffff"
-                          : isValidTarget
-                            ? "#facc15"
-                            : isObjPending
-                              ? "#ef4444"
-                              : isObjOwned
-                                ? "#10b981"
-                                : ownerColor}
+                           ? "#ffffff"
+                           : isValidTarget
+                             ? "#facc15"
+                             : isObjPending
+                               ? "#ef4444"
+                               : isObjOwned
+                                 ? "#10b981"
+                                 : ownerColor}
                     stroke-width={isCapital || isFallenCapital || isSelected || isValidTarget || isObjTarget ? "1.6" : "1.1"}
                     filter="drop-shadow(0 1.5px 3px rgba(0,0,0,0.85))"
                   />
@@ -683,65 +1027,65 @@
                     </g>
                   {/if}
 
-                  <!-- Attached Economic Sub-Badge (Overlay: Economic) -->
+                  <!-- Attached Compact Economic Sub-Badge (Overlay: Economic — HEGEM-77) -->
                   {#if effectiveOverlays.economic}
                     {@const maxSlots = isCapital ? 3 : 2}
                     {@const bldgs = tState.buildings ?? []}
-                    <g transform="translate(0, 11.5)" class="economic-sub-badge" pointer-events="none">
+                    <g transform="translate(0, 9.8)" class="economic-sub-badge" pointer-events="none">
                       <rect
-                        x="-20"
-                        y="-4.6"
-                        width="40"
-                        height="9.4"
-                        rx="2"
+                        x="-16"
+                        y="-4.0"
+                        width="32"
+                        height="8.0"
+                        rx="1.8"
                         fill="#090e1a"
                         stroke="rgba(148, 163, 184, 0.45)"
-                        stroke-width="0.75"
+                        stroke-width="0.7"
                         filter="drop-shadow(0 1px 2px rgba(0,0,0,0.85))"
                       />
                       <!-- Resource Icon on Left -->
                       {#if t.resource === "gold"}
-                        <g transform="translate(-13.5, 0)">
-                          <circle cx="0" cy="0" r="3.2" fill="#2e1b05" stroke="#facc15" stroke-width="0.6" />
-                          <Icon name="gold" size={5} x={-2.5} y={-2.5} color="#fde047" strokeWidth={2} />
+                        <g transform="translate(-10.8, 0)">
+                          <circle cx="0" cy="0" r="2.7" fill="#2e1b05" stroke="#facc15" stroke-width="0.55" />
+                          <Icon name="gold" size={4.2} x={-2.1} y={-2.1} color="#fde047" strokeWidth={2} />
                         </g>
                       {:else if t.resource === "steel"}
-                        <g transform="translate(-13.5, 0)">
-                          <circle cx="0" cy="0" r="3.2" fill="#0f172a" stroke="#94a3b8" stroke-width="0.6" />
-                          <Icon name="steel" size={5} x={-2.5} y={-2.5} color="#e2e8f0" strokeWidth={2} />
+                        <g transform="translate(-10.8, 0)">
+                          <circle cx="0" cy="0" r="2.7" fill="#0f172a" stroke="#94a3b8" stroke-width="0.55" />
+                          <Icon name="steel" size={4.2} x={-2.1} y={-2.1} color="#e2e8f0" strokeWidth={2} />
                         </g>
                       {:else if t.resource === "oil"}
-                        <g transform="translate(-13.5, 0)">
-                          <circle cx="0" cy="0" r="3.2" fill="#321202" stroke="#f97316" stroke-width="0.6" />
-                          <Icon name="oil" size={5} x={-2.5} y={-2.5} color="#fdba74" strokeWidth={2} />
+                        <g transform="translate(-10.8, 0)">
+                          <circle cx="0" cy="0" r="2.7" fill="#321202" stroke="#f97316" stroke-width="0.55" />
+                          <Icon name="oil" size={4.2} x={-2.1} y={-2.1} color="#fdba74" strokeWidth={2} />
                         </g>
                       {:else if t.tradeBonus && t.tradeBonus > 0}
-                        <g transform="translate(-13.5, 0)">
-                          <circle cx="0" cy="0" r="3.2" fill="#042f2e" stroke="#10b981" stroke-width="0.6" />
-                          <Icon name="coins" size={5} x={-2.5} y={-2.5} color="#6ee7b7" strokeWidth={2} />
+                        <g transform="translate(-10.8, 0)">
+                          <circle cx="0" cy="0" r="2.7" fill="#042f2e" stroke="#10b981" stroke-width="0.55" />
+                          <Icon name="coins" size={4.2} x={-2.1} y={-2.1} color="#6ee7b7" strokeWidth={2} />
                         </g>
                       {:else}
-                        <g transform="translate(-13.5, 0)">
-                          <circle cx="0" cy="0" r="1.8" fill="#0f172a" stroke="rgba(148, 163, 184, 0.35)" stroke-width="0.5" />
+                        <g transform="translate(-10.8, 0)">
+                          <circle cx="0" cy="0" r="1.5" fill="#0f172a" stroke="rgba(148, 163, 184, 0.35)" stroke-width="0.5" />
                         </g>
                       {/if}
 
                       <!-- Divider Line -->
-                      <line x1="-8" y1="-3.8" x2="-8" y2="3.8" stroke="rgba(148, 163, 184, 0.25)" stroke-width="0.6" />
+                      <line x1="-6.4" y1="-3.2" x2="-6.4" y2="3.2" stroke="rgba(148, 163, 184, 0.25)" stroke-width="0.55" />
 
                       <!-- Building Slots on Right -->
-                      <g transform="translate(4.5, 0)">
+                      <g transform="translate(3.6, 0)">
                         {#each Array(maxSlots) as _, slotIdx}
                           {@const b = bldgs[slotIdx]}
-                          {@const slotX = (slotIdx - (maxSlots - 1) / 2) * 7.2}
+                          {@const slotX = (slotIdx - (maxSlots - 1) / 2) * 5.6}
                           <g transform="translate({slotX}, 0)">
                             {#if b}
                               <rect
-                                x="-2.8"
-                                y="-3.4"
-                                width="5.6"
-                                height="6.8"
-                                rx="1"
+                                x="-2.3"
+                                y="-2.8"
+                                width="4.6"
+                                height="5.6"
+                                rx="0.9"
                                 fill={b.type === "market"
                                   ? "#451a03"
                                   : b.type === "industry"
@@ -760,15 +1104,15 @@
                                       : b.type === "airfield"
                                         ? "#60a5fa"
                                         : "#2dd4bf"}
-                                stroke-width="0.6"
+                                stroke-width="0.55"
                               />
                               <Icon
                                 name={b.type === "fortification"
                                   ? (b.level === 2 ? "fortification-l2" : "fortification")
                                   : b.type}
-                                size={4.6}
-                                x={-2.3}
-                                y={-2.3}
+                                size={3.8}
+                                x={-1.9}
+                                y={-1.9}
                                 color={b.type === "market"
                                   ? "#fde047"
                                   : b.type === "industry"
@@ -782,11 +1126,11 @@
                               />
                             {:else}
                               <rect
-                                x="-2.6"
-                                y="-3.2"
-                                width="5.2"
-                                height="6.4"
-                                rx="0.9"
+                                x="-2.1"
+                                y="-2.6"
+                                width="4.2"
+                                height="5.2"
+                                rx="0.8"
                                 fill="rgba(15, 23, 42, 0.4)"
                                 stroke="rgba(148, 163, 184, 0.3)"
                                 stroke-dasharray="1, 0.8"
@@ -802,27 +1146,27 @@
                   <!-- Territory Label Underneath Counter -->
                   <text
                     x="0"
-                    y={effectiveOverlays.economic ? 20.8 : 11.2}
+                    y={effectiveOverlays.economic ? 17.6 : 10.6}
                     text-anchor="middle"
                     fill={isCapital ? "#fde047" : "#e2e8f0"}
-                    font-size="6.2"
+                    font-size={isCompact ? "5.7" : "6.1"}
                     font-weight="700"
                     letter-spacing="0.01em"
                     pointer-events="none"
-                    style="paint-order: stroke; stroke: #050912; stroke-width: 2.4px; stroke-linejoin: round;"
+                    style="paint-order: stroke; stroke: #050912; stroke-width: 2.3px; stroke-linejoin: round;"
                   >
                     {getTerritoryName(t.id)}
                   </text>
 
                   <!-- Structural Indicators (Dots for constructed infrastructure, only shown if economic overlay is off) -->
                   {#if !effectiveOverlays.economic && tState.buildings && tState.buildings.length > 0}
-                    <g transform="translate(0, 16.5)" pointer-events="none">
+                    <g transform="translate(0, 15.2)" pointer-events="none">
                       {#each tState.buildings as b, bIdx}
-                        {@const xOffset = (bIdx - (tState.buildings.length - 1) / 2) * 5.2}
+                        {@const xOffset = (bIdx - (tState.buildings.length - 1) / 2) * 5.0}
                         <circle
                           cx={xOffset}
                           cy="0"
-                          r="1.7"
+                          r="1.6"
                           fill={b.type === "fortification"
                             ? (b.level === 2 ? "#38bdf8" : "#94a3b8")
                             : b.type === "market"
@@ -839,86 +1183,8 @@
                     </g>
                   {/if}
                 </g>
-              {/if}
+              {/each}
             </g>
-          {/each}
-
-          <!-- Floating Regional & Sub-Regional Theatre Banners in "regional" Overlay (HEGEM-81 Mini-Insígnias) -->
-          {#if effectiveOverlays.regional && !cleanMapMode}
-            {#each REGION_BANNERS as rb}
-              {@const w = rb.extraBonus ? 84 : 70}
-              <g
-                transform="translate({rb.x}, {rb.y})"
-                class="tactical-theater-badge"
-                pointer-events="auto"
-                data-testid={offsetX === 0 ? `badge-theater-${rb.id}` : undefined}
-              >
-                <title>{rb.tooltip}</title>
-                <!-- Compact gunmetal ribbon base with regional border accent -->
-                <rect
-                  x={-w / 2}
-                  y="-7.5"
-                  width={w}
-                  height="15"
-                  rx="3"
-                  fill="rgba(6, 10, 18, 0.94)"
-                  stroke={rb.color}
-                  stroke-width="1.2"
-                />
-                <!-- Infantry division icon & bonus troops -->
-                <Icon name="infantry" size={8} x={-w / 2 + 3} y={-4} color={rb.color} strokeWidth={1.8} />
-                <text
-                  x={-w / 2 + 13}
-                  y="0"
-                  dominant-baseline="central"
-                  fill={rb.color}
-                  font-size="6.8"
-                  font-weight="900"
-                >
-                  +{rb.bonusArmies}
-                </text>
-                <!-- Theater name -->
-                <text
-                  x={-w / 2 + 25}
-                  y="0"
-                  dominant-baseline="central"
-                  fill="#f1f5f9"
-                  font-size="5.6"
-                  font-weight="700"
-                  letter-spacing="0.04em"
-                >
-                  {rb.shortLabel}
-                </text>
-                {#if rb.extraBonus}
-                  <line
-                    x1={w / 2 - 24}
-                    y1="-5"
-                    x2={w / 2 - 24}
-                    y2="5"
-                    stroke="rgba(148, 163, 184, 0.3)"
-                    stroke-width="1"
-                  />
-                  <Icon
-                    name={rb.extraBonus.icon}
-                    size={7.5}
-                    x={w / 2 - 21}
-                    y={-3.75}
-                    color={rb.extraBonus.color}
-                    strokeWidth={1.8}
-                  />
-                  <text
-                    x={w / 2 - 12}
-                    y="0"
-                    dominant-baseline="central"
-                    fill={rb.extraBonus.color}
-                    font-size="6.2"
-                    font-weight="900"
-                  >
-                    {rb.extraBonus.text}
-                  </text>
-                {/if}
-              </g>
-            {/each}
           {/if}
         </g>
       {/each}
@@ -965,6 +1231,169 @@
     display: inline-flex;
     align-items: center;
     gap: 0.4rem;
+  }
+
+  /* Rich Tactical Theater Tooltip (HEGEM-81) */
+  .theater-tactical-tooltip {
+    position: absolute;
+    top: 4.8rem;
+    left: 50%;
+    transform: translateX(-50%);
+    width: min(390px, calc(100vw - 32px));
+    background: linear-gradient(165deg, rgba(9, 15, 28, 0.96) 0%, rgba(5, 9, 18, 0.98) 100%);
+    border: 1px solid var(--theater-accent, #eab308);
+    border-left: 3px solid var(--theater-accent, #eab308);
+    border-radius: 7px;
+    padding: 12px 14px;
+    color: #f8fafc;
+    z-index: 25;
+    pointer-events: none;
+    box-shadow: 0 18px 42px rgba(0, 0, 0, 0.85), 0 0 16px rgba(0, 0, 0, 0.5);
+    backdrop-filter: blur(10px);
+    display: flex;
+    flex-direction: column;
+    gap: 9px;
+  }
+  .ttt-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 10px;
+  }
+  .ttt-title-group {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .ttt-eyebrow {
+    font-family: var(--font-tactical);
+    font-size: 0.58rem;
+    font-weight: 800;
+    letter-spacing: 0.14em;
+    color: var(--theater-accent, #eab308);
+  }
+  .ttt-title-group h4 {
+    font-family: var(--font-display);
+    font-size: 0.94rem;
+    font-weight: 800;
+    color: #f8fafc;
+    margin: 0;
+  }
+  .ttt-status-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 7px;
+    border-radius: 3px;
+    font-family: var(--font-tactical);
+    font-size: 0.6rem;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    background: rgba(30, 41, 59, 0.85);
+    color: #cbd5e1;
+    border: 1px solid rgba(148, 163, 184, 0.35);
+    white-space: nowrap;
+  }
+  .ttt-status-pill.active {
+    background: rgba(16, 185, 129, 0.2);
+    color: #6ee7b7;
+    border-color: rgba(16, 185, 129, 0.5);
+  }
+  .ttt-progress-block {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    background: rgba(5, 9, 18, 0.72);
+    border: 1px solid rgba(148, 163, 184, 0.16);
+    border-radius: 5px;
+    padding: 7px 9px;
+  }
+  .ttt-progress-meta {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .ttt-progress-meta strong {
+    font-family: var(--font-tactical);
+    font-size: 0.76rem;
+    color: #f1f5f9;
+  }
+  .ttt-control-sub {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    font-size: 0.66rem;
+    color: #94a3b8;
+  }
+  .ttt-progress-track {
+    width: 100%;
+    height: 4px;
+    background: rgba(30, 41, 59, 0.85);
+    border-radius: 2px;
+    overflow: hidden;
+  }
+  .ttt-progress-fill {
+    height: 100%;
+    transition: width 0.25s ease;
+  }
+  .ttt-bonuses-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 8px;
+  }
+  .ttt-bonus-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 8px;
+    background: rgba(15, 23, 42, 0.65);
+    border: 1px solid rgba(148, 163, 184, 0.18);
+    border-radius: 5px;
+  }
+  .ttt-bonus-icon {
+    width: 24px;
+    height: 24px;
+    border-radius: 4px;
+    background: rgba(5, 9, 18, 0.85);
+    border: 1px solid rgba(148, 163, 184, 0.22);
+    display: grid;
+    place-items: center;
+    flex-shrink: 0;
+  }
+  .ttt-bonus-copy {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+  .ttt-bonus-copy small {
+    font-size: 0.62rem;
+    color: #94a3b8;
+  }
+  .ttt-bonus-copy strong {
+    font-family: var(--font-tactical);
+    font-size: 0.76rem;
+    color: #f8fafc;
+  }
+  .ttt-doctrine-note {
+    margin: 0;
+    padding-top: 6px;
+    border-top: 1px solid rgba(148, 163, 184, 0.15);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.68rem;
+    color: #cbd5e1;
+    line-height: 1.35;
+  }
+
+  .tactical-theater-badge {
+    cursor: pointer;
+    transition: filter 0.15s ease;
+  }
+  .tactical-theater-badge:hover,
+  .tactical-theater-badge.is-hovered {
+    filter: brightness(1.25);
   }
 
   .territory-group {
