@@ -85,9 +85,9 @@
   let copiedCode = $state(false);
 
   $effect(() => {
-    api<{ leaderboard: LeaderboardRow[] }>("/api/leaderboard?limit=5")
+    api<{ leaderboard: LeaderboardRow[] }>("/api/leaderboard?limit=6")
       .then((res) => {
-        topCommanders = res.leaderboard.slice(0, 5);
+        topCommanders = res.leaderboard.slice(0, 6);
       })
       .catch(() => {
         topCommanders = [];
@@ -201,6 +201,11 @@
         <div class="deck-side-column">
           <!-- Top Commanders Mini Leaderboard -->
           <section class="deck-card mini-rank-card">
+            <div class="card-corner tl"></div>
+            <div class="card-corner tr"></div>
+            <div class="card-corner bl"></div>
+            <div class="card-corner br"></div>
+
             <div class="ops-header compact row-spread">
               <div>
                 <span class="eyebrow">{t("deck_honor_eyebrow")}</span>
@@ -231,17 +236,32 @@
               </div>
             {:else}
               <div class="mini-rank-empty">
+                <Icon name="rank" size={24} color="#eab308" />
                 <p>{t("deck_honor_empty")}</p>
-                <div class="mini-rank-Quicklinks">
-                  <button class="outline-button" onclick={() => navigate("/leaderboard")}>
-                    <Icon name="rank" size={14} /> {t("nav_leaderboard")}
-                  </button>
-                  <button class="outline-button" onclick={() => navigate("/friends")}>
-                    <Icon name="users" size={14} /> {t("nav_allies")}
-                  </button>
-                </div>
               </div>
             {/if}
+
+            <footer class="rank-card-footer">
+              <div class="rank-footer-telemetry">
+                <span class="eyebrow">{t("deck_career_footer_eyebrow")}</span>
+                <div class="rank-telemetry-pills">
+                  <span class="telemetry-chip">
+                    <Icon name="globe" size={12} /> {t("deck_career_stat_theaters")}
+                  </span>
+                  <span class="telemetry-chip">
+                    <Icon name="shield" size={12} /> {t("deck_career_stat_engine")}
+                  </span>
+                </div>
+              </div>
+              <div class="mini-rank-Quicklinks">
+                <button class="outline-button" onclick={() => navigate("/leaderboard")}>
+                  <Icon name="rank" size={14} /> {t("nav_leaderboard")}
+                </button>
+                <button class="outline-button" onclick={() => navigate("/friends")}>
+                  <Icon name="users" size={14} /> {t("nav_allies")}
+                </button>
+              </div>
+            </footer>
           </section>
         </div>
       </div>
@@ -512,7 +532,7 @@
 
   .deck-grid {
     display: grid;
-    grid-template-columns: 1.12fr 0.88fr;
+    grid-template-columns: minmax(0, 1.14fr) minmax(0, 0.86fr);
     gap: 22px;
     align-items: stretch;
   }
@@ -722,12 +742,14 @@
     flex: 1;
     display: flex;
     flex-direction: column;
+    justify-content: space-between;
+    gap: 14px;
   }
   .mini-rank-list {
     display: flex;
     flex-direction: column;
     gap: 8px;
-    margin-top: 14px;
+    flex: 1;
   }
   .mini-rank-row {
     width: 100%;
@@ -739,6 +761,11 @@
     border: 1px solid rgba(148, 163, 184, 0.16);
     border-radius: 5px;
     text-align: left;
+    transition: background 0.16s ease, border-color 0.16s ease;
+  }
+  .mini-rank-row:hover {
+    background: rgba(15, 23, 42, 0.92);
+    border-color: rgba(234, 179, 8, 0.45);
   }
   .m-rank {
     font-family: var(--font-display);
@@ -768,20 +795,63 @@
     color: #fef08a;
   }
   .mini-rank-empty {
-    margin-top: 14px;
-    padding: 18px;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    padding: 24px 18px;
     background: rgba(5, 9, 18, 0.65);
     border: 1px dashed rgba(148, 163, 184, 0.25);
     border-radius: 6px;
     text-align: center;
     color: #94a3b8;
-    font-size: 0.8rem;
+    font-size: 0.82rem;
+    line-height: 1.5;
+  }
+  .rank-card-footer {
+    margin-top: auto;
+    padding-top: 14px;
+    border-top: 1px solid rgba(212, 175, 55, 0.24);
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .rank-footer-telemetry {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .rank-telemetry-pills {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .telemetry-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 4px 9px;
+    border-radius: 4px;
+    background: rgba(5, 9, 18, 0.78);
+    border: 1px solid rgba(148, 163, 184, 0.22);
+    font-family: var(--font-tactical);
+    font-size: 0.68rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    color: #cbd5e1;
   }
   .mini-rank-Quicklinks {
-    display: flex;
-    justify-content: center;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
     gap: 10px;
-    margin-top: 12px;
+  }
+  .mini-rank-Quicklinks .outline-button {
+    justify-content: center;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
   }
 
   /* ==========================================================================
