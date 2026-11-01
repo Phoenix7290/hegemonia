@@ -548,16 +548,25 @@ export class HegemoniaRoom extends Room {
         );
         const target = (frontline.length > 0 ? frontline : candidatePool)[0];
         if (target) {
-          await this.executePlayerAction(timedOutPlayerId, {
-            type: "deploy",
-            territoryId: target.id,
-            armies: active.unplacedArmies,
-          });
-          continue;
+          try {
+            await this.executePlayerAction(timedOutPlayerId, {
+              type: "deploy",
+              territoryId: target.id,
+              armies: active.unplacedArmies,
+            });
+            continue;
+          } catch (deployErr) {
+            console.error(`[TIMEOUT AUTO-DEPLOY FAIL] ${timedOutPlayerId}:`, deployErr);
+            active.unplacedArmies = 0;
+          }
         }
       }
 
-      await this.executePlayerAction(timedOutPlayerId, { type: "end_turn" });
+      try {
+        await this.executePlayerAction(timedOutPlayerId, { type: "end_turn" });
+      } catch (endErr) {
+        console.error(`[TIMEOUT AUTO-END FAIL] ${timedOutPlayerId}:`, endErr);
+      }
       break;
     }
 
@@ -674,7 +683,19 @@ export class HegemoniaRoom extends Room {
               await this.executePlayerAction(playerId, { type: "end_turn" }).catch(() => {});
             } else {
               this.gameState.phase = "attack";
+              this.broadcastRoomState();
+              this.checkAndRunBotTurn();
             }
+          }
+        } else {
+          // No unencircled fallback available, force progression
+          player.unplacedArmies = 0;
+          if (this.gameState.round === 1) {
+            await this.executePlayerAction(playerId, { type: "end_turn" }).catch(() => {});
+          } else {
+            this.gameState.phase = "attack";
+            this.broadcastRoomState();
+            this.checkAndRunBotTurn();
           }
         }
       } else if (this.gameState.phase === "attack") {
