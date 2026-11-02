@@ -354,6 +354,13 @@ export const enGame: TranslationCatalog = {
   theater_doctrine_asia_steppes: "Asian Sub-region • Eurasian Strategic Depth (+2 div/turn, +1 Steel)",
   theater_doctrine_asia_east: "Asian Sub-region • Pacific Industrial Hub (+4 div/turn)",
   theater_doctrine_oceania: "Insular Thalassocracy & South Pacific Routes (+2 divisions/turn)",
+
+  // Tactical Combat Animations (HEGEM-80)
+  settings_combat_anim_label: "Tactical Combat Animations",
+  settings_combat_anim_normal: "Standard (600ms)",
+  settings_combat_anim_fast: "Blitz (400ms)",
+  settings_combat_anim_off: "Off (Instant)",
+  settings_combat_anim_hint: "Vector map effects per troop category without blocking the turn timer.",
 };
 
 export const game = enGame;

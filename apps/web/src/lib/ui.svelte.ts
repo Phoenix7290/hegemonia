@@ -1,4 +1,9 @@
 import { sound } from "../audio";
+import {
+  type CombatAnimationSpeed,
+  loadCombatAnimationSpeed,
+  saveCombatAnimationSpeed,
+} from "./combat-animations";
 
 class UiState {
   inActiveBattle = $state(false);
@@ -7,6 +12,12 @@ class UiState {
   musicVolume = $state(sound.getVolume());
   sfxVolume = $state(sound.getSfxVolume());
   selectedTrack = $state(sound.getCurrentTrack());
+  combatAnimationSpeed = $state<CombatAnimationSpeed>(loadCombatAnimationSpeed());
+
+  setCombatAnimationSpeed(speed: CombatAnimationSpeed) {
+    this.combatAnimationSpeed = speed;
+    saveCombatAnimationSpeed(speed);
+  }
 
   toggleMusic() {
     this.isMusicPlaying = sound.toggleMusic();

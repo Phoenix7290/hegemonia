@@ -169,6 +169,35 @@
               {t("audio_track_custom")}
             </button>
           </div>
+
+          <div class="audio-eq-row">
+            <div class="audio-eq-label">
+              <span>{t("settings_combat_anim_label")}</span>
+            </div>
+            <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.3rem;">
+              <button
+                class={ui.combatAnimationSpeed === "normal" ? "gold-button" : "outline-button"}
+                style="padding: 0.28rem 0.35rem; font-size: 0.7rem;"
+                onclick={() => ui.setCombatAnimationSpeed("normal")}
+              >
+                {t("settings_combat_anim_normal")}
+              </button>
+              <button
+                class={ui.combatAnimationSpeed === "fast" ? "gold-button" : "outline-button"}
+                style="padding: 0.28rem 0.35rem; font-size: 0.7rem;"
+                onclick={() => ui.setCombatAnimationSpeed("fast")}
+              >
+                {t("settings_combat_anim_fast")}
+              </button>
+              <button
+                class={ui.combatAnimationSpeed === "off" ? "gold-button" : "outline-button"}
+                style="padding: 0.28rem 0.35rem; font-size: 0.7rem;"
+                onclick={() => ui.setCombatAnimationSpeed("off")}
+              >
+                {t("settings_combat_anim_off")}
+              </button>
+            </div>
+          </div>
         </div>
       {/if}
 

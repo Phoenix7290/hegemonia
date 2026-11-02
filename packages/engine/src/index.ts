@@ -1470,6 +1470,14 @@ export function applyAction(
       const rolls = Array.from({ length: fromUnits.artillery }, () => rng.rollD6());
       const hits = rolls.filter((r) => r >= 4).length;
 
+      state.lastStrike = {
+        kind: "artillery_barrage",
+        fromTerritoryId: fromTerr.id,
+        toTerritoryId: toTerr.id,
+        hits,
+        round: state.round,
+      };
+
       const fromName = fromDef.namePt;
       const toName = mapById.get(toTerr.id)!.namePt;
       const barragePrefix = isDirectSea ? "🎯 BARRAGEM COSTEIRA DE ARTILHARIA" : "🎯 BARRAGEM DE ARTILHARIA";
@@ -1587,6 +1595,13 @@ export function applyAction(
       currentPlayer.resources.oil -= 1;
       fromTerr.airMissionFlownThisTurn = true;
       state.worldTension = Math.min(100, Number(((state.worldTension ?? 0) + 0.2).toFixed(1)));
+      state.lastStrike = {
+        kind: "air_mission",
+        missionType: action.missionType,
+        fromTerritoryId: fromTerr.id,
+        toTerritoryId: toTerr.id,
+        round: state.round,
+      };
 
       if (action.missionType === "cas") {
         toTerr.casBonusAttackerId = playerId;
@@ -1878,6 +1893,7 @@ export function applyAction(
         defenderDice,
         attackerLosses,
         defenderLosses,
+        attackerUnits: { ...attackingUnits },
         attackerLossUnits: attackerCombat.losses,
         defenderLossUnits: defenderCombat.losses,
         conquered,
