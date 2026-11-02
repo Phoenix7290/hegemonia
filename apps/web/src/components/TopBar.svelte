@@ -1003,6 +1003,34 @@
               {/each}
             </div>
           </div>
+
+          <div class="combat-anim-settings">
+            <span class="combat-anim-label"><Icon name="swords" size={12} /> {t("settings_combat_anim_label")}:</span>
+            <div class="combat-anim-btn-group">
+              <button
+                class="combat-anim-opt"
+                class:selected={ui.combatAnimationSpeed === "normal"}
+                onclick={() => ui.setCombatAnimationSpeed("normal")}
+              >
+                {t("settings_combat_anim_normal")}
+              </button>
+              <button
+                class="combat-anim-opt"
+                class:selected={ui.combatAnimationSpeed === "fast"}
+                onclick={() => ui.setCombatAnimationSpeed("fast")}
+              >
+                {t("settings_combat_anim_fast")}
+              </button>
+              <button
+                class="combat-anim-opt"
+                class:selected={ui.combatAnimationSpeed === "off"}
+                onclick={() => ui.setCombatAnimationSpeed("off")}
+              >
+                {t("settings_combat_anim_off")}
+              </button>
+            </div>
+            <small class="combat-anim-hint">{t("settings_combat_anim_hint")}</small>
+          </div>
         </div>
       </div>
     {/if}
@@ -1124,6 +1152,34 @@
               onchange={() => toggleHudElement("recon")}
             />
           </label>
+        </div>
+
+        <div class="combat-anim-settings">
+          <span class="combat-anim-label"><Icon name="swords" size={12} /> {t("settings_combat_anim_label")}:</span>
+          <div class="combat-anim-btn-group">
+            <button
+              class="combat-anim-opt"
+              class:selected={ui.combatAnimationSpeed === "normal"}
+              onclick={() => ui.setCombatAnimationSpeed("normal")}
+            >
+              {t("settings_combat_anim_normal")}
+            </button>
+            <button
+              class="combat-anim-opt"
+              class:selected={ui.combatAnimationSpeed === "fast"}
+              onclick={() => ui.setCombatAnimationSpeed("fast")}
+            >
+              {t("settings_combat_anim_fast")}
+            </button>
+            <button
+              class="combat-anim-opt"
+              class:selected={ui.combatAnimationSpeed === "off"}
+              onclick={() => ui.setCombatAnimationSpeed("off")}
+            >
+              {t("settings_combat_anim_off")}
+            </button>
+          </div>
+          <small class="combat-anim-hint">{t("settings_combat_anim_hint")}</small>
         </div>
       </div>
     {/if}
@@ -3135,6 +3191,57 @@
   }
   .full-width {
     width: 100%;
+  }
+
+  .combat-anim-settings {
+    display: flex;
+    flex-direction: column;
+    gap: 0.32rem;
+    padding-top: 0.45rem;
+    margin-top: 0.25rem;
+    border-top: 1px solid rgba(148, 163, 184, 0.16);
+  }
+  .combat-anim-label {
+    display: flex;
+    align-items: center;
+    gap: 0.32rem;
+    font-size: 0.68rem;
+    font-weight: 700;
+    color: #e2e8f0;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  .combat-anim-btn-group {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 0.25rem;
+  }
+  .combat-anim-opt {
+    background: rgba(15, 23, 42, 0.85);
+    border: 1px solid rgba(148, 163, 184, 0.26);
+    color: #cbd5e1;
+    border-radius: 4px;
+    padding: 0.28rem 0.3rem;
+    font-family: var(--font-tactical);
+    font-size: 0.64rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.14s ease;
+    text-align: center;
+  }
+  .combat-anim-opt:hover {
+    border-color: rgba(250, 204, 21, 0.55);
+    color: #f8fafc;
+  }
+  .combat-anim-opt.selected {
+    background: rgba(234, 179, 8, 0.22);
+    border-color: #eab308;
+    color: #fef08a;
+  }
+  .combat-anim-hint {
+    font-size: 0.6rem;
+    color: #94a3b8;
+    line-height: 1.3;
   }
 
   /* Responsive Adjustments */

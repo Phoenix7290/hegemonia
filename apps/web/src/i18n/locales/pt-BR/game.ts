@@ -354,6 +354,13 @@ export const ptBRGame: TranslationCatalog = {
   theater_doctrine_asia_steppes: "Sub-região Asiática • Profundidade Estratégica Eurasiática (+2 div/turno, +1 Aço)",
   theater_doctrine_asia_east: "Sub-região Asiática • Polo Industrial do Pacífico (+4 div/turno)",
   theater_doctrine_oceania: "Talassocracia Insular & Rotas do Pacífico Sul (+2 divisões/turno)",
+
+  // Tactical Combat Animations (HEGEM-80)
+  settings_combat_anim_label: "Animações Táticas de Combate",
+  settings_combat_anim_normal: "Padrão (600ms)",
+  settings_combat_anim_fast: "Blitz (400ms)",
+  settings_combat_anim_off: "Off (Instantâneo)",
+  settings_combat_anim_hint: "Efeitos vetoriais no mapa por categoria de tropa sem bloquear o turno.",
 };
 
 export const game = ptBRGame;

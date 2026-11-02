@@ -34,6 +34,10 @@
   } from "../i18n/content.svelte";
   import type { BaseMapMode, MapOverlays } from "../lib/map-preferences.js";
   import type { IconName } from "../lib/icons.js";
+  import {
+    resolveShortestMapVector,
+    type ActiveCombatAnimation,
+  } from "../lib/combat-animations.js";
 
   let {
     game,
@@ -44,6 +48,7 @@
     cleanMapMode = false,
     highlightObjectiveTerritories = false,
     objectiveTargetTerritoryIds = new Set<string>(),
+    combatAnimations = [],
     selectedFromId = $bindable(null),
     selectedToId = $bindable(null),
     hoveredTerritoryId = $bindable(null),
@@ -60,6 +65,7 @@
     cleanMapMode?: boolean;
     highlightObjectiveTerritories?: boolean;
     objectiveTargetTerritoryIds?: Set<string>;
+    combatAnimations?: ActiveCombatAnimation[];
     selectedFromId?: string | null;
     selectedToId?: string | null;
     hoveredTerritoryId?: string | null;
@@ -333,6 +339,27 @@
   };
 
   const territoryById = new Map(CLASSIC_MAP.territories.map((t) => [t.id, t]));
+
+  function getTerritoryBadgeCoords(terrId: string): [number, number] {
+    const def = territoryById.get(terrId);
+    if (!def) return [0, 0];
+    const offset = BADGE_ANCHOR_OFFSETS[terrId] ?? [0, 0];
+    return [def.center[0] + offset[0], def.center[1] + offset[1]];
+  }
+
+  const armorShockTerritoryIds = $derived(
+    new Set(
+      combatAnimations
+        .filter(
+          (a) => a.categories.includes("tank") || a.categories.includes("artillery")
+        )
+        .map((a) => a.toTerritoryId)
+    )
+  );
+
+  const underFireTerritoryIds = $derived(
+    new Set(combatAnimations.map((a) => a.toTerritoryId))
+  );
 
   // --- Mouse Drag, Touch Pan (Tablet) & Wheel Camera Controls ---
   let isDragging = $state(false);
@@ -904,6 +931,8 @@
                 {@const anchorOffset = BADGE_ANCHOR_OFFSETS[t.id] ?? [0, 0]}
                 {@const badgeX = t.center[0] + anchorOffset[0]}
                 {@const badgeY = t.center[1] + anchorOffset[1]}
+                {@const isUnderArmorShock = armorShockTerritoryIds.has(t.id)}
+                {@const isUnderFire = underFireTerritoryIds.has(t.id)}
 
                 <!-- HOI4-STYLE MILITARY DIVISION COUNTER WITH OPTIONAL COMPACT ECONOMIC SUB-BADGE -->
                 <g
@@ -911,6 +940,11 @@
                   class="division-counter"
                   data-testid={offsetX === 0 ? `badge-troop-${t.id}` : undefined}
                 >
+                  <g
+                    class="division-counter-body"
+                    class:under-armor-shock={isUnderArmorShock}
+                    class:under-fire={isUnderFire && !isUnderArmorShock}
+                  >
                   <!-- Capital Crown / Vector Seal (HEGEM-63) -->
                   {#if isCapital}
                     <g transform="translate(0, -10.2)">
@@ -1182,6 +1216,358 @@
                       {/each}
                     </g>
                   {/if}
+                  </g>
+                </g>
+              {/each}
+            </g>
+          {/if}
+
+          <!-- PASS D (Layer 6 - Non-Blocking Combined-Arms Vector Combat FX — HEGEM-80) -->
+          {#if combatAnimations.length > 0}
+            <g class="layer-combat-animations" pointer-events="none">
+              {#each combatAnimations as anim (anim.id)}
+                {@const fromCoords = getTerritoryBadgeCoords(anim.fromTerritoryId)}
+                {@const toCoords = getTerritoryBadgeCoords(anim.toTerritoryId)}
+                {@const vec = resolveShortestMapVector(fromCoords, toCoords, MAP_WIDTH)}
+                <g
+                  class="combat-fx-instance"
+                  data-testid={offsetX === 0 ? `combat-fx-${anim.fromTerritoryId}-${anim.toTerritoryId}` : undefined}
+                  style="--anim-dur: {anim.durationMs}ms; --travel-dist: {vec.dist.toFixed(1)}px;"
+                >
+                  <!-- 1. INFANTRY: Frontline Tracer Fire & Border Muzzle Flashes -->
+                  {#if anim.categories.includes("infantry")}
+                    <g
+                      class="combat-fx-infantry"
+                      transform="translate({vec.x1.toFixed(1)}, {vec.y1.toFixed(1)}) rotate({vec.angleDeg.toFixed(1)})"
+                    >
+                      <!-- Muzzle flashes near border contact zone -->
+                      <polygon
+                        class="fx-muzzle-flash"
+                        points="{(vec.dist * 0.22).toFixed(1)},0 {(vec.dist * 0.22 + 5).toFixed(1)},-3.2 {(vec.dist * 0.22 + 3.2).toFixed(1)},0 {(vec.dist * 0.22 + 5).toFixed(1)},3.2"
+                        fill="#fef08a"
+                        stroke="#f97316"
+                        stroke-width="0.6"
+                      />
+                      <polygon
+                        class="fx-muzzle-flash delay-1"
+                        points="{(vec.dist * 0.34).toFixed(1)},-2.5 {(vec.dist * 0.34 + 4.5).toFixed(1)},-5.2 {(vec.dist * 0.34 + 3).toFixed(1)},-2.5 {(vec.dist * 0.34 + 4.5).toFixed(1)},0.2"
+                        fill="#fde047"
+                      />
+                      <!-- Staggered tracer fire bursts crossing the frontier -->
+                      <line
+                        class="fx-tracer-beam"
+                        x1={(vec.dist * 0.16).toFixed(1)}
+                        y1="-2.2"
+                        x2={(vec.dist * 0.92).toFixed(1)}
+                        y2="-1.2"
+                        pathLength="100"
+                        stroke="#fef08a"
+                        stroke-width="1.35"
+                        stroke-linecap="round"
+                      />
+                      <line
+                        class="fx-tracer-beam delay-1"
+                        x1={(vec.dist * 0.18).toFixed(1)}
+                        y1="2.2"
+                        x2={(vec.dist * 0.94).toFixed(1)}
+                        y2="1.2"
+                        pathLength="100"
+                        stroke="#fb923c"
+                        stroke-width="1.25"
+                        stroke-linecap="round"
+                      />
+                      <line
+                        class="fx-tracer-beam delay-2"
+                        x1={(vec.dist * 0.24).toFixed(1)}
+                        y1="0"
+                        x2={(vec.dist * 0.96).toFixed(1)}
+                        y2="0"
+                        pathLength="100"
+                        stroke="#fde047"
+                        stroke-width="1.4"
+                        stroke-linecap="round"
+                      />
+                      <!-- Impact sparks on defender perimeter -->
+                      <circle
+                        class="fx-infantry-spark"
+                        cx={(vec.dist * 0.95).toFixed(1)}
+                        cy="0"
+                        r="3.2"
+                        fill="none"
+                        stroke="#fde047"
+                        stroke-width="1.1"
+                      />
+                    </g>
+                  {/if}
+
+                  <!-- 2. TANKS (ARMOR): High-Velocity Sabot Streak & Explosive Armor Shockwave -->
+                  {#if anim.categories.includes("tank")}
+                    <g
+                      class="combat-fx-tank"
+                      transform="translate({vec.x1.toFixed(1)}, {vec.y1.toFixed(1)}) rotate({vec.angleDeg.toFixed(1)})"
+                    >
+                      <!-- High-velocity ballistic sabot trail -->
+                      <line
+                        class="fx-tank-sabot-trail"
+                        x1={(vec.dist * 0.12).toFixed(1)}
+                        y1="0"
+                        x2={vec.dist.toFixed(1)}
+                        y2="0"
+                        pathLength="100"
+                        stroke="#f97316"
+                        stroke-width="2.6"
+                        stroke-linecap="round"
+                        filter="url(#glow-gold)"
+                      />
+                      <line
+                        class="fx-tank-sabot-core"
+                        x1={(vec.dist * 0.15).toFixed(1)}
+                        y1="0"
+                        x2={vec.dist.toFixed(1)}
+                        y2="0"
+                        pathLength="100"
+                        stroke="#fef08a"
+                        stroke-width="1.3"
+                        stroke-linecap="round"
+                      />
+                      <!-- Armored spearhead dart -->
+                      <g class="fx-tank-projectile">
+                        <polygon
+                          points="4,0 -3,-2.5 -1.5,0 -3,2.5"
+                          fill="#fef08a"
+                          stroke="#ea580c"
+                          stroke-width="0.7"
+                        />
+                      </g>
+                      <!-- Explosive ballistic shockwave rings at defender -->
+                      <g transform="translate({vec.dist.toFixed(1)}, 0)">
+                        <circle
+                          class="fx-tank-shockwave"
+                          cx="0"
+                          cy="0"
+                          r="3"
+                          fill="rgba(251, 146, 60, 0.35)"
+                          stroke="#f97316"
+                          stroke-width="1.8"
+                        />
+                        <circle
+                          class="fx-tank-shockwave secondary"
+                          cx="0"
+                          cy="0"
+                          r="2"
+                          fill="none"
+                          stroke="#fef08a"
+                          stroke-width="1.2"
+                        />
+                      </g>
+                    </g>
+                  {/if}
+
+                  <!-- 3. ARTILLERY: High Parabolic Ballistic Arc, Smoke Puffs & Temporary Crater -->
+                  {#if anim.categories.includes("artillery")}
+                    <g class="combat-fx-artillery">
+                      <!-- Dashed ballistic arc guide -->
+                      <path
+                        d={vec.parabolicPathD}
+                        fill="none"
+                        stroke="rgba(251, 146, 60, 0.42)"
+                        stroke-width="1.1"
+                        stroke-dasharray="2.5 3.5"
+                      />
+                      <!-- Animated glowing artillery shell streak along the parabolic curve -->
+                      <path
+                        class="fx-artillery-shell-arc"
+                        d={vec.parabolicPathD}
+                        pathLength="100"
+                        fill="none"
+                        stroke="#fb923c"
+                        stroke-width="2.8"
+                        stroke-linecap="round"
+                        filter="url(#glow-red)"
+                      />
+                      <path
+                        class="fx-artillery-shell-arc core"
+                        d={vec.parabolicPathD}
+                        pathLength="100"
+                        fill="none"
+                        stroke="#fef08a"
+                        stroke-width="1.4"
+                        stroke-linecap="round"
+                      />
+                      <!-- Impact Crater & Smoke Plume at Target -->
+                      <g transform="translate({vec.x2.toFixed(1)}, {vec.y2.toFixed(1)})">
+                        <ellipse
+                          class="fx-artillery-crater"
+                          cx="0"
+                          cy="1.5"
+                          rx="7.5"
+                          ry="4.2"
+                          fill="rgba(15, 23, 42, 0.88)"
+                          stroke="#f97316"
+                          stroke-width="1.1"
+                        />
+                        <circle
+                          class="fx-artillery-blast"
+                          cx="0"
+                          cy="0"
+                          r="4.5"
+                          fill="rgba(239, 68, 68, 0.55)"
+                          stroke="#fde047"
+                          stroke-width="1.4"
+                        />
+                        <circle class="fx-smoke-puff p1" cx="-4" cy="-2" r="3.4" fill="rgba(148, 163, 184, 0.65)" />
+                        <circle class="fx-smoke-puff p2" cx="4.2" cy="-3" r="3.0" fill="rgba(100, 116, 139, 0.65)" />
+                        <circle class="fx-smoke-puff p3" cx="0" cy="-5" r="3.8" fill="rgba(203, 213, 225, 0.55)" />
+                      </g>
+                    </g>
+                  {/if}
+
+                  <!-- 4. AIR FORCE: Fighter/Bomber Sortie Across Airspace & Area Bomb Dispersal -->
+                  {#if anim.categories.includes("aircraft")}
+                    <g
+                      class="combat-fx-aircraft"
+                      transform="translate({vec.x1.toFixed(1)}, {vec.y1.toFixed(1)}) rotate({vec.angleDeg.toFixed(1)})"
+                    >
+                      <!-- Twin high-altitude contrails -->
+                      <line
+                        class="fx-air-contrail"
+                        x1="0"
+                        y1="-2.6"
+                        x2={vec.dist.toFixed(1)}
+                        y2="-2.6"
+                        pathLength="100"
+                        stroke="rgba(186, 230, 253, 0.65)"
+                        stroke-width="0.95"
+                        stroke-linecap="round"
+                      />
+                      <line
+                        class="fx-air-contrail"
+                        x1="0"
+                        y1="2.6"
+                        x2={vec.dist.toFixed(1)}
+                        y2="2.6"
+                        pathLength="100"
+                        stroke="rgba(186, 230, 253, 0.65)"
+                        stroke-width="0.95"
+                        stroke-linecap="round"
+                      />
+                      <!-- Area bomb dispersal / recon radar rings around target -->
+                      <g transform="translate({vec.dist.toFixed(1)}, 0)">
+                        {#if anim.missionType === "recon"}
+                          <circle
+                            class="fx-air-dispersal recon"
+                            cx="0"
+                            cy="0"
+                            r="4"
+                            fill="none"
+                            stroke="#38bdf8"
+                            stroke-width="1.3"
+                          />
+                        {:else}
+                          <circle
+                            class="fx-air-dispersal b1"
+                            cx="-5"
+                            cy="-2.5"
+                            r="3"
+                            fill="rgba(251, 191, 36, 0.35)"
+                            stroke="#facc15"
+                            stroke-width="1.2"
+                          />
+                          <circle
+                            class="fx-air-dispersal b2"
+                            cx="0"
+                            cy="0"
+                            r="3.8"
+                            fill="rgba(239, 68, 68, 0.4)"
+                            stroke="#f97316"
+                            stroke-width="1.4"
+                          />
+                          <circle
+                            class="fx-air-dispersal b3"
+                            cx="4.8"
+                            cy="2.2"
+                            r="3"
+                            fill="rgba(251, 191, 36, 0.35)"
+                            stroke="#facc15"
+                            stroke-width="1.2"
+                          />
+                        {/if}
+                      </g>
+                      <!-- Swept-wing tactical jet silhouette flying across the vector -->
+                      <g class="fx-aircraft-silhouette">
+                        <path
+                          d="M 7 0 L 1.5 -1.6 L -2.5 -7.2 L -4.5 -7.2 L -2.2 -1.6 L -6.5 -1.2 L -8.2 -3.6 L -9.2 -3.6 L -8.0 0 L -9.2 3.6 L -8.2 3.6 L -6.5 1.2 L -2.2 1.6 L -4.5 7.2 L -2.5 7.2 L 1.5 1.6 Z"
+                          fill="#e0f2fe"
+                          stroke="#0284c7"
+                          stroke-width="0.65"
+                          filter="drop-shadow(0 2px 3px rgba(0,0,0,0.85))"
+                        />
+                      </g>
+                    </g>
+                  {/if}
+
+                  <!-- 5. NAVY: Coastal Battery Salvo, Water Splashes & Beachhead Detonation -->
+                  {#if anim.categories.includes("navy")}
+                    <g
+                      class="combat-fx-navy"
+                      transform="translate({vec.x1.toFixed(1)}, {vec.y1.toFixed(1)}) rotate({vec.angleDeg.toFixed(1)})"
+                    >
+                      <!-- Twin naval cannon salvo streaks -->
+                      <line
+                        class="fx-navy-salvo"
+                        x1={(vec.dist * 0.1).toFixed(1)}
+                        y1="-2.4"
+                        x2={(vec.dist * 0.96).toFixed(1)}
+                        y2="-1.2"
+                        pathLength="100"
+                        stroke="#38bdf8"
+                        stroke-width="1.8"
+                        stroke-linecap="round"
+                      />
+                      <line
+                        class="fx-navy-salvo delay-1"
+                        x1={(vec.dist * 0.1).toFixed(1)}
+                        y1="2.4"
+                        x2={(vec.dist * 0.96).toFixed(1)}
+                        y2="1.2"
+                        pathLength="100"
+                        stroke="#bae6fd"
+                        stroke-width="1.6"
+                        stroke-linecap="round"
+                      />
+                      <!-- Maritime water splash rings along sea crossing -->
+                      <circle
+                        class="fx-navy-splash s1"
+                        cx={(vec.dist * 0.42).toFixed(1)}
+                        cy="-1.8"
+                        r="2.4"
+                        fill="none"
+                        stroke="#e0f2fe"
+                        stroke-width="1.1"
+                      />
+                      <circle
+                        class="fx-navy-splash s2"
+                        cx={(vec.dist * 0.68).toFixed(1)}
+                        cy="1.8"
+                        r="2.8"
+                        fill="none"
+                        stroke="#7dd3fc"
+                        stroke-width="1.1"
+                      />
+                      <!-- Amphibious beachhead detonation at coastal target -->
+                      <g transform="translate({(vec.dist * 0.96).toFixed(1)}, 0)">
+                        <circle
+                          class="fx-navy-beach-blast"
+                          cx="0"
+                          cy="0"
+                          r="3.6"
+                          fill="rgba(56, 189, 248, 0.35)"
+                          stroke="#fde047"
+                          stroke-width="1.5"
+                        />
+                      </g>
+                    </g>
+                  {/if}
                 </g>
               {/each}
             </g>
@@ -1404,5 +1790,295 @@
   }
   .division-counter {
     pointer-events: none;
+  }
+
+  /* --- HEGEM-80: GPU-Accelerated Vector Combat Animations per Troop Category --- */
+  .division-counter-body.under-armor-shock {
+    animation: badgeArmorShock 420ms cubic-bezier(0.36, 0.07, 0.19, 0.97) both;
+  }
+  .division-counter-body.under-fire {
+    animation: badgeUnderFire 380ms ease-out both;
+  }
+
+  @keyframes badgeArmorShock {
+    0%, 100% { transform: translate(0, 0); }
+    18% { transform: translate(-2.2px, 1.4px); }
+    36% { transform: translate(2.4px, -1.6px); }
+    54% { transform: translate(-1.8px, -1.1px); }
+    72% { transform: translate(1.5px, 1.2px); }
+  }
+
+  @keyframes badgeUnderFire {
+    0%, 100% { transform: translate(0, 0); }
+    25% { transform: translate(-1.2px, 0.8px); }
+    55% { transform: translate(1.2px, -0.8px); }
+  }
+
+  /* 1. Infantry: Muzzle Flashes & Tracer Fire */
+  .fx-muzzle-flash {
+    animation: combatMuzzleFlash var(--anim-dur, 620ms) ease-out both;
+  }
+  .fx-muzzle-flash.delay-1 {
+    animation-delay: 70ms;
+  }
+  .fx-tracer-beam {
+    stroke-dasharray: 18 100;
+    animation: combatTracerDash var(--anim-dur, 620ms) linear both;
+  }
+  .fx-tracer-beam.delay-1 {
+    animation-delay: 55ms;
+  }
+  .fx-tracer-beam.delay-2 {
+    animation-delay: 110ms;
+  }
+  .fx-infantry-spark {
+    transform-box: fill-box;
+    transform-origin: center;
+    animation: combatImpactRing var(--anim-dur, 620ms) ease-out both;
+  }
+
+  @keyframes combatMuzzleFlash {
+    0% { opacity: 0; }
+    12% { opacity: 1; }
+    28% { opacity: 0.25; }
+    44% { opacity: 0.95; }
+    70%, 100% { opacity: 0; }
+  }
+
+  @keyframes combatTracerDash {
+    0% {
+      stroke-dashoffset: 24;
+      opacity: 0.95;
+    }
+    80% {
+      opacity: 1;
+    }
+    100% {
+      stroke-dashoffset: -95;
+      opacity: 0;
+    }
+  }
+
+  /* 2. Tank (Armor): High-Velocity Sabot & Shockwave */
+  .fx-tank-sabot-trail,
+  .fx-tank-sabot-core {
+    stroke-dasharray: 28 110;
+    animation: combatSabotStreak var(--anim-dur, 620ms) cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+  .fx-tank-projectile {
+    animation: combatLinearTravel var(--anim-dur, 620ms) cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+  .fx-tank-shockwave {
+    transform-box: fill-box;
+    transform-origin: center;
+    animation: combatShockwaveExpand var(--anim-dur, 620ms) cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+  .fx-tank-shockwave.secondary {
+    animation-delay: 65ms;
+  }
+
+  @keyframes combatSabotStreak {
+    0% {
+      stroke-dashoffset: 30;
+      opacity: 1;
+    }
+    70% {
+      opacity: 1;
+    }
+    100% {
+      stroke-dashoffset: -100;
+      opacity: 0;
+    }
+  }
+
+  @keyframes combatLinearTravel {
+    0% {
+      transform: translate3d(0, 0, 0) scale(0.85);
+      opacity: 0.95;
+    }
+    75% {
+      transform: translate3d(var(--travel-dist, 80px), 0, 0) scale(1.05);
+      opacity: 1;
+    }
+    100% {
+      transform: translate3d(var(--travel-dist, 80px), 0, 0) scale(0.4);
+      opacity: 0;
+    }
+  }
+
+  @keyframes combatShockwaveExpand {
+    0%, 28% {
+      transform: scale(0.2);
+      opacity: 0;
+    }
+    45% {
+      opacity: 1;
+    }
+    100% {
+      transform: scale(4.2);
+      opacity: 0;
+    }
+  }
+
+  /* 3. Artillery: High-Arc Parabolic Shell, Crater & Smoke Plume */
+  .fx-artillery-shell-arc {
+    stroke-dasharray: 16 110;
+    animation: combatParabolicArc var(--anim-dur, 620ms) cubic-bezier(0.25, 0.46, 0.45, 0.94) both;
+  }
+  .fx-artillery-crater {
+    transform-box: fill-box;
+    transform-origin: center;
+    animation: combatCraterFade var(--anim-dur, 620ms) ease-out both;
+  }
+  .fx-artillery-blast {
+    transform-box: fill-box;
+    transform-origin: center;
+    animation: combatShockwaveExpand var(--anim-dur, 620ms) ease-out both;
+  }
+  .fx-smoke-puff {
+    transform-box: fill-box;
+    transform-origin: center;
+    animation: combatSmokePlume var(--anim-dur, 620ms) ease-out both;
+  }
+  .fx-smoke-puff.p2 {
+    animation-delay: 45ms;
+  }
+  .fx-smoke-puff.p3 {
+    animation-delay: 85ms;
+  }
+
+  @keyframes combatParabolicArc {
+    0% {
+      stroke-dashoffset: 18;
+      opacity: 1;
+    }
+    82% {
+      opacity: 1;
+    }
+    100% {
+      stroke-dashoffset: -102;
+      opacity: 0;
+    }
+  }
+
+  @keyframes combatCraterFade {
+    0%, 42% {
+      transform: scale(0.2);
+      opacity: 0;
+    }
+    58% {
+      transform: scale(1.05);
+      opacity: 0.95;
+    }
+    85% {
+      transform: scale(1);
+      opacity: 0.85;
+    }
+    100% {
+      transform: scale(0.95);
+      opacity: 0;
+    }
+  }
+
+  @keyframes combatSmokePlume {
+    0%, 44% {
+      transform: translate3d(0, 2px, 0) scale(0.3);
+      opacity: 0;
+    }
+    65% {
+      opacity: 0.85;
+    }
+    100% {
+      transform: translate3d(0, -10px, 0) scale(2.1);
+      opacity: 0;
+    }
+  }
+
+  /* 4. Air Force: Jet Flyover, Contrails & Area Bomb Dispersal */
+  .fx-air-contrail {
+    stroke-dasharray: 100 100;
+    animation: combatContrailDraw var(--anim-dur, 620ms) ease-out both;
+  }
+  .fx-aircraft-silhouette {
+    animation: combatAirSortie var(--anim-dur, 620ms) cubic-bezier(0.22, 0.61, 0.36, 1) both;
+  }
+  .fx-air-dispersal {
+    transform-box: fill-box;
+    transform-origin: center;
+    animation: combatShockwaveExpand var(--anim-dur, 620ms) ease-out both;
+  }
+  .fx-air-dispersal.b2 {
+    animation-delay: 45ms;
+  }
+  .fx-air-dispersal.b3 {
+    animation-delay: 90ms;
+  }
+
+  @keyframes combatContrailDraw {
+    0% {
+      stroke-dashoffset: 100;
+      opacity: 0.85;
+    }
+    70% {
+      stroke-dashoffset: 0;
+      opacity: 0.7;
+    }
+    100% {
+      stroke-dashoffset: 0;
+      opacity: 0;
+    }
+  }
+
+  @keyframes combatAirSortie {
+    0% {
+      transform: translate3d(-6px, 0, 0) scale(0.75);
+      opacity: 0;
+    }
+    15% {
+      opacity: 1;
+    }
+    85% {
+      opacity: 1;
+    }
+    100% {
+      transform: translate3d(calc(var(--travel-dist, 80px) + 12px), 0, 0) scale(0.95);
+      opacity: 0;
+    }
+  }
+
+  /* 5. Navy: Coastal Battery Salvo, Water Splashes & Beach Detonation */
+  .fx-navy-salvo {
+    stroke-dasharray: 22 105;
+    animation: combatSabotStreak var(--anim-dur, 620ms) ease-out both;
+  }
+  .fx-navy-salvo.delay-1 {
+    animation-delay: 60ms;
+  }
+  .fx-navy-splash {
+    transform-box: fill-box;
+    transform-origin: center;
+    animation: combatImpactRing var(--anim-dur, 620ms) ease-out both;
+  }
+  .fx-navy-splash.s2 {
+    animation-delay: 75ms;
+  }
+  .fx-navy-beach-blast {
+    transform-box: fill-box;
+    transform-origin: center;
+    animation: combatShockwaveExpand var(--anim-dur, 620ms) ease-out both;
+  }
+
+  @keyframes combatImpactRing {
+    0%, 20% {
+      transform: scale(0.25);
+      opacity: 0;
+    }
+    50% {
+      opacity: 0.95;
+    }
+    100% {
+      transform: scale(3.2);
+      opacity: 0;
+    }
   }
 </style>

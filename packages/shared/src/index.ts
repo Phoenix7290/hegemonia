@@ -323,6 +323,7 @@ export interface CombatRollResult {
   defenderDice: number[];
   attackerLosses: number;
   defenderLosses: number;
+  attackerUnits?: UnitCounts;
   attackerLossUnits?: UnitCounts;
   defenderLossUnits?: UnitCounts;
   conquered: boolean;
@@ -338,6 +339,15 @@ export interface CombatRollResult {
   unescortedArtilleryPenalty?: boolean;
 }
 
+export interface TacticalStrikeEvent {
+  kind: "artillery_barrage" | "air_mission";
+  missionType?: AirMissionType;
+  fromTerritoryId: string;
+  toTerritoryId: string;
+  hits?: number;
+  round: number;
+}
+
 export interface GameState {
   id: string;
   round: number;
@@ -350,6 +360,7 @@ export interface GameState {
   tradeCount: number;
   pendingConquest: PendingConquest | null;
   lastCombat: CombatRollResult | null;
+  lastStrike?: TacticalStrikeEvent | null;
   winnerId: string | null;
   seedCommitHash: string;
   revealedSeed?: string;

@@ -4,7 +4,7 @@
   import {
     ASIA_SUBREGIONS,
     CLASSIC_MAP,
-
+    isSeaLink,
   } from "@hegemonia/maps";
   import {
     UNIT_COSTS,
@@ -54,6 +54,11 @@
     type BaseMapMode,
     type MapOverlays,
   } from "./lib/map-preferences";
+  import {
+    type ActiveCombatAnimation,
+    createCombatAnimationFromRoll,
+    createCombatAnimationFromStrike,
+  } from "./lib/combat-animations";
   import { CommunicationsController } from "./lib/communications.svelte";
   import {
     InvalidRoomCodeError,
@@ -99,7 +104,16 @@
   let lobbyPlayers = $state<LobbyPlayerView[]>([]);
   const communications = new CommunicationsController();
   let game = $state<GameState | null>(null);
+  let activeCombatAnimations = $state<ActiveCombatAnimation[]>([]);
   let turnDeadline = $state(0);
+
+  function spawnCombatAnimation(anim: ActiveCombatAnimation | null) {
+    if (!anim) return;
+    activeCombatAnimations = [...activeCombatAnimations.slice(-5), anim];
+    setTimeout(() => {
+      activeCombatAnimations = activeCombatAnimations.filter((item) => item.id !== anim.id);
+    }, anim.durationMs);
+  }
   let remainingSeconds = $state(120);
   let errorBanner = $state("");
   let matchmakingStatus = $state<MatchmakingStatus>({ ...IDLE_MATCHMAKING_STATUS });
@@ -442,6 +456,7 @@
     turnDeadline = 0;
     remainingSeconds = 120;
     game = null;
+    activeCombatAnimations = [];
     lobbyPlayers = [];
     isReconnecting = false;
     reconnectAttempts = 0;
@@ -652,7 +667,8 @@
 
       room.onMessage("room_state", (payload: RoomStateMessage) => {
         if (generation !== connectionGeneration) return;
-        const prevLastCombat = game?.lastCombat;
+        const hadPrevGame = game !== null;
+        const prevLogLen = game?.log?.length ?? 0;
         roomCode = payload.roomCode;
         roomStatus = payload.status;
         turnDeadline = payload.turnDeadline;
@@ -666,14 +682,45 @@
 
         resetSelectedForce();
 
-        if (game?.lastCombat && game.lastCombat !== prevLastCombat) {
+        const newLogs =
+          hadPrevGame && game?.log && game.log.length > prevLogLen
+            ? game.log.slice(prevLogLen)
+            : [];
+        const hasNewCombatLog = newLogs.some((l) => l.startsWith("Combate "));
+        const hasNewStrikeLog = newLogs.some(
+          (l) =>
+            l.includes("BARRAGEM") ||
+            l.includes("MISSÃO AÉREA") ||
+            l.includes("BOMBARDEIO ESTRATÉGICO") ||
+            l.includes("RECONHECIMENTO AÉREO")
+        );
+
+        if (hasNewCombatLog && game?.lastCombat) {
           sound.playCombatAttack();
           sound.playDiceRoll();
+          spawnCombatAnimation(
+            createCombatAnimationFromRoll(game.lastCombat, ui.combatAnimationSpeed, {
+              isMaritime: isSeaLink(
+                game.lastCombat.fromTerritoryId,
+                game.lastCombat.toTerritoryId
+              ),
+            })
+          );
           if (game.lastCombat.conquered) {
             setTimeout(() => {
               if (generation === connectionGeneration) sound.playConquest();
             }, 300);
           }
+        } else if (hasNewStrikeLog && game?.lastStrike) {
+          sound.playCombatAttack();
+          spawnCombatAnimation(
+            createCombatAnimationFromStrike(game.lastStrike, ui.combatAnimationSpeed, {
+              isMaritime: isSeaLink(
+                game.lastStrike.fromTerritoryId,
+                game.lastStrike.toTerritoryId
+              ),
+            })
+          );
         }
       });
 
@@ -1069,6 +1116,7 @@
       {cleanMapMode}
       {highlightObjectiveTerritories}
       {objectiveTargetTerritoryIds}
+      combatAnimations={activeCombatAnimations}
       bind:selectedFromId
       bind:selectedToId
       bind:hoveredTerritoryId

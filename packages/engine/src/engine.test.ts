@@ -2452,6 +2452,14 @@ describe("Advanced Artillery Mechanics, Maintenance & Escort Vulnerability (HEGE
         rng
       );
       expect(state.worldTension).toBe(1.8); // 1.7 + 0.1
+      expect(state.lastCombat?.attackerUnits).toEqual(unitCounts(9, 0, 0, 0, 0));
+      expect(state.lastStrike).toEqual({
+        kind: "artillery_barrage",
+        fromTerritoryId: "brasil",
+        toTerritoryId: "venezuela",
+        hits: expect.any(Number),
+        round: 2,
+      });
     });
   });
 });
