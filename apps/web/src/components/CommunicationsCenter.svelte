@@ -22,20 +22,30 @@
 
   let availablePlayers = $derived(
     controller.players.filter(
-      (player) => player.connected && !player.isBot && player.token !== controller.myPlayerId
-    )
+      (player) =>
+        player.connected &&
+        !player.isBot &&
+        player.token !== controller.myPlayerId,
+    ),
   );
-  let activeChannel = $derived(controller.channelById(controller.activeChannelId));
+  let activeChannel = $derived(
+    controller.channelById(controller.activeChannelId),
+  );
   let activeVoiceParticipants = $derived(
-    controller.voicePresence[controller.activeChannelId] ?? []
+    controller.voicePresence[controller.activeChannelId] ?? [],
   );
-  let isActiveLine = $derived(controller.activeVoiceChannelId === controller.activeChannelId);
+  let isActiveLine = $derived(
+    controller.activeVoiceChannelId === controller.activeChannelId,
+  );
 
   $effect(() => {
     controller.activeChannelId;
     controller.activeMessages.length;
     void tick().then(() => {
-      messagesElement?.scrollTo({ top: messagesElement.scrollHeight, behavior: "smooth" });
+      messagesElement?.scrollTo({
+        top: messagesElement.scrollHeight,
+        behavior: "smooth",
+      });
     });
   });
 
@@ -66,7 +76,8 @@
       return;
     }
     const target = event.target as HTMLElement | null;
-    if (target?.closest("input, textarea, select, [contenteditable='true']")) return;
+    if (target?.closest("input, textarea, select, [contenteditable='true']"))
+      return;
     event.preventDefault();
     controller.setTransmitting(true);
   }
@@ -94,11 +105,18 @@
   aria-label={t("comms_settings_title")}
 >
   <header class="comms-toolbar">
-    <div class="channel-tabs" role="tablist" aria-label={t("comms_line_tactical_radio")}>
+    <div
+      class="channel-tabs"
+      role="tablist"
+      aria-label={t("comms_line_tactical_radio")}
+    >
       {#each controller.openTabIds as channelId (channelId)}
         {@const channel = controller.channelById(channelId)}
         {@const other = channel ? controller.otherPlayer(channel) : undefined}
-        <div class="channel-tab" class:active={controller.activeChannelId === channelId}>
+        <div
+          class="channel-tab"
+          class:active={controller.activeChannelId === channelId}
+        >
           <button
             class="channel-select"
             role="tab"
@@ -108,20 +126,32 @@
             {#if channelId === GLOBAL_CHANNEL_ID}
               <Icon name="globe" size={12} />
             {:else if controller.settings.showAvatars && other}
-              <Avatar name={other.name} avatarUrl={other.avatarUrl} size="small" />
+              <Avatar
+                name={other.name}
+                avatarUrl={other.avatarUrl}
+                size="small"
+              />
             {:else}
               <Icon name="lock" size={11} />
             {/if}
-            <span>{channelId === GLOBAL_CHANNEL_ID ? t("comms_channel_global") : controller.channelTitle(channelId)}</span>
+            <span
+              >{channelId === GLOBAL_CHANNEL_ID
+                ? t("comms_channel_global")
+                : controller.channelTitle(channelId)}</span
+            >
             {#if (controller.unreadByChannel[channelId] ?? 0) > 0}
-              <strong class="unread-badge">{controller.unreadByChannel[channelId]}</strong>
+              <strong class="unread-badge"
+                >{controller.unreadByChannel[channelId]}</strong
+              >
             {/if}
           </button>
           {#if channelId !== GLOBAL_CHANNEL_ID && controller.activeVoiceChannelId !== channelId}
             <button
               class="close-tab"
               onclick={() => controller.closeChannel(channelId)}
-              aria-label={t("comms_close_tab", { title: controller.channelTitle(channelId) })}
+              aria-label={t("comms_close_tab", {
+                title: controller.channelTitle(channelId),
+              })}
             >
               <Icon name="close" size={10} />
             </button>
@@ -133,21 +163,44 @@
     <div class="toolbar-actions">
       <div class="new-channel-wrap">
         <button
+          type="button"
           class="toolbar-button"
           class:active={newChannelOpen}
           onclick={() => (newChannelOpen = !newChannelOpen)}
           aria-label={t("comms_open_direct_tab")}
           title={t("comms_open_direct_tab")}
         >
-          <Icon name="plus" size={14} />
+          <svg
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2.2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+            class="toolbar-plus-svg"
+          >
+            <line x1="12" y1="5" x2="12" y2="19" />
+            <line x1="5" y1="12" x2="19" y2="12" />
+          </svg>
         </button>
         {#if newChannelOpen}
           <div class="player-picker">
             <div class="picker-title">{t("comms_open_direct_tab")}</div>
             {#each availablePlayers as player}
-              <button onclick={() => openDirect(player.token)}>
-                <Avatar name={player.name} avatarUrl={player.avatarUrl} size="small" />
-                <span><strong>{player.name}</strong><small>{t("comms_bilateral_channel")}</small></span>
+              <button type="button" onclick={() => openDirect(player.token)}>
+                <Avatar
+                  name={player.name}
+                  avatarUrl={player.avatarUrl}
+                  size="small"
+                />
+                <span
+                  ><strong>{player.name}</strong><small
+                    >{t("comms_bilateral_channel")}</small
+                  ></span
+                >
                 <Icon name="radio" size={13} />
               </button>
             {:else}
@@ -157,15 +210,22 @@
         {/if}
       </div>
       <button
+        type="button"
         class="toolbar-button"
         class:active={controller.settings.chatSize !== "normal"}
         onclick={() => controller.cycleChatSize()}
         aria-label={t("comms_toggle_chat_size")}
         title={`${t("comms_chat_size_label")}: ${controller.settings.chatSize === "normal" ? t("comms_size_normal") : controller.settings.chatSize === "large" ? t("comms_size_large") : t("comms_size_expanded")}`}
       >
-        <Icon name={controller.settings.chatSize === "expanded" ? "minimize" : "expand"} size={13} />
+        <Icon
+          name={controller.settings.chatSize === "expanded"
+            ? "minimize"
+            : "expand"}
+          size={13}
+        />
       </button>
       <button
+        type="button"
         class="toolbar-button"
         onclick={() => (settingsOpen = true)}
         aria-label={t("comms_settings_title")}
@@ -178,24 +238,41 @@
 
   <div class="channel-status-line">
     <span class:private={activeChannel?.kind !== "global"}>
-      <Icon name={activeChannel?.kind === "global" || !activeChannel ? "globe" : "lock"} size={10} />
-      {activeChannel?.kind === "direct" ? t("comms_status_direct_auth") : t("comms_status_public_net")}
+      <Icon
+        name={activeChannel?.kind === "global" || !activeChannel
+          ? "globe"
+          : "lock"}
+        size={10}
+      />
+      {activeChannel?.kind === "direct"
+        ? t("comms_status_direct_auth")
+        : t("comms_status_public_net")}
     </span>
-    <small>{activeChannel?.kind === "direct" ? t("comms_status_direct_hint") : t("comms_status_public_hint")}</small>
+    <small
+      >{activeChannel?.kind === "direct"
+        ? t("comms_status_direct_hint")
+        : t("comms_status_public_hint")}</small
+    >
   </div>
 
   <div class="radio-console" class:line-active={isActiveLine}>
     <div class="radio-identity">
       <span class="radio-signal"><Icon name="radio" size={15} /></span>
       <div>
-        <strong>{isActiveLine ? t("comms_line_active") : t("comms_line_tactical_radio")}</strong>
+        <strong
+          >{isActiveLine
+            ? t("comms_line_active")
+            : t("comms_line_tactical_radio")}</strong
+        >
         <small>
           {#if controller.radioConnection === "connecting" && isActiveLine}
             {t("comms_radio_connecting")}
           {:else if controller.radioConnection === "failed" && isActiveLine}
             {t("comms_radio_failed")}
           {:else}
-            {t("comms_radio_count_participants", { count: activeVoiceParticipants.length })}
+            {t("comms_radio_count_participants", {
+              count: activeVoiceParticipants.length,
+            })}
           {/if}
         </small>
       </div>
@@ -206,23 +283,37 @@
         {#each activeVoiceParticipants as playerId}
           {@const player = controller.playerById(playerId)}
           {#if player}
-            <span class="voice-avatar" class:speaking={controller.speakingByPlayer[playerId]} title={player.name}>
-              <Avatar name={player.name} avatarUrl={player.avatarUrl} size="small" />
+            <span
+              class="voice-avatar"
+              class:speaking={controller.speakingByPlayer[playerId]}
+              title={player.name}
+            >
+              <Avatar
+                name={player.name}
+                avatarUrl={player.avatarUrl}
+                size="small"
+              />
             </span>
           {/if}
         {/each}
       </div>
       <button
+        type="button"
         class="radio-control"
         class:muted={controller.radioMuted}
         onclick={() => controller.toggleRadioMute()}
-        title={controller.radioMuted ? t("comms_btn_unmute") : t("comms_btn_mute")}
-        aria-label={controller.radioMuted ? t("comms_btn_unmute") : t("comms_btn_mute")}
+        title={controller.radioMuted
+          ? t("comms_btn_unmute")
+          : t("comms_btn_mute")}
+        aria-label={controller.radioMuted
+          ? t("comms_btn_unmute")
+          : t("comms_btn_mute")}
       >
         <Icon name={controller.radioMuted ? "mute" : "microphone"} size={14} />
       </button>
       {#if controller.settings.pushToTalk}
         <button
+          type="button"
           class="ptt-button"
           class:muted={controller.radioMuted}
           disabled={controller.radioMuted}
@@ -234,20 +325,34 @@
           onpointercancel={() => controller.setTransmitting(false)}
           onpointerleave={() => controller.setTransmitting(false)}
         >
-          <Icon name="microphone" size={13} /> {t("comms_btn_ptt")}
+          <Icon name="microphone" size={13} />
+          {t("comms_btn_ptt")}
         </button>
       {:else}
         <span class="open-mic-label" class:muted={controller.radioMuted}>
-          {controller.radioMuted ? t("comms_state_muted") : t("comms_state_open_mic")}
+          {controller.radioMuted
+            ? t("comms_state_muted")
+            : t("comms_state_open_mic")}
         </span>
       {/if}
-      <button class="radio-control leave-line" onclick={() => controller.leaveVoice()} title={t("comms_btn_leave_line")}>
+      <button
+        type="button"
+        class="radio-control leave-line"
+        onclick={() => controller.leaveVoice()}
+        title={t("comms_btn_leave_line")}
+      >
         <Icon name="close" size={14} />
       </button>
     {:else}
-      <button class="join-line-button" onclick={() => void controller.joinVoice(controller.activeChannelId)}>
+      <button
+        type="button"
+        class="join-line-button"
+        onclick={() => void controller.joinVoice(controller.activeChannelId)}
+      >
         <Icon name="microphone" size={13} />
-        {controller.activeVoiceChannelId ? t("comms_btn_switch_line") : t("comms_btn_join_line")}
+        {controller.activeVoiceChannelId
+          ? t("comms_btn_switch_line")
+          : t("comms_btn_join_line")}
       </button>
     {/if}
   </div>
@@ -255,11 +360,21 @@
   {#if controller.error}
     <div class="comms-error" role="alert">
       <span>{controller.error}</span>
-      <button onclick={() => controller.clearError()} aria-label={t("comms_dismiss_error")}><Icon name="close" size={12} /></button>
+      <button
+        type="button"
+        onclick={() => controller.clearError()}
+        aria-label={t("comms_dismiss_error")}
+        ><Icon name="close" size={12} /></button
+      >
     </div>
   {/if}
 
-  <div class="messages-scroller" bind:this={messagesElement} role="log" aria-live="polite">
+  <div
+    class="messages-scroller"
+    bind:this={messagesElement}
+    role="log"
+    aria-live="polite"
+  >
     {#each controller.activeMessages as message (message.id)}
       {#if message.kind === "intel"}
         <div class="intel-message">
@@ -268,11 +383,16 @@
             <strong>{t("comms_intel_banner")}</strong>
             <p>{message.text}</p>
           </div>
-          {#if controller.settings.showTimestamps}<time>{formatTime(message.createdAt)}</time>{/if}
+          {#if controller.settings.showTimestamps}<time
+              >{formatTime(message.createdAt)}</time
+            >{/if}
         </div>
       {:else}
         {@const sender = controller.playerById(message.senderId)}
-        <article class="chat-message" class:own-message={message.senderId === controller.myPlayerId}>
+        <article
+          class="chat-message"
+          class:own-message={message.senderId === controller.myPlayerId}
+        >
           {#if controller.settings.showAvatars}
             <Avatar
               name={message.senderName}
@@ -283,11 +403,19 @@
           <div class="message-body">
             <header>
               <span class="sender-name">
-                {#if message.senderColor}<FactionFlag color={message.senderColor} width={14} height={9} />{/if}
+                {#if message.senderColor}<FactionFlag
+                    color={message.senderColor}
+                    width={14}
+                    height={9}
+                  />{/if}
                 {message.senderName}
-                {#if message.senderId === controller.myPlayerId}<small>{t("comms_msg_you")}</small>{/if}
+                {#if message.senderId === controller.myPlayerId}<small
+                    >{t("comms_msg_you")}</small
+                  >{/if}
               </span>
-              {#if controller.settings.showTimestamps}<time>{formatTime(message.createdAt)}</time>{/if}
+              {#if controller.settings.showTimestamps}<time
+                  >{formatTime(message.createdAt)}</time
+                >{/if}
             </header>
             <p>{message.text}</p>
           </div>
@@ -295,8 +423,15 @@
       {/if}
     {:else}
       <div class="empty-channel">
-        <Icon name={activeChannel?.kind === "direct" ? "lock" : "radio"} size={22} />
-        <strong>{activeChannel?.kind === "direct" ? t("comms_empty_direct_title") : t("comms_empty_global_title")}</strong>
+        <Icon
+          name={activeChannel?.kind === "direct" ? "lock" : "radio"}
+          size={22}
+        />
+        <strong
+          >{activeChannel?.kind === "direct"
+            ? t("comms_empty_direct_title")
+            : t("comms_empty_global_title")}</strong
+        >
         <p>
           {activeChannel?.kind === "direct"
             ? t("comms_empty_direct_desc")
@@ -311,16 +446,21 @@
       rows="1"
       maxlength="240"
       placeholder={activeChannel?.kind === "direct"
-        ? t("comms_placeholder_direct", { target: controller.channelTitle(controller.activeChannelId) })
+        ? t("comms_placeholder_direct", {
+            target: controller.channelTitle(controller.activeChannelId),
+          })
         : t("comms_placeholder_global")}
       aria-label={t("comms_placeholder_global")}
       value={controller.drafts[controller.activeChannelId] ?? ""}
       oninput={(event) => controller.setDraft(event.currentTarget.value)}
-      onkeydown={composerKeydown}
-    ></textarea>
+      onkeydown={composerKeydown}></textarea>
     <div class="composer-actions">
-      <small>{(controller.drafts[controller.activeChannelId] ?? "").length}/240</small>
+      <small
+        >{(controller.drafts[controller.activeChannelId] ?? "")
+          .length}/240</small
+      >
       <button
+        type="button"
         class="send-button"
         disabled={!(controller.drafts[controller.activeChannelId] ?? "").trim()}
         onclick={submit}
@@ -384,7 +524,9 @@
     color: #94a3b8;
     font-size: 0.67rem;
   }
-  .channel-tab.active .channel-select { color: #fef08a; }
+  .channel-tab.active .channel-select {
+    color: #fef08a;
+  }
   .channel-select > span {
     overflow: hidden;
     text-overflow: ellipsis;
@@ -416,18 +558,49 @@
     background: transparent;
     color: #64748b;
   }
-  .toolbar-actions { display: flex; gap: 3px; }
-  .toolbar-button {
-    display: grid;
-    place-items: center;
-    width: 28px;
-    height: 28px;
-    padding: 0;
-    background: rgba(15, 23, 42, 0.75);
-    color: #cbd5e1;
+  .toolbar-actions {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    flex-shrink: 0;
   }
-  .toolbar-button.active { border-color: #eab308; color: #fef08a; }
-  .new-channel-wrap { position: relative; }
+  .new-channel-wrap {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+  }
+  .toolbar-button {
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    width: 28px !important;
+    height: 28px !important;
+    min-width: 28px !important;
+    min-height: 28px !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    line-height: 1 !important;
+    background: rgba(15, 23, 42, 0.75);
+    border: 1px solid rgba(148, 163, 184, 0.22);
+    border-radius: 4px;
+    color: #cbd5e1;
+    box-sizing: border-box;
+    cursor: pointer;
+  }
+  .toolbar-button :global(svg),
+  .toolbar-plus-svg {
+    display: block;
+    margin: auto !important;
+    flex-shrink: 0;
+  }
+  .toolbar-button:hover:not(:disabled) {
+    border-color: rgba(234, 179, 8, 0.55);
+    color: #fef08a;
+  }
+  .toolbar-button.active {
+    border-color: #eab308;
+    color: #fef08a;
+  }
   .player-picker {
     position: absolute;
     top: 34px;
@@ -459,10 +632,25 @@
     background: transparent;
     text-align: left;
   }
-  .player-picker > button > span { display: flex; flex: 1; flex-direction: column; }
-  .player-picker strong { color: #f1f5f9; font-size: 0.75rem; }
-  .player-picker small { color: #94a3b8; font-size: 0.62rem; }
-  .player-picker p { padding: 12px; color: #94a3b8; font-size: 0.7rem; text-align: center; }
+  .player-picker > button > span {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+  }
+  .player-picker strong {
+    color: #f1f5f9;
+    font-size: 0.75rem;
+  }
+  .player-picker small {
+    color: #94a3b8;
+    font-size: 0.62rem;
+  }
+  .player-picker p {
+    padding: 12px;
+    color: #94a3b8;
+    font-size: 0.7rem;
+    text-align: center;
+  }
   .channel-status-line {
     display: flex;
     align-items: center;
@@ -480,20 +668,33 @@
     font-weight: 800;
     letter-spacing: 0.08em;
   }
-  .channel-status-line > span.private { color: #eab308; }
-  .channel-status-line small { color: #64748b; font-size: 0.56rem; }
+  .channel-status-line > span.private {
+    color: #eab308;
+  }
+  .channel-status-line small {
+    color: #64748b;
+    font-size: 0.56rem;
+  }
   .radio-console {
     display: flex;
     align-items: center;
     gap: 5px;
     min-height: 42px;
     padding: 5px 6px;
-    background: linear-gradient(90deg, rgba(8, 20, 33, 0.95), rgba(15, 23, 42, 0.75));
+    background: linear-gradient(
+      90deg,
+      rgba(8, 20, 33, 0.95),
+      rgba(15, 23, 42, 0.75)
+    );
     border: 1px solid rgba(56, 189, 248, 0.22);
     border-radius: 5px;
   }
   .radio-console.line-active {
-    background: linear-gradient(90deg, rgba(6, 78, 59, 0.35), rgba(15, 23, 42, 0.82));
+    background: linear-gradient(
+      90deg,
+      rgba(6, 78, 59, 0.35),
+      rgba(15, 23, 42, 0.82)
+    );
     border-color: rgba(16, 185, 129, 0.45);
   }
   .radio-identity {
@@ -503,9 +704,17 @@
     min-width: 0;
     gap: 6px;
   }
-  .radio-signal { color: #38bdf8; }
-  .line-active .radio-signal { color: #34d399; }
-  .radio-identity > div { display: flex; flex-direction: column; min-width: 0; }
+  .radio-signal {
+    color: #38bdf8;
+  }
+  .line-active .radio-signal {
+    color: #34d399;
+  }
+  .radio-identity > div {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
   .radio-identity strong {
     color: #e2e8f0;
     font-family: var(--font-tactical);
@@ -519,27 +728,39 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-  .voice-participants { display: flex; }
+  .voice-participants {
+    display: flex;
+  }
   .voice-avatar {
     display: inline-flex;
     margin-left: -5px;
     border-radius: 4px;
   }
-  .voice-avatar :global(.avatar) { width: 24px; height: 24px; font-size: 0.52rem; }
+  .voice-avatar :global(.avatar) {
+    width: 24px;
+    height: 24px;
+    font-size: 0.52rem;
+  }
   .voice-avatar.speaking :global(.avatar) {
     border-color: #6ee7b7;
     box-shadow: 0 0 10px rgba(16, 185, 129, 0.85);
   }
   .radio-control {
-    display: grid;
-    place-items: center;
-    width: 28px;
-    height: 28px;
-    padding: 0;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    width: 28px !important;
+    height: 28px !important;
+    padding: 0 !important;
     background: rgba(5, 9, 18, 0.7);
   }
-  .radio-control.muted { color: #fca5a5; border-color: #ef4444; }
-  .leave-line { color: #fca5a5; }
+  .radio-control.muted {
+    color: #fca5a5;
+    border-color: #ef4444;
+  }
+  .leave-line {
+    color: #fca5a5;
+  }
   .ptt-button,
   .join-line-button {
     display: inline-flex;
@@ -556,8 +777,14 @@
     color: white;
     touch-action: none;
   }
-  .ptt-button:active { background: #10b981; box-shadow: 0 0 12px rgba(16, 185, 129, 0.5); }
-  .ptt-button.muted { background: #1e293b; border-color: #475569; }
+  .ptt-button:active {
+    background: #10b981;
+    box-shadow: 0 0 12px rgba(16, 185, 129, 0.5);
+  }
+  .ptt-button.muted {
+    background: #1e293b;
+    border-color: #475569;
+  }
   .open-mic-label {
     color: #6ee7b7;
     font-family: var(--font-tactical);
@@ -565,8 +792,14 @@
     font-weight: 800;
     white-space: nowrap;
   }
-  .open-mic-label.muted { color: #fca5a5; }
-  .join-line-button { background: rgba(8, 145, 178, 0.2); border-color: #0891b2; color: #a5f3fc; }
+  .open-mic-label.muted {
+    color: #fca5a5;
+  }
+  .join-line-button {
+    background: rgba(8, 145, 178, 0.2);
+    border-color: #0891b2;
+    color: #a5f3fc;
+  }
   .comms-error {
     display: flex;
     align-items: center;
@@ -578,7 +811,12 @@
     color: #fecaca;
     font-size: 0.62rem;
   }
-  .comms-error button { padding: 2px; border: 0; background: transparent; color: #fecaca; }
+  .comms-error button {
+    padding: 2px;
+    border: 0;
+    background: transparent;
+    color: #fecaca;
+  }
   .messages-scroller {
     display: flex;
     flex: 1;
@@ -598,10 +836,25 @@
     border-left: 2px solid #334155;
     border-radius: 3px;
   }
-  .chat-message.own-message { background: rgba(202, 138, 4, 0.09); border-left-color: #a16207; }
-  .chat-message > :global(.avatar) { width: 27px; height: 27px; font-size: 0.56rem; }
-  .message-body { flex: 1; min-width: 0; }
-  .message-body header { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+  .chat-message.own-message {
+    background: rgba(202, 138, 4, 0.09);
+    border-left-color: #a16207;
+  }
+  .chat-message > :global(.avatar) {
+    width: 27px;
+    height: 27px;
+    font-size: 0.56rem;
+  }
+  .message-body {
+    flex: 1;
+    min-width: 0;
+  }
+  .message-body header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+  }
   .sender-name {
     display: inline-flex;
     align-items: center;
@@ -612,23 +865,56 @@
     font-size: 0.67rem;
     font-weight: 700;
   }
-  .sender-name small { color: #eab308; font-family: var(--font-mono); font-size: 0.48rem; }
-  time { color: #64748b; font-family: var(--font-mono); font-size: 0.54rem; }
-  .message-body p { margin-top: 2px; color: #cbd5e1; font-size: 0.7rem; line-height: 1.35; overflow-wrap: anywhere; white-space: pre-wrap; }
+  .sender-name small {
+    color: #eab308;
+    font-family: var(--font-mono);
+    font-size: 0.48rem;
+  }
+  time {
+    color: #64748b;
+    font-family: var(--font-mono);
+    font-size: 0.54rem;
+  }
+  .message-body p {
+    margin-top: 2px;
+    color: #cbd5e1;
+    font-size: 0.7rem;
+    line-height: 1.35;
+    overflow-wrap: anywhere;
+    white-space: pre-wrap;
+  }
   .intel-message {
     display: flex;
     align-items: center;
     gap: 7px;
     padding: 6px 8px;
-    background: repeating-linear-gradient(135deg, rgba(8, 145, 178, 0.1), rgba(8, 145, 178, 0.1) 8px, rgba(15, 23, 42, 0.5) 8px, rgba(15, 23, 42, 0.5) 16px);
+    background: repeating-linear-gradient(
+      135deg,
+      rgba(8, 145, 178, 0.1),
+      rgba(8, 145, 178, 0.1) 8px,
+      rgba(15, 23, 42, 0.5) 8px,
+      rgba(15, 23, 42, 0.5) 16px
+    );
     border: 1px solid rgba(56, 189, 248, 0.25);
     border-left: 2px solid #38bdf8;
     border-radius: 3px;
   }
-  .intel-icon { color: #38bdf8; }
-  .intel-message > div { flex: 1; }
-  .intel-message strong { color: #7dd3fc; font-family: var(--font-tactical); font-size: 0.56rem; letter-spacing: 0.1em; }
-  .intel-message p { color: #bae6fd; font-size: 0.66rem; }
+  .intel-icon {
+    color: #38bdf8;
+  }
+  .intel-message > div {
+    flex: 1;
+  }
+  .intel-message strong {
+    color: #7dd3fc;
+    font-family: var(--font-tactical);
+    font-size: 0.56rem;
+    letter-spacing: 0.1em;
+  }
+  .intel-message p {
+    color: #bae6fd;
+    font-size: 0.66rem;
+  }
   .empty-channel {
     display: flex;
     align-items: center;
@@ -640,8 +926,17 @@
     color: #475569;
     text-align: center;
   }
-  .empty-channel strong { color: #94a3b8; font-family: var(--font-tactical); font-size: 0.72rem; }
-  .empty-channel p { max-width: 270px; color: #64748b; font-size: 0.65rem; line-height: 1.4; }
+  .empty-channel strong {
+    color: #94a3b8;
+    font-family: var(--font-tactical);
+    font-size: 0.72rem;
+  }
+  .empty-channel p {
+    max-width: 270px;
+    color: #64748b;
+    font-size: 0.65rem;
+    line-height: 1.4;
+  }
   .composer-wrap {
     display: flex;
     align-items: flex-end;
@@ -659,8 +954,16 @@
     font-size: 0.7rem;
     line-height: 1.3;
   }
-  .composer-actions { display: flex; align-items: center; gap: 5px; }
-  .composer-actions > small { color: #475569; font-family: var(--font-mono); font-size: 0.5rem; }
+  .composer-actions {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+  }
+  .composer-actions > small {
+    color: #475569;
+    font-family: var(--font-mono);
+    font-size: 0.5rem;
+  }
   .send-button {
     display: inline-flex;
     align-items: center;
@@ -672,11 +975,16 @@
     color: #090d16;
     font-size: 0.63rem;
   }
-  .compact .radio-identity small { display: none; }
-  .compact .channel-status-line small { display: none; }
-  .compact .messages-scroller { min-height: 90px; }
+  .compact .radio-identity small {
+    display: none;
+  }
+  .compact .channel-status-line small {
+    display: none;
+  }
+  .compact .messages-scroller {
+    min-height: 90px;
+  }
 
-  /* Size: Large */
   .communications-center.size-large .channel-select {
     font-size: 0.74rem;
     max-width: 165px;
@@ -705,7 +1013,6 @@
     padding: 6px 11px;
   }
 
-  /* Size: Expanded */
   .communications-center.size-expanded .channel-select {
     font-size: 0.78rem;
     max-width: 195px;
@@ -748,8 +1055,16 @@
   }
 
   @media (max-width: 520px) {
-    .radio-identity small, .voice-participants, .send-button span { display: none; }
-    .channel-status-line small { display: none; }
-    .channel-tab { max-width: 120px; }
+    .radio-identity small,
+    .voice-participants,
+    .send-button span {
+      display: none;
+    }
+    .channel-status-line small {
+      display: none;
+    }
+    .channel-tab {
+      max-width: 120px;
+    }
   }
 </style>
