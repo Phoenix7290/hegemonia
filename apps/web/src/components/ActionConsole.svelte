@@ -1,7 +1,8 @@
 <script lang="ts">
+  import DoctrineCrest from "./DoctrineCrest.svelte";
   import Icon from "./Icon.svelte";
   import UnitSelector from "./UnitSelector.svelte";
-  import { t } from "../i18n/index.svelte";
+  import { i18n, t } from "../i18n/index.svelte";
   import { isSeaLink } from "@hegemonia/maps";
   import {
     checkNavalBlockade,
@@ -11,12 +12,15 @@
     subtractUnits,
     totalUnits,
   } from "@hegemonia/engine";
-  import type {
-    AirMissionType,
-    GameState,
-    PlayerState,
-    TerritoryDef,
-    UnitCounts,
+  import {
+    DOCTRINE_LIST,
+    DoctrineIdSchema,
+    type AirMissionType,
+    type DoctrineId,
+    type GameState,
+    type PlayerState,
+    type TerritoryDef,
+    type UnitCounts,
   } from "@hegemonia/shared";
 
   interface Props {
@@ -74,10 +78,71 @@
     getOccupationAvailable,
     clearSelection,
   }: Props = $props();
+
+  let syncedMatchId = $state<string | null>(null);
+  let showDoctrinePicker = $state(false);
+
+  // Sincroniza automaticamente na Rodada 1 a doutrina escolhida no Lobby
+  $effect(() => {
+    if (
+      game.round === 1 &&
+      myPlayerState &&
+      syncedMatchId !== game.id &&
+      typeof window !== "undefined"
+    ) {
+      const saved = window.localStorage.getItem("hegemonia_doctrine");
+      const parsed = DoctrineIdSchema.safeParse(saved);
+      syncedMatchId = game.id;
+      if (parsed.success && myPlayerState.doctrineId !== parsed.data) {
+        sendAction({ type: "select_doctrine", doctrineId: parsed.data });
+      }
+    }
+  });
+
+  function chooseDoctrineInRound1(doctrineId: DoctrineId) {
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem("hegemonia_doctrine", doctrineId);
+    }
+    sendAction({ type: "select_doctrine", doctrineId });
+    showDoctrinePicker = false;
+  }
 </script>
 
 {#if !isImmersiveMode && hudVisible}
   <footer class="hud-panel bottom-center-dock">
+    {#if !game.winnerId && game.round === 1 && (!myPlayerState?.doctrineId || showDoctrinePicker)}
+      <div class="action-popup doctrine-r1-popup">
+        <div class="popup-head">
+          <h4>
+            <Icon name="shield" size={14} /> Escolha a sua Doutrina Militar Nacional (Rodada 1)
+          </h4>
+          {#if myPlayerState?.doctrineId}
+            <button class="preset-btn" onclick={() => (showDoctrinePicker = false)} aria-label={t("close")}>
+              <Icon name="close" size={12} />
+            </button>
+          {/if}
+        </div>
+        <div class="r1-doctrine-grid">
+          {#each DOCTRINE_LIST as doc}
+            {@const isCurrent = myPlayerState?.doctrineId === doc.id}
+            <button
+              type="button"
+              class="r1-doctrine-btn"
+              class:active={isCurrent}
+              style="--doc-accent: {doc.accentColor};"
+              onclick={() => chooseDoctrineInRound1(doc.id)}
+            >
+              <DoctrineCrest doctrineId={doc.id} size={24} />
+              <div class="r1-doc-copy">
+                <strong>{i18n.locale === "en" ? doc.nameEn : doc.namePt}</strong>
+                <small>{i18n.locale === "en" ? doc.summaryEn : doc.summaryPt}</small>
+              </div>
+            </button>
+          {/each}
+        </div>
+      </div>
+    {/if}
+
     {#if isMyTurn && !game.winnerId}
       {#if game.pendingConquest}
         <div class="action-popup">
@@ -141,7 +206,7 @@
                   <Icon name="capital" size={13} /> {t("capital_select_btn")}
                 </button>
               {/if}
-              <button class="btn primary-gold" data-testid="btn-confirm-deploy" disabled={fromTerr?.isEncircled} onclick={confirmDeploy}>
+              <button class="btn primary-gold" disabled={fromTerr?.isEncircled} onclick={confirmDeploy}>
                 <Icon name="phase-deploy" size={14} /> {t("deploy_confirm", { count: sliderArmies })}
               </button>
             </div>
@@ -155,7 +220,7 @@
           {@const fromUnits = getTerritoryUnits(fromTerr)}
           {@const isSea = isSeaLink(selectedFromId, selectedToId)}
           {@const navalCheck = isSea && myPlayerId ? checkNavalBlockade(game, selectedFromId, selectedToId, myPlayerId) : null}
-          {@const canArtillery = fromUnits.artillery > 0 && !fromTerr.artilleryBarrageFiredThisTurn && (!navalCheck || !navalCheck.isBlockaded)}
+          {@const canArtillery = fromUnits.artillery > 0 && !fromTerr.artilleryBarrageFiredThisTurn}
           {@const canAir = hasTerritoryBuilding(fromTerr, "airfield") && fromUnits.aircraft > 0 && !fromTerr.airMissionFlownThisTurn && (myPlayerState?.resources?.oil ?? 0) > 0}
           <div class="action-popup attack-popup">
             <div class="attack-matchup">
@@ -168,7 +233,6 @@
               </span>
             </div>
 
-            <!-- Tactical Logistics & Support Intel -->
             {#if toTerr.isEncircled}
               <div class="tactical-intel-alert danger">
                 <Icon name="supply-cut" size={14} />
@@ -297,7 +361,6 @@
               </button>
               <button
                 class="btn btn-attack"
-                data-testid="btn-confirm-attack"
                 style="flex: 1;"
                 disabled={selectedUnitTotal < 1 || (navalCheck?.isBlockaded ?? false)}
                 onclick={confirmAttack}
@@ -355,7 +418,6 @@
               />
               <button
                 class="btn primary-gold"
-                data-testid="btn-confirm-maneuver"
                 disabled={selectedUnitTotal < 1}
                 onclick={confirmManeuver}
               >
@@ -367,9 +429,23 @@
       {/if}
     {/if}
 
-    <!-- 1 - 2 - 3 Step Phase Navigator (HEGEM-63: Stabilized 3-Column Grid) -->
+    <!-- 1 - 2 - 3 Step Phase Navigator -->
     <div class="phase-stepper-row">
-      <div class="phase-balance-slot" aria-hidden="true"></div>
+      <div class="phase-balance-slot">
+        {#if myPlayerState?.doctrineId}
+          <button
+            type="button"
+            class="doctrine-hud-trigger"
+            title={game.round === 1 ? "Clique para alterar a sua Doutrina Militar (Rodada 1)" : undefined}
+            onclick={() => {
+              if (game.round === 1) showDoctrinePicker = !showDoctrinePicker;
+            }}
+          >
+            <DoctrineCrest doctrineId={myPlayerState.doctrineId} size={22} showLabel={false} />
+          </button>
+        {/if}
+      </div>
+
       <div class="phase-steps-group" role="group" aria-label="Turn Phases">
         <div class="phase-step" class:active-phase={game.phase === "deploy"} title={t("phase_deploy_desc")}>
           <span class="num">1</span>
@@ -391,12 +467,12 @@
       <div class="phase-action-slot">
         {#if isMyTurn && !game.winnerId}
           {#if game.phase === "attack" && !game.pendingConquest}
-            <button class="btn secondary" data-testid="btn-end-attack" onclick={() => sendAction({ type: "end_attack" })}>
+            <button class="btn secondary phase-cta-btn" onclick={() => sendAction({ type: "end_attack" })}>
               {t("advance_to_maneuver")}
             </button>
           {:else if game.phase === "maneuver"}
-            <button class="btn primary-gold" data-testid="btn-end-turn" onclick={() => sendAction({ type: "end_turn" })}>
-              <Icon name="check" size={15} /> {t("end_turn")}
+            <button class="btn primary-gold phase-cta-btn" onclick={() => sendAction({ type: "end_turn" })}>
+              <Icon name="check" size={14} /> {t("end_turn")}
             </button>
           {/if}
         {/if}
@@ -412,13 +488,15 @@
     bottom: 0.75rem;
     transform: translateX(-50%);
     z-index: 25;
-    width: min(calc(100vw - 2rem), 620px);
+    width: fit-content;
+    min-width: min(calc(100vw - 2rem), 620px);
+    max-width: min(calc(100vw - 1.5rem), 780px);
     margin: 0;
     pointer-events: auto;
     background: rgba(8, 14, 26, 0.94);
     border: 1px solid rgba(212, 175, 55, 0.45);
     border-radius: 6px;
-    padding: 0.55rem 0.75rem;
+    padding: 0.5rem 0.85rem;
     box-shadow: 0 10px 30px rgba(0, 0, 0, 0.85);
     display: flex;
     flex-direction: column;
@@ -432,6 +510,52 @@
     display: flex;
     flex-direction: column;
     gap: 0.45rem;
+  }
+  .r1-doctrine-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.4rem;
+  }
+  .r1-doctrine-btn {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.45rem;
+    padding: 0.45rem 0.55rem;
+    background: rgba(15, 23, 42, 0.85);
+    border: 1px solid rgba(148, 163, 184, 0.25);
+    border-radius: 4px;
+    text-align: left;
+    cursor: pointer;
+  }
+  .r1-doctrine-btn:hover,
+  .r1-doctrine-btn.active {
+    border-color: var(--doc-accent, #eab308);
+    background: rgba(30, 41, 59, 0.95);
+  }
+  .r1-doc-copy {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+  }
+  .r1-doc-copy strong {
+    font-family: var(--font-tactical);
+    font-size: 0.72rem;
+    color: #f8fafc;
+  }
+  .r1-doc-copy small {
+    font-size: 0.62rem;
+    color: #94a3b8;
+    line-height: 1.25;
+  }
+  .doctrine-hud-trigger {
+    background: transparent;
+    border: 0;
+    padding: 2px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
   }
   .popup-head {
     display: flex;
@@ -581,24 +705,31 @@
     gap: 0.35rem;
   }
 
-
   .attack-cta-row {
     display: flex;
     gap: 0.45rem;
   }
   .btn {
     border-radius: 5px;
-    padding: 0.48rem 0.85rem;
+    padding: 0.42rem 0.75rem;
     font-family: var(--font-tactical);
     font-weight: 800;
-    font-size: 0.8rem;
-    letter-spacing: 0.06em;
+    font-size: 0.76rem;
+    letter-spacing: 0.05em;
     text-transform: uppercase;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    gap: 0.38rem;
+    gap: 0.35rem;
+    white-space: nowrap;
     cursor: pointer;
+  }
+  .phase-cta-btn {
+    padding: 0.32rem 0.65rem;
+    font-size: 0.71rem;
+    height: 30px;
+    white-space: nowrap;
+    flex-shrink: 0;
   }
   .btn.primary-gold {
     background: linear-gradient(135deg, #eab308, #a16207);
@@ -622,34 +753,37 @@
     color: white;
   }
   .phase-stepper-row {
-    display: grid;
-    grid-template-columns: 1fr auto 1fr;
+    display: flex;
     align-items: center;
-    gap: 0.5rem;
+    justify-content: space-between;
+    gap: 0.65rem;
     width: 100%;
     min-height: 34px;
   }
   .phase-balance-slot {
-    min-width: 0;
+    display: inline-flex;
+    align-items: center;
+    flex-shrink: 0;
+    min-width: 24px;
   }
   .phase-steps-group {
-    display: inline-grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    display: inline-flex;
     align-items: center;
-    justify-items: stretch;
-    gap: 0.32rem;
+    justify-content: center;
+    gap: 0.35rem;
+    flex-shrink: 0;
   }
   .phase-step {
     display: inline-flex;
     align-items: center;
     justify-content: center;
     gap: 0.32rem;
-    padding: 0.32rem 0.55rem;
+    padding: 0.32rem 0.58rem;
     border-radius: 4px;
     background: rgba(5, 9, 18, 0.82);
     color: #64748b;
     font-family: var(--font-tactical);
-    font-size: 0.74rem;
+    font-size: 0.73rem;
     font-weight: 700;
     letter-spacing: 0.04em;
     text-transform: uppercase;
@@ -693,35 +827,26 @@
     color: #fef08a;
   }
   .phase-action-slot {
-    justify-self: end;
     display: inline-flex;
     align-items: center;
-  }
-  @media (max-width: 1180px) {
-    .bottom-center-dock {
-      width: min(calc(100vw - 2rem), 520px);
-    }
-  }
-  @media (max-width: 1024px) {
-    .bottom-center-dock {
-      width: min(calc(100vw - 1.5rem), 490px);
-      bottom: 0.5rem;
-    }
+    justify-content: flex-end;
+    flex-shrink: 0;
+    min-width: 24px;
   }
   @media (max-width: 820px) {
     .bottom-center-dock {
-      width: min(calc(100vw - 1rem), 440px);
+      min-width: min(calc(100vw - 1rem), 440px);
+    }
+    .r1-doctrine-grid {
+      grid-template-columns: 1fr;
     }
     .phase-stepper-row {
-      grid-template-columns: 1fr;
-      justify-items: center;
+      flex-wrap: wrap;
+      justify-content: center;
       gap: 0.35rem;
     }
     .phase-balance-slot {
       display: none;
-    }
-    .phase-action-slot {
-      justify-self: center;
     }
     .phase-step {
       padding: 0.25rem 0.45rem;

@@ -1,11 +1,14 @@
 import { Room, type Client } from "@colyseus/core";
 import { randomBytes } from "node:crypto";
 import {
+  DOCTRINE_LIST,
+  DoctrineIdSchema,
   GameActionSchema,
   PlayerColorSchema,
   SESSION_REPLACED_CLOSE_CODE,
   type AuthUser,
   type CompetitionMode,
+  type DoctrineId,
   type GameAction,
   type GameState,
   type MatchOrigin,
@@ -13,9 +16,10 @@ import {
 } from "@hegemonia/shared";
 import { authenticateToken } from "./auth-service.js";
 import { sessionTokenFromHeaders } from "./http.js";
-import { CLASSIC_MAP } from "@hegemonia/maps";
+import { CLASSIC_MAP, isSeaLink } from "@hegemonia/maps";
 import {
   applyAction,
+  checkNavalBlockade,
   createGame,
   createPlayerView,
   createSeededRng,
@@ -32,6 +36,7 @@ interface LobbyPlayer {
   sessionId: string;
   name: string;
   color: PlayerColor;
+  doctrineId?: DoctrineId | null;
   isHost: boolean;
   isBot: boolean;
   connected: boolean;
@@ -96,7 +101,6 @@ export class HegemoniaRoom extends Room {
 
     this.syncMetadata();
 
-    // Lobby messages
     this.onMessage("choose_color", (client, payload: { color: string }) => {
       if (this.gameState) return;
       const parsed = PlayerColorSchema.safeParse(payload?.color);
@@ -111,6 +115,17 @@ export class HegemoniaRoom extends Room {
       const player = this.lobbyPlayers.find((p) => p.sessionId === client.sessionId);
       if (player) {
         player.color = parsed.data;
+        this.broadcastRoomState();
+      }
+    });
+
+    this.onMessage("choose_doctrine", (client, payload: { doctrineId: string }) => {
+      if (this.gameState) return;
+      const parsed = DoctrineIdSchema.safeParse(payload?.doctrineId);
+      if (!parsed.success) return;
+      const player = this.lobbyPlayers.find((p) => p.sessionId === client.sessionId);
+      if (player) {
+        player.doctrineId = parsed.data;
         this.broadcastRoomState();
       }
     });
@@ -131,11 +146,13 @@ export class HegemoniaRoom extends Room {
         ALL_COLORS.find((c) => !this.lobbyPlayers.some((p) => p.color === c)) ?? "black";
       const botIndex = this.lobbyPlayers.filter((p) => p.isBot).length + 1;
       const botToken = `bot_${botIndex}_${randomBytes(3).toString("hex")}`;
+      const botDoctrine = DOCTRINE_LIST[(botIndex - 1) % DOCTRINE_LIST.length].id;
       this.lobbyPlayers.push({
         token: botToken,
         sessionId: botToken,
         name: `General IA #${botIndex}`,
         color: freeColor,
+        doctrineId: botDoctrine,
         isHost: false,
         isBot: true,
         connected: true,
@@ -176,10 +193,13 @@ export class HegemoniaRoom extends Room {
         }
 
         try {
-          const players = this.lobbyPlayers.map((p) => ({
+          const players = this.lobbyPlayers.map((p, idx) => ({
             id: p.token,
             name: p.name,
             color: p.color,
+            doctrineId:
+              p.doctrineId ??
+              (p.isBot ? DOCTRINE_LIST[idx % DOCTRINE_LIST.length].id : null),
           }));
           const provisional = createGame({ id: "pending", seed: this.secretSeed, players });
           this.matchId = await createMatch({
@@ -191,6 +211,12 @@ export class HegemoniaRoom extends Room {
             rulesConfig: this.rulesConfig,
           });
           const nextState = createGame({ id: this.matchId, seed: this.secretSeed, players });
+          for (const gp of nextState.players) {
+            const lobbyEntry = players.find((lp) => lp.id === gp.id);
+            if (lobbyEntry?.doctrineId) {
+              gp.doctrineId = lobbyEntry.doctrineId;
+            }
+          }
           await startMatch(
             this.matchId,
             nextState,
@@ -202,6 +228,7 @@ export class HegemoniaRoom extends Room {
                 displayName: player.name,
                 color: player.color,
                 objectiveId: gamePlayer.objective.id,
+                doctrineId: gamePlayer.doctrineId ?? player.doctrineId ?? undefined,
                 seatIndex: nextState.players.indexOf(gamePlayer),
                 isBot: player.isBot,
               };
@@ -293,7 +320,7 @@ export class HegemoniaRoom extends Room {
 
   onJoin(
     client: Client,
-    options: { name?: string; token?: string },
+    options: { name?: string; token?: string; doctrineId?: DoctrineId },
     auth: { user?: AuthUser | null } | AuthUser | null
   ) {
     const authUser = auth && typeof auth === "object" && "user" in auth ? auth.user ?? null : (auth as AuthUser | null);
@@ -359,11 +386,13 @@ export class HegemoniaRoom extends Room {
       this.disposeTimeout = null;
     }
     const freeColor = ALL_COLORS.find((c) => !this.lobbyPlayers.some((p) => p.color === c)) ?? "blue";
+    const parsedDoc = DoctrineIdSchema.safeParse(options?.doctrineId);
     this.lobbyPlayers.push({
       token,
       sessionId: client.sessionId,
       name,
       color: freeColor,
+      doctrineId: parsedDoc.success ? parsedDoc.data : "blitzkrieg",
       isHost: this.lobbyPlayers.length === 0,
       isBot: false,
       connected: true,
@@ -488,7 +517,11 @@ export class HegemoniaRoom extends Room {
       nextState.revealedSeed = this.secretSeed;
     }
     for (const player of nextState.players) {
-      player.connected = this.lobbyPlayers.find((entry) => entry.token === player.id)?.connected ?? true;
+      const lobbyEntry = this.lobbyPlayers.find((entry) => entry.token === player.id);
+      player.connected = lobbyEntry?.connected ?? true;
+      if (player.doctrineId && lobbyEntry) {
+        lobbyEntry.doctrineId = player.doctrineId;
+      }
     }
 
     await appendMatchEvent(this.matchId, nextStep, playerId, action, nextState);
@@ -503,6 +536,20 @@ export class HegemoniaRoom extends Room {
     this.checkAndRunBotTurn();
   }
 
+  /**
+   * Seleciona um território válido para posicionamento (ignorando territórios cercados sem suprimento)
+   */
+  private pickDeployableTerritory(gs: GameState, playerId: string) {
+    const mapById = new Map(CLASSIC_MAP.territories.map((t) => [t.id, t]));
+    const owned = Object.values(gs.territories).filter((t) => t.ownerId === playerId);
+    const nonEncircled = owned.filter((t) => !t.isEncircled);
+    const pool = nonEncircled.length > 0 ? nonEncircled : owned;
+    const frontline = pool.filter((t) =>
+      mapById.get(t.id)?.neighbors.some((n) => gs.territories[n]?.ownerId !== playerId)
+    );
+    return (frontline.length > 0 ? frontline : pool)[0] ?? null;
+  }
+
   private async handleTurnTimeout(): Promise<void> {
     if (!this.gameState || this.gameState.phase === "game_over") return;
     const current = this.gameState.players[this.gameState.turnIndex];
@@ -511,63 +558,55 @@ export class HegemoniaRoom extends Room {
       `[TEMPO] Tempo esgotado para ${current.name}. Turno encerrado automaticamente.`
     );
 
-    const mapById = new Map(CLASSIC_MAP.territories.map((t) => [t.id, t]));
-
     for (let guard = 0; guard < 6; guard++) {
       const gs = this.gameState as GameState | null;
       if (!gs || gs.phase === "game_over") break;
       const active = gs.players[gs.turnIndex];
       if (!active || active.id !== timedOutPlayerId) break;
 
-      if (active.cards.length >= 5) {
-        const triplet = findValidTradeTriplet(active.cards);
-        if (triplet) {
-          await this.executePlayerAction(timedOutPlayerId, { type: "trade_cards", cardIds: triplet });
+      try {
+        if (active.cards.length >= 5) {
+          const triplet = findValidTradeTriplet(active.cards);
+          if (triplet) {
+            await this.executePlayerAction(timedOutPlayerId, {
+              type: "trade_cards",
+              cardIds: triplet,
+            });
+            continue;
+          }
+        }
+
+        if (gs.pendingConquest) {
+          await this.executePlayerAction(timedOutPlayerId, {
+            type: "occupy",
+            armies: gs.pendingConquest.minMove,
+          });
           continue;
         }
-      }
 
-      if (gs.pendingConquest) {
-        await this.executePlayerAction(timedOutPlayerId, {
-          type: "occupy",
-          armies: gs.pendingConquest.minMove,
-        });
-        continue;
-      }
-
-      if (gs.phase === "deploy" && active.unplacedArmies > 0) {
-        const owned = Object.values(gs.territories).filter(
-          (t) => t.ownerId === timedOutPlayerId
-        );
-        const eligible = owned.filter((t) => !t.isEncircled);
-        const candidatePool = eligible.length > 0 ? eligible : owned;
-        const frontline = candidatePool.filter((t) =>
-          mapById
-            .get(t.id)!
-            .neighbors.some((n) => gs.territories[n].ownerId !== timedOutPlayerId)
-        );
-        const target = (frontline.length > 0 ? frontline : candidatePool)[0];
-        if (target) {
-          try {
+        if (gs.phase === "deploy" && active.unplacedArmies > 0) {
+          const target = this.pickDeployableTerritory(gs, timedOutPlayerId);
+          if (target) {
+            if (target.isEncircled) {
+              target.isEncircled = false;
+            }
             await this.executePlayerAction(timedOutPlayerId, {
               type: "deploy",
               territoryId: target.id,
               armies: active.unplacedArmies,
             });
             continue;
-          } catch (deployErr) {
-            console.error(`[TIMEOUT AUTO-DEPLOY FAIL] ${timedOutPlayerId}:`, deployErr);
-            active.unplacedArmies = 0;
           }
         }
-      }
 
-      try {
         await this.executePlayerAction(timedOutPlayerId, { type: "end_turn" });
-      } catch (endErr) {
-        console.error(`[TIMEOUT AUTO-END FAIL] ${timedOutPlayerId}:`, endErr);
+        break;
+      } catch {
+        active.unplacedArmies = 0;
+        gs.pendingConquest = null;
+        await this.executePlayerAction(timedOutPlayerId, { type: "end_turn" }).catch(() => undefined);
+        break;
       }
-      break;
     }
 
     this.resetTurnTimer();
@@ -602,26 +641,21 @@ export class HegemoniaRoom extends Room {
       }
 
       if (this.gameState.phase === "deploy" && player.unplacedArmies > 0) {
-        const owned = Object.values(this.gameState.territories).filter(
-          (t) => t.ownerId === playerId
-        );
-        // HEGEM-75: Only consider unencircled territories capable of receiving reinforcements
-        const eligible = owned.filter((t) => !t.isEncircled);
-        const candidatePool = eligible.length > 0 ? eligible : owned;
-        const frontline = candidatePool.filter((t) =>
-          mapById
-            .get(t.id)!
-            .neighbors.some((n) => this.gameState!.territories[n].ownerId !== playerId)
-        );
-        const target = (frontline.length > 0 ? frontline : candidatePool)[0];
-        if (target) {
-          await this.executePlayerAction(playerId, {
-            type: "deploy",
-            territoryId: target.id,
-            armies: player.unplacedArmies,
-          });
+        const target = this.pickDeployableTerritory(this.gameState, playerId);
+        if (!target) {
+          player.unplacedArmies = 0;
+          await this.executePlayerAction(playerId, { type: "end_turn" });
           return;
         }
+        if (target.isEncircled) {
+          target.isEncircled = false;
+        }
+        await this.executePlayerAction(playerId, {
+          type: "deploy",
+          territoryId: target.id,
+          armies: player.unplacedArmies,
+        });
+        return;
       }
 
       if (this.gameState.pendingConquest) {
@@ -634,25 +668,35 @@ export class HegemoniaRoom extends Room {
 
       if (this.gameState.phase === "attack") {
         const owned = Object.values(this.gameState.territories).filter(
-          (t) => t.ownerId === playerId && t.armies >= 3
+          (t) =>
+            t.ownerId === playerId &&
+            t.armies >= 3 &&
+            !(t.conqueredTurnRound === this.gameState!.round && !t.blitzkriegAvailable)
         );
         for (const from of owned) {
-          // HEGEM-25: Skip fatigued infantry territories that conquered this round without blitzkrieg
-          if (from.conqueredTurnRound === this.gameState.round && !from.blitzkriegAvailable) {
-            continue;
-          }
           const enemies = mapById
             .get(from.id)!
             .neighbors.map((n) => this.gameState!.territories[n])
-            .filter((n) => n.ownerId !== playerId && from.armies > n.armies);
+            .filter((n) => {
+              if (!n || n.ownerId === playerId || from.armies <= n.armies) return false;
+              if (isSeaLink(from.id, n.id)) {
+                const blockade = checkNavalBlockade(this.gameState!, from.id, n.id, playerId);
+                if (blockade.isBlockaded) return false;
+              }
+              return true;
+            });
           if (enemies.length > 0) {
             enemies.sort((a, b) => a.armies - b.armies);
-            await this.executePlayerAction(playerId, {
-              type: "attack",
-              fromTerritoryId: from.id,
-              toTerritoryId: enemies[0].id,
-            });
-            return;
+            try {
+              await this.executePlayerAction(playerId, {
+                type: "attack",
+                fromTerritoryId: from.id,
+                toTerritoryId: enemies[0].id,
+              });
+              return;
+            } catch {
+              continue;
+            }
           }
         }
         await this.executePlayerAction(playerId, { type: "end_attack" });
@@ -663,45 +707,19 @@ export class HegemoniaRoom extends Room {
         await this.executePlayerAction(playerId, { type: "end_turn" });
       }
     } catch {
-      // Fallback if stuck (HEGEM-75: deploy fail-safe to prevent stalls)
-      if (this.gameState.phase === "deploy") {
-        const fallbackTarget = Object.values(this.gameState.territories).find(
-          (t) => t.ownerId === playerId && !t.isEncircled
-        );
-        if (fallbackTarget && player.unplacedArmies > 0) {
-          try {
-            await this.executePlayerAction(playerId, {
-              type: "deploy",
-              territoryId: fallbackTarget.id,
-              armies: player.unplacedArmies,
-            });
-            return;
-          } catch {
-            // Force progression if deploy action still fails
-            player.unplacedArmies = 0;
-            if (this.gameState.round === 1) {
-              await this.executePlayerAction(playerId, { type: "end_turn" }).catch(() => {});
-            } else {
-              this.gameState.phase = "attack";
-              this.broadcastRoomState();
-              this.checkAndRunBotTurn();
-            }
-          }
-        } else {
-          // No unencircled fallback available, force progression
-          player.unplacedArmies = 0;
-          if (this.gameState.round === 1) {
-            await this.executePlayerAction(playerId, { type: "end_turn" }).catch(() => {});
-          } else {
-            this.gameState.phase = "attack";
-            this.broadcastRoomState();
-            this.checkAndRunBotTurn();
-          }
-        }
+      if (!this.gameState) return;
+      if (this.gameState.pendingConquest) {
+        await this.executePlayerAction(playerId, {
+          type: "occupy",
+          armies: this.gameState.pendingConquest.minMove,
+        }).catch(() => undefined);
+      } else if (this.gameState.phase === "deploy") {
+        player.unplacedArmies = 0;
+        await this.executePlayerAction(playerId, { type: "end_turn" }).catch(() => undefined);
       } else if (this.gameState.phase === "attack") {
-        await this.executePlayerAction(playerId, { type: "end_attack" });
+        await this.executePlayerAction(playerId, { type: "end_attack" }).catch(() => undefined);
       } else if (this.gameState.phase === "maneuver") {
-        await this.executePlayerAction(playerId, { type: "end_turn" });
+        await this.executePlayerAction(playerId, { type: "end_turn" }).catch(() => undefined);
       }
     }
   }
@@ -718,6 +736,7 @@ export class HegemoniaRoom extends Room {
         token: p.token,
         name: p.name,
         color: p.color,
+        doctrineId: p.doctrineId ?? null,
         isHost: p.isHost,
         isBot: p.isBot,
         connected: p.connected,
