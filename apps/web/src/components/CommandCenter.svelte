@@ -1,7 +1,9 @@
 <script lang="ts">
   import {
-    calculateLevelProgress,
+    DOCTRINE_LIST,
+    DoctrineIdSchema,
     type CompetitionMode,
+    type DoctrineId,
     type LeaderboardRow,
     type MatchOrigin,
     type MatchmakingStatus,
@@ -11,10 +13,11 @@
   import { api, navigate } from "../lib/api";
   import { auth } from "../lib/auth.svelte";
   import type { CommunicationsController } from "../lib/communications.svelte";
-  import { t } from "../i18n/index.svelte";
+  import { i18n, t } from "../i18n/index.svelte";
   import { getFactionName, getFactionDoctrine } from "../i18n/content.svelte";
   import Avatar from "./Avatar.svelte";
   import CommunicationsCenter from "./CommunicationsCenter.svelte";
+  import DoctrineCrest from "./DoctrineCrest.svelte";
   import FactionFlag from "./FactionFlag.svelte";
   import Icon from "./Icon.svelte";
   import MatchmakingPanel from "./MatchmakingPanel.svelte";
@@ -23,6 +26,7 @@
     token: string;
     name: string;
     color: PlayerColor;
+    doctrineId?: DoctrineId | null;
     isHost: boolean;
     isBot: boolean;
     connected: boolean;
@@ -51,6 +55,7 @@
     onJoinRoom,
     onLeaveRoom,
     onChooseColor,
+    onChooseDoctrine,
     onAddBot,
     onRemoveBot,
     onStartGame,
@@ -74,13 +79,29 @@
     onJoinRoom: () => void;
     onLeaveRoom: () => void;
     onChooseColor: (color: PlayerColor) => void;
+    onChooseDoctrine?: (doctrineId: DoctrineId) => void;
     onAddBot: () => void;
     onRemoveBot: (token: string) => void;
     onStartGame: () => void;
   } = $props();
 
-  const ALL_COLORS: PlayerColor[] = ["blue", "red", "green", "yellow", "black", "white"];
+  const ALL_COLORS: PlayerColor[] = [
+    "blue",
+    "red",
+    "green",
+    "yellow",
+    "black",
+    "white",
+  ];
 
+  function readSavedDoctrine(): DoctrineId {
+    if (typeof window === "undefined") return "blitzkrieg";
+    const raw = window.localStorage.getItem("hegemonia_doctrine");
+    const parsed = DoctrineIdSchema.safeParse(raw);
+    return parsed.success ? parsed.data : "blitzkrieg";
+  }
+
+  let selectedDoctrineId = $state<DoctrineId>(readSavedDoctrine());
   let topCommanders = $state<LeaderboardRow[]>([]);
   let copiedCode = $state(false);
 
@@ -94,12 +115,34 @@
       });
   });
 
-  let myLobbyEntry = $derived(lobbyPlayers.find((p) => p.token === myPlayerId) ?? null);
+  let myLobbyEntry = $derived(
+    lobbyPlayers.find((p) => p.token === myPlayerId) ?? null,
+  );
   let amIHost = $derived(Boolean(myLobbyEntry?.isHost));
   let emptySlotsCount = $derived(Math.max(0, 6 - lobbyPlayers.length));
-  let userLevelProgress = $derived(
-    calculateLevelProgress(auth.user?.totalXp ?? 0)
-  );
+
+  function selectDoctrine(docId: DoctrineId) {
+    selectedDoctrineId = docId;
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem("hegemonia_doctrine", docId);
+    }
+    if (myLobbyEntry) {
+      myLobbyEntry.doctrineId = docId;
+    }
+    onChooseDoctrine?.(docId);
+
+    // Tenta enviar diretamente pela conexão ativa caso App.svelte não tenha passado onChooseDoctrine
+    const anyComms = communications as any;
+    if (typeof anyComms?.sendMessage === "function") {
+      anyComms.sendMessage("choose_doctrine", { doctrineId: docId });
+    } else if (typeof anyComms?.room?.send === "function") {
+      anyComms.room.send("choose_doctrine", { doctrineId: docId });
+    } else if (typeof (window as any).__hegemoniaRoom?.send === "function") {
+      (window as any).__hegemoniaRoom.send("choose_doctrine", {
+        doctrineId: docId,
+      });
+    }
+  }
 
   function copyRoomCode() {
     if (!roomCode) return;
@@ -114,7 +157,6 @@
 <div class="command-center-backdrop">
   {#if roomStatus === "disconnected"}
     <div class="command-deck-container">
-      <!-- HERO HEADER WITH OFFICIAL EMBLEM LOGO -->
       <header class="deck-hero">
         <img
           src="/hegemonia-logo.webp"
@@ -127,7 +169,6 @@
       </header>
 
       <div class="deck-grid">
-        <!-- LEFT COLUMN: CAMPAIGN OPERATIONS & DEPLOYMENT -->
         <section class="deck-card primary-ops-card">
           <div class="card-corner tl"></div>
           <div class="card-corner tr"></div>
@@ -139,23 +180,25 @@
             <h2>{t("deck_ops_title")}</h2>
           </div>
 
-          <!-- Commander Identity Box -->
           {#if auth.user}
             <div class="commander-id-card authenticated">
-              <Avatar name={auth.user.displayName} avatarUrl={auth.user.avatarUrl} size="medium" />
+              <Avatar
+                name={auth.user.displayName}
+                avatarUrl={auth.user.avatarUrl}
+                size="medium"
+              />
               <div class="cid-meta">
                 <div class="cid-badges">
-                  <span class="status-pill verified"><Icon name="shield" size={12} /> {t("deck_verified_account")}</span>
-                  <span class="status-pill ranked">{t("deck_ranked_active")}</span>
-                  <span class="status-pill level-pill" title={t("xp_level_tooltip", { level: auth.user.level || userLevelProgress.level, xp: auth.user.totalXp ?? 0 })}>
-                    <Icon name="rank" size={11} /> {t("xp_level_badge", { level: auth.user.level || userLevelProgress.level })}
-                  </span>
+                  <span class="status-pill verified"
+                    ><Icon name="shield" size={12} />
+                    {t("deck_verified_account")}</span
+                  >
+                  <span class="status-pill ranked"
+                    >{t("deck_ranked_active")}</span
+                  >
                 </div>
                 <strong>{auth.user.displayName}</strong>
                 <small>@{auth.user.username}</small>
-                <div class="xp-mini-track" title="{userLevelProgress.xpInCurrentLevel} / {userLevelProgress.xpNeededForNextLevel} XP ({userLevelProgress.progressPct}%)">
-                  <div class="xp-mini-fill" style="width: {userLevelProgress.progressPct}%;"></div>
-                </div>
               </div>
               <button
                 class="outline-button cid-action"
@@ -177,8 +220,12 @@
               </div>
               <div class="guest-auth-bar">
                 <span>{t("deck_guest_upsell")}</span>
-                <button class="text-gold-btn" onclick={() => (auth.dialogOpen = true)}>
-                  <Icon name="shield" size={14} /> {t("deck_guest_btn_auth")}
+                <button
+                  class="text-gold-btn"
+                  onclick={() => (auth.dialogOpen = true)}
+                >
+                  <Icon name="shield" size={14} />
+                  {t("deck_guest_btn_auth")}
                 </button>
               </div>
             </div>
@@ -197,21 +244,17 @@
           />
         </section>
 
-        <!-- RIGHT COLUMN: STRATEGIC BRIEFING & LIVE LEADERBOARD -->
         <div class="deck-side-column">
-          <!-- Top Commanders Mini Leaderboard -->
           <section class="deck-card mini-rank-card">
-            <div class="card-corner tl"></div>
-            <div class="card-corner tr"></div>
-            <div class="card-corner bl"></div>
-            <div class="card-corner br"></div>
-
             <div class="ops-header compact row-spread">
               <div>
                 <span class="eyebrow">{t("deck_honor_eyebrow")}</span>
                 <h3>{t("deck_honor_title")}</h3>
               </div>
-              <button class="text-gold-btn" onclick={() => navigate("/leaderboard")}>
+              <button
+                class="text-gold-btn"
+                onclick={() => navigate("/leaderboard")}
+              >
                 <span>{t("deck_btn_full_ranking")}</span>
                 <Icon name="chevron-right" size={14} />
               </button>
@@ -225,50 +268,53 @@
                     onclick={() => navigate(`/profile/${cmd.username}`)}
                   >
                     <span class="m-rank">#{cmd.rank}</span>
-                    <Avatar name={cmd.displayName} avatarUrl={cmd.avatarUrl} size="small" />
+                    <Avatar
+                      name={cmd.displayName}
+                      avatarUrl={cmd.avatarUrl}
+                      size="small"
+                    />
                     <div class="m-info">
                       <strong>{cmd.displayName}</strong>
-                      <small>{t("deck_wins_matches", { wins: cmd.wins, matches: cmd.matchesPlayed })}</small>
+                      <small
+                        >{t("deck_wins_matches", {
+                          wins: cmd.wins,
+                          matches: cmd.matchesPlayed,
+                        })}</small
+                      >
                     </div>
-                    <strong class="m-score">{t("deck_pts", { score: cmd.score })}</strong>
+                    <strong class="m-score"
+                      >{t("deck_pts", { score: cmd.score })}</strong
+                    >
                   </button>
                 {/each}
               </div>
             {:else}
               <div class="mini-rank-empty">
-                <Icon name="rank" size={24} color="#eab308" />
                 <p>{t("deck_honor_empty")}</p>
               </div>
             {/if}
 
             <footer class="rank-card-footer">
-              <div class="rank-footer-telemetry">
-                <span class="eyebrow">{t("deck_career_footer_eyebrow")}</span>
-                <div class="rank-telemetry-pills">
-                  <span class="telemetry-chip">
-                    <Icon name="globe" size={12} /> {t("deck_career_stat_theaters")}
-                  </span>
-                  <span class="telemetry-chip">
-                    <Icon name="shield" size={12} /> {t("deck_career_stat_engine")}
-                  </span>
-                </div>
-              </div>
-              <div class="mini-rank-Quicklinks">
-                <button class="outline-button" onclick={() => navigate("/leaderboard")}>
-                  <Icon name="rank" size={14} /> {t("nav_leaderboard")}
-                </button>
-                <button class="outline-button" onclick={() => navigate("/friends")}>
-                  <Icon name="users" size={14} /> {t("nav_allies")}
-                </button>
-              </div>
+              <button
+                class="outline-button"
+                onclick={() => navigate("/leaderboard")}
+              >
+                <Icon name="rank" size={14} />
+                {t("nav_leaderboard")}
+              </button>
+              <button
+                class="outline-button"
+                onclick={() => navigate("/friends")}
+              >
+                <Icon name="users" size={14} />
+                {t("nav_allies")}
+              </button>
             </footer>
           </section>
         </div>
       </div>
     </div>
-
   {:else if roomStatus === "lobby"}
-    <!-- PRE-GAME BRIEFING WAR ROOM -->
     <div class="briefing-room-container">
       <section class="deck-card briefing-card">
         <div class="card-corner tl"></div>
@@ -276,17 +322,29 @@
         <div class="card-corner bl"></div>
         <div class="card-corner br"></div>
 
-        <!-- Briefing Top Header -->
         <header class="briefing-header">
           <div class="briefing-title-group">
-            <img src="/hegemonia-logo.webp" alt="Hegemonia" class="briefing-mini-logo" />
+            <img
+              src="/hegemonia-logo.webp"
+              alt="Hegemonia"
+              class="briefing-mini-logo"
+            />
             <div>
               <span class="eyebrow">{t("lobby_eyebrow")}</span>
               <div class="op-code-row">
-                <h2>{t("lobby_op_label")} <span class="op-code-val">{roomCode}</span></h2>
-                <button class="copy-code-btn" onclick={copyRoomCode} title={t("lobby_btn_copy_code")}>
+                <h2>
+                  {t("lobby_op_label")}
+                  <span class="op-code-val">{roomCode}</span>
+                </h2>
+                <button
+                  class="copy-code-btn"
+                  onclick={copyRoomCode}
+                  title={t("lobby_btn_copy_code")}
+                >
                   <Icon name={copiedCode ? "check" : "copy"} size={14} />
-                  {copiedCode ? t("lobby_btn_copied_code") : t("lobby_btn_copy_code")}
+                  {copiedCode
+                    ? t("lobby_btn_copied_code")
+                    : t("lobby_btn_copy_code")}
                 </button>
               </div>
             </div>
@@ -295,16 +353,20 @@
           <div class="briefing-header-right">
             <div class="capacity-pill">
               <Icon name="users" size={15} />
-              <span><strong>{lobbyPlayers.length}</strong> / 6 {t("commanders").toUpperCase()}</span>
+              <span
+                ><strong>{lobbyPlayers.length}</strong> / 6 {t(
+                  "commanders",
+                ).toUpperCase()}</span
+              >
             </div>
             <button class="leave-room-btn" onclick={onLeaveRoom}>
-              <Icon name="back" size={15} /> {t("lobby_btn_leave")}
+              <Icon name="back" size={15} />
+              {t("lobby_btn_leave")}
             </button>
           </div>
         </header>
 
         <div class="briefing-body-grid">
-          <!-- LEFT: 6-SLOT COMMAND ROSTER & FACTION SELECTION -->
           <div class="briefing-main-col">
             <div class="roster-block">
               <div class="section-subhead">
@@ -314,13 +376,21 @@
 
               <div class="slots-grid">
                 {#each lobbyPlayers as p}
+                  {@const effectiveDocId =
+                    p.token === myPlayerId
+                      ? selectedDoctrineId
+                      : (p.doctrineId ?? "blitzkrieg")}
                   <div
                     class="slot-card occupied"
                     class:is-me={p.token === myPlayerId}
                     style="border-left-color: var(--faction-{p.color}, #eab308);"
                   >
                     <FactionFlag color={p.color} width={30} height={19} />
-                    <Avatar name={p.name} avatarUrl={p.avatarUrl ?? null} size="small" />
+                    <Avatar
+                      name={p.name}
+                      avatarUrl={p.avatarUrl ?? null}
+                      size="small"
+                    />
 
                     <div class="slot-info">
                       <div class="slot-name-row">
@@ -331,17 +401,27 @@
                       </div>
                       <small>
                         {getFactionName(p.color)}
-                        {#if p.username} • @{p.username}{/if}
+                        {#if p.username}
+                          • @{p.username}{/if}
                       </small>
                     </div>
 
                     <div class="slot-badges">
+                      <DoctrineCrest doctrineId={effectiveDocId} size={22} />
                       {#if p.isHost}
-                        <span class="role-badge host"><Icon name="crown" size={12} /> {t("lobby_role_host")}</span>
+                        <span class="role-badge host"
+                          ><Icon name="crown" size={12} />
+                          {t("lobby_role_host")}</span
+                        >
                       {:else if p.isBot}
-                        <span class="role-badge bot"><Icon name="bot" size={12} /> {t("lobby_role_bot")}</span>
+                        <span class="role-badge bot"
+                          ><Icon name="bot" size={12} />
+                          {t("lobby_role_bot")}</span
+                        >
                       {:else}
-                        <span class="role-badge human">{t("lobby_role_human")}</span>
+                        <span class="role-badge human"
+                          >{t("lobby_role_human")}</span
+                        >
                       {/if}
 
                       {#if p.isBot && amIHost}
@@ -360,15 +440,21 @@
                 {#each Array(emptySlotsCount) as _, idx}
                   <div class="slot-card empty-slot">
                     <div class="empty-slot-left">
-                      <span class="empty-slot-num">0{lobbyPlayers.length + idx + 1}</span>
+                      <span class="empty-slot-num"
+                        >0{lobbyPlayers.length + idx + 1}</span
+                      >
                       <div>
                         <strong>{t("lobby_slot_available")}</strong>
                         <small>{t("lobby_slot_waiting")}</small>
                       </div>
                     </div>
                     {#if amIHost && competitionMode === "custom" && idx === 0}
-                      <button class="outline-button mini-bot-btn" onclick={onAddBot}>
-                        <Icon name="bot" size={13} /> {t("lobby_btn_alloc_ai")}
+                      <button
+                        class="outline-button mini-bot-btn"
+                        onclick={onAddBot}
+                      >
+                        <Icon name="bot" size={13} />
+                        {t("lobby_btn_alloc_ai")}
                       </button>
                     {/if}
                   </div>
@@ -376,7 +462,6 @@
               </div>
             </div>
 
-            <!-- Faction Flag & Color Selector -->
             <div class="faction-picker-panel">
               <div class="section-subhead">
                 <span>{t("factions_choose_title")}</span>
@@ -412,35 +497,93 @@
                 {/each}
               </div>
             </div>
+
+            <div class="doctrine-picker-panel">
+              <div class="section-subhead">
+                <span>DOUTRINA MILITAR NACIONAL (EPIC IX)</span>
+                <small
+                  >Especialização estratégica de armas combinadas para esta
+                  campanha</small
+                >
+              </div>
+
+              <div class="doctrine-cards-grid">
+                {#each DOCTRINE_LIST as doc}
+                  {@const isSelected = selectedDoctrineId === doc.id}
+                  <button
+                    type="button"
+                    class="doctrine-choice-card"
+                    class:selected={isSelected}
+                    aria-pressed={isSelected}
+                    style="--doc-accent: {doc.accentColor};"
+                    onclick={() => selectDoctrine(doc.id)}
+                  >
+                    <DoctrineCrest doctrineId={doc.id} size={32} />
+                    <div class="doc-choice-meta">
+                      <div class="doc-title-row">
+                        <strong
+                          >{i18n.locale === "en"
+                            ? doc.nameEn
+                            : doc.namePt}</strong
+                        >
+                        {#if isSelected}
+                          <span class="doc-active-pill">ATIVA</span>
+                        {/if}
+                      </div>
+                      <small
+                        >{i18n.locale === "en"
+                          ? doc.summaryEn
+                          : doc.summaryPt}</small
+                      >
+                    </div>
+                  </button>
+                {/each}
+              </div>
+            </div>
           </div>
 
-          <!-- RIGHT: BRIEFING RADIO COMMS & CAMPAIGN RULES SUMMARY -->
           <aside class="briefing-side-col">
-            <div class="lobby-comms-box chat-size-{communications.settings.chatSize}">
+            <div
+              class="lobby-comms-box chat-size-{communications.settings
+                .chatSize}"
+            >
               <CommunicationsCenter controller={communications} />
             </div>
 
             <div class="campaign-protocol-box">
-              <h4><Icon name="shield" size={14} /> {t("lobby_protocol_title")}</h4>
+              <h4>
+                <Icon name="shield" size={14} />
+                {t("lobby_protocol_title")}
+              </h4>
               <ul>
-                <li><strong>{t("lobby_protocol_r1")}</strong> {t("lobby_protocol_r1_desc")}</li>
-                <li><strong>{t("lobby_protocol_timer")}</strong> {t("lobby_protocol_timer_desc")}</li>
-                <li><strong>{t("lobby_protocol_cards")}</strong> {t("lobby_protocol_cards_desc")}</li>
+                <li>
+                  <strong>{t("lobby_protocol_r1")}</strong>
+                  {t("lobby_protocol_r1_desc")}
+                </li>
+                <li>
+                  <strong>{t("lobby_protocol_timer")}</strong>
+                  {t("lobby_protocol_timer_desc")}
+                </li>
+                <li>
+                  <strong>{t("lobby_protocol_cards")}</strong>
+                  {t("lobby_protocol_cards_desc")}
+                </li>
               </ul>
             </div>
           </aside>
         </div>
 
-        <!-- Briefing Footer Actions -->
         <footer class="briefing-footer">
           <div class="footer-status">
             {#if matchOrigin === "matchmaking" && (lobbyPlayers.length < 2 || lobbyPlayers.some((player) => !player.connected))}
               <span class="waiting-host-note">
-                <span class="pulse-dot"></span> {t("lobby_waiting_reserved")}
+                <span class="pulse-dot"></span>
+                {t("lobby_waiting_reserved")}
               </span>
             {:else if !amIHost}
               <span class="waiting-host-note">
-                <span class="pulse-dot"></span> {t("lobby_waiting_host")}
+                <span class="pulse-dot"></span>
+                {t("lobby_waiting_host")}
               </span>
             {:else if lobbyPlayers.length < 2}
               <span class="waiting-host-note">
@@ -448,26 +591,30 @@
               </span>
             {:else}
               <span class="ready-note">
-                <Icon name="check" size={15} /> {t("lobby_systems_ready")}
+                <Icon name="check" size={15} />
+                {t("lobby_systems_ready")}
               </span>
             {/if}
           </div>
 
           <div class="footer-buttons">
             {#if amIHost && competitionMode === "custom" && lobbyPlayers.length < 6}
-              <button class="outline-button add-ai-btn" data-testid="btn-add-bot" onclick={onAddBot}>
-                <Icon name="bot" size={16} /> {t("lobby_btn_add_ai")}
+              <button class="outline-button add-ai-btn" onclick={onAddBot}>
+                <Icon name="bot" size={16} />
+                {t("lobby_btn_add_ai")}
               </button>
             {/if}
 
             {#if amIHost}
               <button
                 class="launch-battle-btn"
-                data-testid="btn-start-game"
-                disabled={lobbyPlayers.length < 2 || (matchOrigin === "matchmaking" && lobbyPlayers.some((player) => !player.connected))}
+                disabled={lobbyPlayers.length < 2 ||
+                  (matchOrigin === "matchmaking" &&
+                    lobbyPlayers.some((player) => !player.connected))}
                 onclick={onStartGame}
               >
-                <Icon name="swords" size={18} /> {t("lobby_btn_launch_campaign")}
+                <Icon name="swords" size={18} />
+                {t("lobby_btn_launch_campaign")}
               </button>
             {/if}
           </div>
@@ -486,7 +633,11 @@
     overflow-x: hidden;
     z-index: 40;
     background:
-      radial-gradient(circle at 50% 25%, rgba(16, 28, 52, 0.55) 0%, rgba(4, 8, 16, 0.92) 75%),
+      radial-gradient(
+        circle at 50% 25%,
+        rgba(16, 28, 52, 0.55) 0%,
+        rgba(4, 8, 16, 0.92) 75%
+      ),
       url("/assets/war-room-bg.webp") center/cover no-repeat;
     display: flex;
     flex-direction: column;
@@ -503,7 +654,6 @@
     gap: 22px;
   }
 
-  /* Hero Emblem Lockup */
   .deck-hero {
     display: flex;
     flex-direction: column;
@@ -524,7 +674,13 @@
     letter-spacing: 0.2em;
     color: #cbd5e1;
     text-shadow: 0 2px 8px rgba(0, 0, 0, 0.9);
-    background: linear-gradient(90deg, transparent, rgba(9, 15, 28, 0.85) 20%, rgba(9, 15, 28, 0.85) 80%, transparent);
+    background: linear-gradient(
+      90deg,
+      transparent,
+      rgba(9, 15, 28, 0.85) 20%,
+      rgba(9, 15, 28, 0.85) 80%,
+      transparent
+    );
     padding: 5px 24px;
     border-top: 1px solid rgba(212, 175, 55, 0.3);
     border-bottom: 1px solid rgba(212, 175, 55, 0.3);
@@ -532,22 +688,27 @@
 
   .deck-grid {
     display: grid;
-    grid-template-columns: minmax(0, 1.14fr) minmax(0, 0.86fr);
+    grid-template-columns: 1.12fr 0.88fr;
     gap: 22px;
     align-items: stretch;
   }
 
   .deck-card {
     position: relative;
-    background: linear-gradient(165deg, rgba(13, 22, 39, 0.94) 0%, rgba(7, 12, 23, 0.97) 100%);
+    background: linear-gradient(
+      165deg,
+      rgba(13, 22, 39, 0.94) 0%,
+      rgba(7, 12, 23, 0.97) 100%
+    );
     border: 1px solid rgba(212, 175, 55, 0.42);
     border-radius: 8px;
     padding: 26px 28px;
-    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.82), inset 0 1px 0 rgba(255, 255, 255, 0.07);
+    box-shadow:
+      0 24px 60px rgba(0, 0, 0, 0.82),
+      inset 0 1px 0 rgba(255, 255, 255, 0.07);
     backdrop-filter: blur(16px);
   }
 
-  /* Brass Corner Brackets */
   .card-corner {
     position: absolute;
     width: 12px;
@@ -604,7 +765,6 @@
     align-items: flex-end;
   }
 
-  /* Commander ID Card */
   .commander-id-card {
     background: rgba(5, 9, 18, 0.82);
     border: 1px solid rgba(148, 163, 184, 0.25);
@@ -616,7 +776,11 @@
     align-items: center;
     gap: 14px;
     border-color: rgba(234, 179, 8, 0.45);
-    background: linear-gradient(90deg, rgba(202, 138, 4, 0.12), rgba(5, 9, 18, 0.88));
+    background: linear-gradient(
+      90deg,
+      rgba(202, 138, 4, 0.12),
+      rgba(5, 9, 18, 0.88)
+    );
   }
   .cid-meta {
     display: flex;
@@ -649,24 +813,6 @@
     background: rgba(16, 185, 129, 0.18);
     color: #6ee7b7;
     border: 1px solid rgba(16, 185, 129, 0.4);
-  }
-  .status-pill.level-pill {
-    background: rgba(56, 189, 248, 0.18);
-    color: #bae6fd;
-    border: 1px solid rgba(56, 189, 248, 0.45);
-  }
-  .xp-mini-track {
-    width: 100%;
-    height: 3px;
-    background: rgba(148, 163, 184, 0.2);
-    border-radius: 2px;
-    overflow: hidden;
-    margin-top: 4px;
-  }
-  .xp-mini-fill {
-    height: 100%;
-    background: linear-gradient(90deg, #38bdf8, #f59e0b);
-    transition: width 0.3s ease;
   }
   .cid-meta strong {
     font-family: var(--font-tactical);
@@ -730,26 +876,23 @@
     border-color: transparent;
   }
 
-  /* Side Column Cards */
   .deck-side-column {
     display: flex;
     flex-direction: column;
     gap: 20px;
   }
 
-  /* Mini Leaderboard */
   .mini-rank-card {
     flex: 1;
     display: flex;
     flex-direction: column;
     justify-content: space-between;
-    gap: 14px;
   }
   .mini-rank-list {
     display: flex;
     flex-direction: column;
     gap: 8px;
-    flex: 1;
+    margin-top: 14px;
   }
   .mini-rank-row {
     width: 100%;
@@ -761,11 +904,6 @@
     border: 1px solid rgba(148, 163, 184, 0.16);
     border-radius: 5px;
     text-align: left;
-    transition: background 0.16s ease, border-color 0.16s ease;
-  }
-  .mini-rank-row:hover {
-    background: rgba(15, 23, 42, 0.92);
-    border-color: rgba(234, 179, 8, 0.45);
   }
   .m-rank {
     font-family: var(--font-display);
@@ -795,68 +933,24 @@
     color: #fef08a;
   }
   .mini-rank-empty {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 10px;
-    padding: 24px 18px;
+    margin-top: 14px;
+    padding: 18px;
     background: rgba(5, 9, 18, 0.65);
     border: 1px dashed rgba(148, 163, 184, 0.25);
     border-radius: 6px;
     text-align: center;
     color: #94a3b8;
-    font-size: 0.82rem;
-    line-height: 1.5;
+    font-size: 0.8rem;
   }
   .rank-card-footer {
-    margin-top: auto;
-    padding-top: 14px;
-    border-top: 1px solid rgba(212, 175, 55, 0.24);
     display: flex;
-    flex-direction: column;
-    gap: 12px;
-  }
-  .rank-footer-telemetry {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-  }
-  .rank-telemetry-pills {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-  }
-  .telemetry-chip {
-    display: inline-flex;
-    align-items: center;
-    gap: 5px;
-    padding: 4px 9px;
-    border-radius: 4px;
-    background: rgba(5, 9, 18, 0.78);
-    border: 1px solid rgba(148, 163, 184, 0.22);
-    font-family: var(--font-tactical);
-    font-size: 0.68rem;
-    font-weight: 700;
-    letter-spacing: 0.06em;
-    color: #cbd5e1;
-  }
-  .mini-rank-Quicklinks {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
+    justify-content: flex-end;
     gap: 10px;
-  }
-  .mini-rank-Quicklinks .outline-button {
-    justify-content: center;
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
+    margin-top: 16px;
+    padding-top: 14px;
+    border-top: 1px solid rgba(148, 163, 184, 0.16);
   }
 
-  /* ==========================================================================
-     PRE-GAME BRIEFING ROOM (LOBBY) — REFINED SPACING & BUTTON HOVER
-     ========================================================================== */
   .briefing-room-container {
     width: min(1180px, calc(100% - 32px));
     margin: auto;
@@ -972,7 +1066,8 @@
     gap: 24px;
   }
   .roster-block,
-  .faction-picker-panel {
+  .faction-picker-panel,
+  .doctrine-picker-panel {
     display: flex;
     flex-direction: column;
     gap: 12px;
@@ -1013,7 +1108,11 @@
     border-radius: 6px;
   }
   .slot-card.is-me {
-    background: linear-gradient(90deg, rgba(202, 138, 4, 0.16), rgba(5, 9, 18, 0.9));
+    background: linear-gradient(
+      90deg,
+      rgba(202, 138, 4, 0.16),
+      rgba(5, 9, 18, 0.9)
+    );
     border-color: rgba(234, 179, 8, 0.55);
   }
   .slot-info {
@@ -1131,7 +1230,6 @@
     font-size: 0.72rem;
   }
 
-  /* Faction Picker */
   .faction-cards-grid {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
@@ -1152,7 +1250,11 @@
     border-color: rgba(234, 179, 8, 0.55);
   }
   .faction-choice-card.selected {
-    background: linear-gradient(135deg, rgba(202, 138, 4, 0.25), rgba(161, 98, 7, 0.1));
+    background: linear-gradient(
+      135deg,
+      rgba(202, 138, 4, 0.25),
+      rgba(161, 98, 7, 0.1)
+    );
     border-color: #fde047;
     box-shadow: 0 0 15px rgba(234, 179, 8, 0.22);
   }
@@ -1178,7 +1280,78 @@
     white-space: nowrap;
   }
 
-  /* Lobby Comms & Protocol */
+  .doctrine-cards-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+  .doctrine-choice-card {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 12px 14px;
+    background: rgba(5, 9, 18, 0.84);
+    border: 1px solid rgba(148, 163, 184, 0.24);
+    border-radius: 6px;
+    text-align: left;
+    cursor: pointer;
+    transition:
+      border-color 0.16s ease,
+      background 0.16s ease,
+      box-shadow 0.16s ease,
+      transform 0.12s ease;
+  }
+  .doctrine-choice-card:hover {
+    background: rgba(15, 23, 42, 0.94);
+    border-color: var(--doc-accent, #eab308);
+    transform: translateY(-1px);
+  }
+  .doctrine-choice-card.selected {
+    background: linear-gradient(
+      135deg,
+      rgba(15, 23, 42, 0.96),
+      rgba(5, 9, 18, 0.98)
+    );
+    border-color: var(--doc-accent, #fde047);
+    box-shadow:
+      0 0 18px rgba(0, 0, 0, 0.6),
+      inset 0 0 0 1px var(--doc-accent, #fde047);
+  }
+  .doc-choice-meta {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0;
+    flex: 1;
+  }
+  .doc-title-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+  .doc-choice-meta strong {
+    font-family: var(--font-tactical);
+    font-size: 0.84rem;
+    color: #f8fafc;
+  }
+  .doc-active-pill {
+    font-family: var(--font-mono);
+    font-size: 0.56rem;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    padding: 2px 6px;
+    border-radius: 3px;
+    background: var(--doc-accent, #eab308);
+    color: #050911;
+    flex-shrink: 0;
+  }
+  .doc-choice-meta small {
+    font-size: 0.68rem;
+    color: #94a3b8;
+    line-height: 1.35;
+  }
+
   .briefing-side-col {
     display: flex;
     flex-direction: column;
@@ -1229,7 +1402,6 @@
     line-height: 1.45;
   }
 
-  /* Footer */
   .briefing-footer {
     display: flex;
     justify-content: space-between;
@@ -1290,21 +1462,28 @@
     align-items: center;
     justify-content: center;
     gap: 9px;
-    box-shadow: 0 8px 25px rgba(234, 179, 8, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.35);
-    transition: transform 0.16s ease, box-shadow 0.16s ease, background 0.16s ease, border-color 0.16s ease;
+    box-shadow:
+      0 8px 25px rgba(234, 179, 8, 0.35),
+      inset 0 1px 0 rgba(255, 255, 255, 0.35);
+    transition:
+      transform 0.16s ease,
+      box-shadow 0.16s ease,
+      background 0.16s ease,
+      border-color 0.16s ease;
   }
   .launch-battle-btn:hover:not(:disabled) {
     background: linear-gradient(135deg, #fde047 0%, #ca8a04 100%);
     border-color: #ffffff;
     color: #050911;
     transform: translateY(-1px);
-    box-shadow: 0 12px 32px rgba(250, 204, 21, 0.55), 0 0 18px rgba(234, 179, 8, 0.4);
+    box-shadow:
+      0 12px 32px rgba(250, 204, 21, 0.55),
+      0 0 18px rgba(234, 179, 8, 0.4);
   }
   .launch-battle-btn:active:not(:disabled) {
     transform: translateY(0);
   }
 
-  /* Tablet Landscape & Portrait Responsiveness (768px - 1080px) */
   @media (max-width: 1080px) {
     .command-deck-container,
     .briefing-room-container {
@@ -1319,7 +1498,8 @@
     .deck-card {
       padding: 22px 24px;
     }
-    .slots-grid {
+    .slots-grid,
+    .doctrine-cards-grid {
       grid-template-columns: 1fr 1fr;
     }
     .faction-cards-grid {
@@ -1330,12 +1510,12 @@
     }
   }
 
-  /* Smaller Tablets & Large Phones (< 760px) */
   @media (max-width: 760px) {
     .command-center-backdrop {
       padding-top: 62px;
     }
-    .slots-grid {
+    .slots-grid,
+    .doctrine-cards-grid {
       grid-template-columns: 1fr;
     }
     .faction-cards-grid {
