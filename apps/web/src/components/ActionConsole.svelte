@@ -1,5 +1,6 @@
 <script lang="ts">
   import DoctrineCrest from "./DoctrineCrest.svelte";
+  import FactionFlag from "./FactionFlag.svelte";
   import Icon from "./Icon.svelte";
   import UnitSelector from "./UnitSelector.svelte";
   import { i18n, t } from "../i18n/index.svelte";
@@ -222,14 +223,28 @@
           {@const navalCheck = isSea && myPlayerId ? checkNavalBlockade(game, selectedFromId, selectedToId, myPlayerId) : null}
           {@const canArtillery = fromUnits.artillery > 0 && !fromTerr.artilleryBarrageFiredThisTurn}
           {@const canAir = hasTerritoryBuilding(fromTerr, "airfield") && fromUnits.aircraft > 0 && !fromTerr.airMissionFlownThisTurn && (myPlayerState?.resources?.oil ?? 0) > 0}
+          {@const fromPlayer = game.players.find((p) => p.id === fromTerr?.ownerId)}
+          {@const toPlayer = game.players.find((p) => p.id === toTerr?.ownerId)}
           <div class="action-popup attack-popup">
             <div class="attack-matchup">
-              <span>
-                {t("combat_origin", { territory: getTerritoryName(selectedFromId) })} ({game.territories[selectedFromId].armies})
+              <span class="matchup-side origin">
+                {#if fromPlayer}
+                  <FactionFlag color={fromPlayer.color} width={18} height={12} />
+                {/if}
+                <span class="matchup-text">
+                  {t("combat_origin", { territory: getTerritoryName(selectedFromId) })}
+                  <strong class="matchup-armies">({fromTerr.armies})</strong>
+                </span>
               </span>
               <span class="vs">{t("vs")}</span>
-              <span>
-                {t("combat_target", { territory: getTerritoryName(selectedToId) })} ({game.territories[selectedToId].armies})
+              <span class="matchup-side target">
+                <span class="matchup-text">
+                  {t("combat_target", { territory: getTerritoryName(selectedToId) })}
+                  <strong class="matchup-armies">({toTerr.armies})</strong>
+                </span>
+                {#if toPlayer}
+                  <FactionFlag color={toPlayer.color} width={18} height={12} />
+                {/if}
               </span>
             </div>
 
@@ -616,7 +631,34 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
+    gap: 0.5rem;
     font-size: 0.8rem;
+    padding: 0.15rem 0.1rem;
+  }
+  .matchup-side {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    min-width: 0;
+    flex: 1;
+  }
+  .matchup-side.origin {
+    justify-content: flex-start;
+  }
+  .matchup-side.target {
+    justify-content: flex-end;
+    text-align: right;
+  }
+  .matchup-text {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: #cbd5e1;
+  }
+  .matchup-armies {
+    color: #fde68a;
+    font-weight: 700;
+    margin-left: 0.2rem;
   }
   .vs {
     background: #991b1b;
@@ -626,6 +668,9 @@
     font-family: var(--font-tactical);
     font-weight: 800;
     font-size: 0.7rem;
+    letter-spacing: 0.05em;
+    flex-shrink: 0;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
   }
   .attack-controls-row {
     display: flex;
