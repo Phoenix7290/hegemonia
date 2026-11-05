@@ -482,7 +482,6 @@ export const CLASSIC_MAP: GameMapDef = {
       "islandia",
       "suecia",
       "franca",
-      "espanha",
       "alemanha"
     ],
     "center": [
@@ -551,7 +550,6 @@ export const CLASSIC_MAP: GameMapDef = {
     "continent": "europe",
     "symbol": "circle",
     "neighbors": [
-      "inglaterra",
       "franca",
       "italia",
       "argelia"
@@ -836,7 +834,6 @@ export const CLASSIC_MAP: GameMapDef = {
       "oriente_medio",
       "aral",
       "xinjiang",
-      "china",
       "vietna",
       "sumatra",
       "madagascar"
@@ -1035,8 +1032,7 @@ export const CLASSIC_MAP: GameMapDef = {
       "xinjiang",
       "pequim",
       "japao",
-      "vietna",
-      "india"
+      "vietna"
     ],
     "center": [
       972,

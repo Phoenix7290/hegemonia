@@ -102,7 +102,7 @@
         </div>
 
       {:else if game.phase === "deploy"}
-        {#if selectedFromId}
+        {#if selectedFromId && (myPlayerState?.unplacedArmies ?? 0) > 0}
           {@const fromTerr = game.territories[selectedFromId]}
           {@const maxD = myPlayerState?.unplacedArmies ?? 1}
           <div class="action-popup">
@@ -387,7 +387,18 @@
 
       <div class="phase-action-slot">
         {#if isMyTurn && !game.winnerId}
-          {#if game.phase === "attack" && !game.pendingConquest}
+          {#if game.phase === "deploy" && game.round > 1}
+            <button
+              class="btn secondary phase-cta-btn"
+              disabled={(myPlayerState?.unplacedArmies ?? 0) > 0}
+              title={(myPlayerState?.unplacedArmies ?? 0) > 0
+                ? "Posicione todas as tropas de reforço antes de avançar para o ataque"
+                : "Avançar para a fase de ataque"}
+              onclick={() => sendAction({ type: "end_deploy" })}
+            >
+              {t("advance_to_attack")}
+            </button>
+          {:else if game.phase === "attack" && !game.pendingConquest}
             <button class="btn secondary phase-cta-btn" onclick={() => sendAction({ type: "end_attack" })}>
               {t("advance_to_maneuver")}
             </button>

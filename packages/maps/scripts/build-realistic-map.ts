@@ -845,7 +845,7 @@ const SPECS: TerritorySpec[] = [
     symbol: "circle",
     buildGeo: () => renderGeometry(mergeCountries(["United Kingdom", "Ireland"])),
     centerOverride: [589, 138],
-    neighbors: ["islandia", "suecia", "franca", "espanha", "alemanha"],
+    neighbors: ["islandia", "suecia", "franca", "alemanha"],
   },
   {
     id: "suecia",
@@ -898,7 +898,7 @@ const SPECS: TerritorySpec[] = [
     buildGeo: () =>
       renderGeometry(mergeCountries(["Spain", "Portugal"]), [[-11, 35, 4.5, 44.5]]),
     centerOverride: [584, 184],
-    neighbors: ["inglaterra", "franca", "italia", "argelia"],
+    neighbors: ["franca", "italia", "argelia"],
   },
   {
     id: "italia",
@@ -1123,7 +1123,7 @@ const SPECS: TerritorySpec[] = [
         mergeCountries(["India", "Pakistan", "Bangladesh", "Sri Lanka", "Nepal", "Bhutan"])
       ),
     centerOverride: [860, 238],
-    neighbors: ["oriente_medio", "aral", "xinjiang", "china", "vietna", "sumatra", "madagascar"],
+    neighbors: ["oriente_medio", "aral", "xinjiang", "vietna", "sumatra", "madagascar"],
   },
   {
     id: "vietna",
@@ -1276,7 +1276,7 @@ const SPECS: TerritorySpec[] = [
       );
     },
     centerOverride: [972, 224],
-    neighbors: ["xinjiang", "pequim", "japao", "vietna", "india"],
+    neighbors: ["xinjiang", "pequim", "japao", "vietna"],
   },
   {
     id: "japao",

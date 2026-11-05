@@ -75,6 +75,9 @@ function runSimulation(seed = "hegemonia-sim-2026") {
           rng
         );
       }
+      if (state.phase === "deploy" && player.unplacedArmies === 0 && state.round > 1) {
+        state = applyAction(state, player.id, { type: "end_deploy" }, rng);
+      }
       continue;
     }
 
