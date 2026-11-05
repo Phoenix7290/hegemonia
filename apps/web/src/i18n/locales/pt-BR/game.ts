@@ -294,7 +294,7 @@ export const ptBRGame: TranslationCatalog = {
   building_coastal_only: "Apenas Costeiro",
   airlift_btn_label: "Ponte Aérea (Aeródromo)",
 
-  // Global Dynamic Market & Trade (HEGEM-22)
+  // Global Dynamic Market & Trade (HEGEM-22 & HEGEM-82)
   market_modal_title: "Mercado Global de Commodities",
   market_modal_sub: "Cotações dinâmicas estilo AoE2. Negocie excedentes e compre matérias-primas vitais.",
   market_locked_notice: "Acesso Bloqueado: Construa ao menos um Mercado em seu território para negociar no mercado global.",
@@ -307,6 +307,11 @@ export const ptBRGame: TranslationCatalog = {
   market_batch_qty: "Lote: {qty}x",
   market_est_cost: "Custo Estimado",
   market_est_revenue: "Receita Estimada",
+  market_treasury_balance: "Tesouraria: ${amount}",
+  market_your_stock: "Seu Estoque: {count}",
+  market_insufficient_funds: "Saldo insuficiente na Tesouraria",
+  market_insufficient_stock: "Estoque insuficiente para o lote",
+  market_only_your_turn: "Apenas no seu turno",
 
   // Allied Investment Routes (HEGEM-22)
   investment_routes_title: "Rotas de Investimento Aliado",
