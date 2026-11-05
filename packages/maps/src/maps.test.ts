@@ -152,7 +152,6 @@ describe("@hegemonia/maps — Validação Cartográfica, Soberania Admin-1, Graf
       ["argelia", "egito"],
       ["argelia", "nigeria"],
       ["espanha", "franca"],
-      ["espanha", "inglaterra"],
       ["espanha", "italia"],
       ["italia", "egito"],
       ["italia", "franca"],
@@ -220,6 +219,8 @@ describe("@hegemonia/maps — Validação Cartográfica, Soberania Admin-1, Graf
         ["argentina", "australia"],
         ["california", "nova_york"],
         ["california", "ottawa"],
+        ["espanha", "inglaterra"],
+        ["india", "china"],
         ];
 
     for (const [a, b] of forbiddenConnections) {

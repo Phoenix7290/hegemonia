@@ -19,6 +19,7 @@ export const enGame: TranslationCatalog = {
   combat_target: "Target: {territory}",
   combat_execute: "Execute Offensive",
   maneuver_transfer: "Transfer {count} Divisions",
+  advance_to_attack: "Advance to Attack",
   advance_to_maneuver: "Advance to Maneuver",
   reserve_badge: "+{count} Reserves",
   clean_map_active: "Clean View Active — Press F4 to restore markers",

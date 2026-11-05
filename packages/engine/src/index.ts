@@ -1535,13 +1535,23 @@ case "select_doctrine": {
       const tName = mapById.get(terr.id)?.namePt ?? terr.id;
       state.log.push(`${currentPlayer.name} posicionou +${action.armies} em ${tName}.`);
 
-      if (currentPlayer.unplacedArmies === 0) {
-        if (state.round === 1) {
-          advanceTurn(state, rng, map);
-        } else {
-          state.phase = "attack";
-        }
+      if (currentPlayer.unplacedArmies === 0 && state.round === 1) {
+        advanceTurn(state, rng, map);
       }
+      break;
+    }
+
+    case "end_deploy": {
+      if (state.phase !== "deploy") {
+        throw new Error("Você não está na fase de posicionamento.");
+      }
+      if (state.round === 1) {
+        throw new Error("Na primeira rodada, posicione todas as tropas para avançar automaticamente.");
+      }
+      if (currentPlayer.unplacedArmies > 0) {
+        throw new Error("Posicione todas as tropas de reforço antes de avançar para a fase de ataque.");
+      }
+      state.phase = "attack";
       break;
     }
 
@@ -1596,7 +1606,7 @@ case "select_doctrine": {
       }
 
       fromTerr.artilleryBarrageFiredThisTurn = true;
-      state.worldTension = Math.min(100, Number(((state.worldTension ?? 0) + 0.2).toFixed(1)));
+      state.worldTension = Math.min(100, Number(((state.worldTension ?? 0) + 0.3).toFixed(1)));
       const rolls = Array.from({ length: fromUnits.artillery }, () => rng.rollD6());
       const hits = rolls.filter((r) => r >= 4).length;
 
@@ -1721,7 +1731,7 @@ case "select_doctrine": {
 
       currentPlayer.resources.oil -= 1;
       fromTerr.airMissionFlownThisTurn = true;
-      state.worldTension = Math.min(100, Number(((state.worldTension ?? 0) + 0.2).toFixed(1)));
+      state.worldTension = Math.min(100, Number(((state.worldTension ?? 0) + 0.3).toFixed(1)));
       state.lastStrike = {
         kind: "air_mission",
         missionType: action.missionType,
@@ -2119,7 +2129,7 @@ case "select_doctrine": {
           (currentPlayer.resources?.oil ?? 0) >= getEffectiveBlitzOilCost(currentPlayer, 1);
         toTerr.blitzkriegAvailable = attackerCombat.remaining.tank > 0 && canAffordBlitzOil;
         toTerr.casBonusAttackerId = undefined;
-        state.worldTension = Math.min(100, Number(((state.worldTension ?? 0) + 0.1).toFixed(1)));
+        state.worldTension = Math.min(100, Number(((state.worldTension ?? 0) + 1.0).toFixed(1)));
 
         // HEGEM-32 & Epic IX (Defesa em Profundidade):
         // Fortificação Nv. 2 degrada para Nv. 1; Fortificação Nv. 1 degrada em assalto apenas se atacada por tanques ou artilharia
@@ -2155,7 +2165,7 @@ case "select_doctrine": {
           defenderPlayer.capitalLostTurn = state.round;
           defenderPlayer.economicPenaltyMultiplier = 0.5;
           defenderPlayer.moralePenalty = 2;
-          state.worldTension = Math.min(100, Number(((state.worldTension ?? 0) + 4.0).toFixed(1)));
+          state.worldTension = Math.min(100, Number(((state.worldTension ?? 0) + 5.0).toFixed(1)));
           currentPlayer.infamy = Math.min(100, (currentPlayer.infamy ?? 0) + 15);
 
           let stolenCardNotice = "";
@@ -2219,7 +2229,7 @@ case "select_doctrine": {
           const defPlayer = state.players.find((p) => p.id === defenderId)!;
           defPlayer.eliminated = true;
           defPlayer.eliminatedBy = playerId;
-          state.worldTension = Math.min(100, Number(((state.worldTension ?? 0) + 6.0).toFixed(1)));
+          state.worldTension = Math.min(100, Number(((state.worldTension ?? 0) + 8.0).toFixed(1)));
           currentPlayer.infamy = Math.min(100, (currentPlayer.infamy ?? 0) + 25);
           if (defPlayer.cards.length > 0) {
             currentPlayer.cards.push(...defPlayer.cards);
@@ -2919,7 +2929,9 @@ function advanceTurn(state: GameState, rng: SeededRng, map: GameMapDef): void {
     ) {
       state.round += 1;
       roundAdvanced = true;
-      state.worldTension = Math.min(100, Number(((state.worldTension ?? 0) + 1.5).toFixed(1)));
+      const activePlayersCount = state.players.filter((p) => !p.eliminated).length;
+      const roundTensionBoost = activePlayersCount <= 3 ? 3.0 : activePlayersCount <= 4 ? 2.5 : 2.0;
+      state.worldTension = Math.min(100, Number(((state.worldTension ?? 0) + roundTensionBoost).toFixed(1)));
 
       if (state.investmentRoutes) {
         for (const route of state.investmentRoutes) {

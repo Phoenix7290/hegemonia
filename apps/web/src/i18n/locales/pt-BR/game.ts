@@ -19,6 +19,7 @@ export const ptBRGame: TranslationCatalog = {
   combat_target: "Alvo: {territory}",
   combat_execute: "Executar Ofensiva",
   maneuver_transfer: "Transferir {count} Divisões",
+  advance_to_attack: "Avançar para Ataque",
   advance_to_maneuver: "Avançar para Manobra",
   reserve_badge: "+{count} Reservas",
   clean_map_active: "Visão Limpa Ativa — Pressione F4 para restaurar marcadores",

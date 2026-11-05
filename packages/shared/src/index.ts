@@ -486,6 +486,11 @@ export const DeployActionSchema = z.object({
   armies: z.number().int().min(1),
 });
 
+export const EndDeployPhaseActionSchema = z.object({
+  type: z.literal("end_deploy"),
+});
+export type EndDeployPhaseAction = z.infer<typeof EndDeployPhaseActionSchema>;
+
 export const TradeCardsActionSchema = z.object({
   type: z.literal("trade_cards"),
   cardIds: z.tuple([z.string(), z.string(), z.string()]),
@@ -640,6 +645,7 @@ export const GameActionSchema = z.discriminatedUnion("type", [
   SelectDoctrineActionSchema,
   SelectCapitalActionSchema,
   DeployActionSchema,
+  EndDeployPhaseActionSchema,
   TradeCardsActionSchema,
   BuyCardWithGoldActionSchema,
   BuildStructureActionSchema,
