@@ -2176,7 +2176,6 @@ case "select_doctrine": {
 
         const remainingAttackers = attackerCombat.remaining;
         const maxMove = Math.min(
-          attackerDiceCount,
           totalUnits(remainingAttackers),
           fromTerr.armies - 1
         );
@@ -2257,24 +2256,27 @@ case "select_doctrine": {
       const toTerr = state.territories[toTerritoryId];
       const initialOccupation = occupyingUnits ?? selectUnits(getTerritoryUnits(toTerr), 1);
       const availableAttackers = remainingAttackers ?? getTerritoryUnits(fromTerr);
-      const additional = action.armies - 1;
-      let additionalUnits = selectUnits(availableAttackers, additional);
+      const totalPool = addUnits(initialOccupation, availableAttackers);
 
+      let chosenUnits: UnitCounts;
       if (action.units) {
         if (totalUnits(action.units) !== action.armies) {
           throw new Error("A composição da ocupação deve corresponder ao total de divisões movidas.");
         }
-        if (!canSubtractUnits(action.units, initialOccupation)) {
-          throw new Error("A composição da ocupação deve incluir a divisão que já ocupou o território.");
-        }
-        additionalUnits = subtractUnits(action.units, initialOccupation);
-        if (!canSubtractUnits(availableAttackers, additionalUnits)) {
+        if (!canSubtractUnits(totalPool, action.units)) {
           throw new Error("A composição excede os sobreviventes disponíveis para ocupar.");
         }
+        chosenUnits = { ...action.units };
+      } else {
+        chosenUnits = selectUnits(totalPool, action.armies);
       }
 
-      setTerritoryUnits(fromTerr, subtractUnits(getTerritoryUnits(fromTerr), additionalUnits));
-      setTerritoryUnits(toTerr, addUnits(getTerritoryUnits(toTerr), additionalUnits));
+      const remainingForOrigin = subtractUnits(totalPool, chosenUnits);
+      setTerritoryUnits(
+        fromTerr,
+        addUnits(subtractUnits(getTerritoryUnits(fromTerr), availableAttackers), remainingForOrigin)
+      );
+      setTerritoryUnits(toTerr, chosenUnits);
       if (toTerr.blitzkriegAvailable) {
         const finalUnits = getTerritoryUnits(toTerr);
         const canAffordBlitzOil =
@@ -2862,7 +2864,7 @@ case "select_doctrine": {
     }
   }
 
-  if (!state.pendingConquest) {
+  if (!state.pendingConquest && state.round > 1) {
     for (const p of state.players) {
       if (checkPlayerVictory(state, p.id, map)) {
         state.winnerId = p.id;

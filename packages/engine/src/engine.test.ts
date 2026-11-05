@@ -1545,6 +1545,51 @@ describe("Combined Arms and Infantry Escort (HEGEM-27)", () => {
     expect(state.territories["argentina"].armies).toBe(3);
   });
 
+  it("allows occupying with >3 armies and flexible compositions including pure tanks (HEGEM-88)", () => {
+    let { state, activeId, defenderId } = createUnitTestState("attack");
+    state.round = 2;
+    state.territories["sao_paulo"].ownerId = activeId;
+    state.territories["sao_paulo"].units = unitCounts(1, 5); // 1 infantry + 5 tanks = 6 armies
+    state.territories["sao_paulo"].armies = 6;
+    state.territories["argentina"].ownerId = defenderId;
+    state.territories["argentina"].units = unitCounts(1);
+    state.territories["argentina"].armies = 1;
+
+    // São Paulo attacks Argentina with 4 tanks
+    state = applyAction(
+      state,
+      activeId,
+      {
+        type: "attack",
+        fromTerritoryId: "sao_paulo",
+        toTerritoryId: "argentina",
+        diceCount: 3,
+        units: unitCounts(0, 4), // 4 tanks
+      },
+      combatRng([6, 6, 6, 1])
+    );
+
+    // Conquest pending: maxMove should be 4 (not capped to 3!)
+    expect(state.pendingConquest).toBeDefined();
+    expect(state.pendingConquest?.maxMove).toBe(4);
+
+    // Player occupies with all 4 tanks (moving > 3 armies without requiring infantry!)
+    state = applyAction(
+      state,
+      activeId,
+      { type: "occupy", armies: 4, units: unitCounts(0, 4) },
+      combatRng([])
+    );
+
+    expect(state.pendingConquest).toBeNull();
+    // Origin keeps 1 infantry and 1 tank (2 armies total)
+    expect(getTerritoryUnits(state.territories["sao_paulo"])).toEqual(unitCounts(1, 1));
+    expect(state.territories["sao_paulo"].armies).toBe(2);
+    // Destination gets all 4 tanks (4 armies total)
+    expect(getTerritoryUnits(state.territories["argentina"])).toEqual(unitCounts(0, 4));
+    expect(state.territories["argentina"].armies).toBe(4);
+  });
+
   it("preserves compositions in maneuver, blocks second movement, and restricts airlift to infantry", () => {
     let { state, activeId } = createUnitTestState("maneuver");
     for (const territoryId of ["sao_paulo", "argentina", "peru", "japao"]) {
