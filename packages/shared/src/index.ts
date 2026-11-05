@@ -585,7 +585,7 @@ export const AttackActionSchema = z.object({
 
 export const OccupyActionSchema = z.object({
   type: z.literal("occupy"),
-  armies: z.number().int().min(1).max(3),
+  armies: z.number().int().min(1).max(999),
   units: UnitCountsSchema.optional(),
 });
 
