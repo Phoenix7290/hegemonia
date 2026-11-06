@@ -375,6 +375,14 @@ export const enGame: TranslationCatalog = {
   settings_combat_anim_fast: "Blitz (400ms)",
   settings_combat_anim_off: "Off (Instant)",
   settings_combat_anim_hint: "Vector map effects per troop category without blocking the turn timer.",
+
+  // Exit Campaign Confirmation (HEGEM-106)
+  exit_button_tooltip: "Abandon Campaign",
+  exit_confirm_title: "Abandon Match",
+  exit_confirm_subtitle: "Command Desertion Warning",
+  exit_confirm_desc: "Are you sure you want to leave the active match? Your territories and divisions will remain on the map under defensive AI control.",
+  exit_confirm_cancel: "Stay in Match",
+  exit_confirm_leave: "Abandon Match",
 };
 
 export const game = enGame;
