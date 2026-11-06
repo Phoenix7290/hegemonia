@@ -1419,3 +1419,5 @@ export function isSeaLink(territoryA: string, territoryB: string): boolean {
     ([a, b]) => (a === territoryA && b === territoryB) || (a === territoryB && b === territoryA)
   );
 }
+
+export { TERRITORY_COAST_PATHS, TERRITORY_LAND_PATHS } from "./boundaries.js";

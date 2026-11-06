@@ -20,6 +20,8 @@
     DIRECT_SEA_LINKS,
     PACIFIC_WRAP_LINKS,
     GRATICULE_SVG_PATH,
+    TERRITORY_COAST_PATHS,
+    TERRITORY_LAND_PATHS,
   } from "@hegemonia/maps";
   import {
     hasTerritoryBuilding,
@@ -686,7 +688,7 @@
                 }}
               >
                 <title>{getTerritoryName(t.id)}: {tState.armies} divisões</title>
-                <!-- Base Political Fill + Frontier Border -->
+                <!-- Base Political Fill + Selection Ring -->
                 <path
                   d={t.svgPath}
                   fill={isObjOwned ? "#059669" : isObjPending ? "#dc2626" : activeFill}
@@ -697,7 +699,7 @@
                       : effectiveBaseMode === "cartographic"
                         ? "0.42"
                         : isBlackTerritory
-                          ? "0.96"
+                          ? "0.90"
                           : "0.88"}
                   stroke={isSelected
                     ? "#ffffff"
@@ -707,20 +709,14 @@
                         ? "#ef4444"
                         : isObjOwned
                           ? "#10b981"
-                          : effectiveBaseMode === "cartographic"
-                            ? ownerColor
-                            : isBlackTerritory
-                              ? "#CBD5E1"
-                              : "rgba(9, 13, 22, 0.95)"}
+                          : "none"}
                   stroke-width={isSelected
                     ? "2.6"
                     : isValidTarget || isObjPending
                       ? "2.4"
                       : isObjOwned
                         ? "2.0"
-                        : effectiveBaseMode === "cartographic"
-                          ? "1.6"
-                          : "1.25"}
+                        : "0"}
                   stroke-linejoin="round"
                   filter={isSelected || isValidTarget
                     ? "url(#glow-gold)"
@@ -732,13 +728,30 @@
                   style={isObjDimmed ? "opacity: 0.28; transition: opacity 0.25s ease;" : "transition: opacity 0.25s ease;"}
                 />
 
-                {#if effectiveBaseMode === "cartographic"}
-                  <!-- Crisp Dark Inner Frontier Line so Neighboring Same-Color Provinces Remain Distinct Over Satellite Terrain -->
+                <!-- CONTORNO DO MAR (Maritime Border - 100% Approved Standard) -->
+                {#if TERRITORY_COAST_PATHS[t.id]}
                   <path
-                    d={t.svgPath}
+                    d={TERRITORY_COAST_PATHS[t.id]}
                     fill="none"
-                    stroke="rgba(6, 10, 18, 0.78)"
-                    stroke-width="0.7"
+                    stroke={effectiveBaseMode === "cartographic"
+                      ? (isBlackTerritory ? "#CBD5E1" : ownerColor)
+                      : (isBlackTerritory ? "#CBD5E1" : "rgba(9, 13, 22, 0.95)")}
+                    stroke-width={effectiveBaseMode === "cartographic" ? "1.6" : "1.25"}
+                    stroke-linejoin="round"
+                    stroke-linecap="round"
+                    pointer-events="none"
+                  />
+                {/if}
+
+                <!-- CONTORNO ENTRE PAÍSES (Discrete, Natural Inland Frontier) -->
+                {#if TERRITORY_LAND_PATHS[t.id]}
+                  <path
+                    d={TERRITORY_LAND_PATHS[t.id]}
+                    fill="none"
+                    stroke={effectiveBaseMode === "cartographic" ? "rgba(6, 10, 18, 0.78)" : "rgba(9, 13, 22, 0.75)"}
+                    stroke-width={effectiveBaseMode === "cartographic" ? "0.75" : "0.95"}
+                    stroke-linejoin="round"
+                    stroke-linecap="round"
                     pointer-events="none"
                   />
                 {/if}
