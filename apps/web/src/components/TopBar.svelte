@@ -36,12 +36,21 @@
   };
 
   const SOUNDTRACKS = [
-    { id: "ambient_procedural", label: "Marcha Tática (Sintetizador Web Audio)" },
+    {
+      id: "ambient_procedural",
+      label: "Marcha Tática (Sintetizador Web Audio)",
+    },
     { id: "hoi4_axis_theme.mp3", label: "Hearts of Iron IV — Axis Theme" },
     { id: "hoi4_katyusha.mp3", label: "Hearts of Iron IV — Katyusha" },
-    { id: "hoi4_great_patriotic_war.mp3", label: "Hearts of Iron IV — The Great Patriotic War" },
+    {
+      id: "hoi4_great_patriotic_war.mp3",
+      label: "Hearts of Iron IV — The Great Patriotic War",
+    },
     { id: "hoi4_bella_ciao.mp3", label: "Hearts of Iron IV — Bella Ciao" },
-    { id: "the_second_european_war.mp3", label: "The Fire Rises — The Second European War" },
+    {
+      id: "the_second_european_war.mp3",
+      label: "The Fire Rises — The Second European War",
+    },
     { id: "tno_taboritsky_theme.mp3", label: "TNO — The Mad Regent's Lullaby" },
     { id: "tno_burgundian_lullaby.mp3", label: "TNO — Burgundian Lullaby" },
     { id: "teufelslied.mp3", label: "Histórico — Teufelslied" },
@@ -133,13 +142,13 @@
   });
 
   let activeDiplomacyTarget = $derived(
-    game?.players.find((p) => p.id === activeDiplomacyTargetId) ?? null
+    game?.players.find((p) => p.id === activeDiplomacyTargetId) ?? null,
   );
 
   let incomingTreatyProposals = $derived(
     game?.treaties?.filter(
-      (t) => t.status === "pending" && t.toPlayerId === myPlayerId
-    ) ?? []
+      (t) => t.status === "pending" && t.toPlayerId === myPlayerId,
+    ) ?? [],
   );
 
   let targetTreatyWithMe = $derived.by(() => {
@@ -148,14 +157,18 @@
       game.treaties?.find(
         (t) =>
           t.status !== "broken" &&
-          ((t.fromPlayerId === myPlayerId && t.toPlayerId === activeDiplomacyTargetId) ||
-            (t.fromPlayerId === activeDiplomacyTargetId && t.toPlayerId === myPlayerId))
+          ((t.fromPlayerId === myPlayerId &&
+            t.toPlayerId === activeDiplomacyTargetId) ||
+            (t.fromPlayerId === activeDiplomacyTargetId &&
+              t.toPlayerId === myPlayerId)),
       ) ?? null
     );
   });
 
   let activeCoalitionAgainstTarget = $derived(
-    game?.coalitions?.find((c) => c.targetPlayerId === activeDiplomacyTargetId) ?? null
+    game?.coalitions?.find(
+      (c) => c.targetPlayerId === activeDiplomacyTargetId,
+    ) ?? null,
   );
 
   let myEconomyIncome = $derived.by(() => {
@@ -164,15 +177,15 @@
   });
 
   let validTradeTriplet = $derived(
-    myPlayerState ? findValidTradeTriplet(myPlayerState.cards) : null
+    myPlayerState ? findValidTradeTriplet(myPlayerState.cards) : null,
   );
 
   let nextTradeBonus = $derived(
-    game ? getTradeBonusArmies(game.tradeCount) : 4
+    game ? getTradeBonusArmies(game.tradeCount) : 4,
   );
 
   let myHasMarket = $derived(
-    Boolean(game && myPlayerId && playerHasMarket(game, myPlayerId))
+    Boolean(game && myPlayerId && playerHasMarket(game, myPlayerId)),
   );
 
   let eligibleInvestmentPartners = $derived.by(() => {
@@ -186,17 +199,19 @@
           (tr) =>
             tr.status === "active" &&
             ((tr.fromPlayerId === myPlayerId && tr.toPlayerId === p.id) ||
-              (tr.fromPlayerId === p.id && tr.toPlayerId === myPlayerId))
+              (tr.fromPlayerId === p.id && tr.toPlayerId === myPlayerId)),
         ) &&
         !(game.investmentRoutes ?? []).some(
           (ir) =>
             (ir.playerAId === myPlayerId && ir.playerBId === p.id) ||
-            (ir.playerAId === p.id && ir.playerBId === myPlayerId)
-        )
+            (ir.playerAId === p.id && ir.playerBId === myPlayerId),
+        ),
     );
   });
 
-  function toggleRightDrawer(drawer: "cards" | "objective" | "audio" | "market") {
+  function toggleRightDrawer(
+    drawer: "cards" | "objective" | "audio" | "market",
+  ) {
     sound.playClick();
     showHudManager = false;
     activeRightDrawer = activeRightDrawer === drawer ? null : drawer;
@@ -229,7 +244,10 @@
     return rev;
   }
 
-  function handleMarketTrade(resource: ResourceType, operation: "buy" | "sell") {
+  function handleMarketTrade(
+    resource: ResourceType,
+    operation: "buy" | "sell",
+  ) {
     sendAction({
       type: "market_trade",
       resource,
@@ -273,7 +291,10 @@
     });
   }
 
-  function handleProposeTreaty(targetPlayerId: string, type: "alliance" | "nap") {
+  function handleProposeTreaty(
+    targetPlayerId: string,
+    type: "alliance" | "nap",
+  ) {
     sendAction({
       type: "propose_treaty",
       targetPlayerId,
@@ -329,14 +350,25 @@
         <div class="toast-body">
           <strong>Proposta Diplomática Recebida</strong>
           <span>
-            {sender?.name ?? "General"} propôs um <strong>{prop.type === "alliance" ? "Tratado de Aliança Militar" : "Pacto de Não-Agressão (NAP)"}</strong>
+            {sender?.name ?? "General"} propôs um
+            <strong
+              >{prop.type === "alliance"
+                ? "Tratado de Aliança Militar"
+                : "Pacto de Não-Agressão (NAP)"}</strong
+            >
           </span>
         </div>
         <div class="toast-actions">
-          <button class="btn-toast-accept" onclick={() => handleAcceptTreaty(prop.id)}>
+          <button
+            class="btn-toast-accept"
+            onclick={() => handleAcceptTreaty(prop.id)}
+          >
             <Icon name="check" size={12} /> Aceitar
           </button>
-          <button class="btn-toast-reject" onclick={() => handleRejectTreaty(prop.id)}>
+          <button
+            class="btn-toast-reject"
+            onclick={() => handleRejectTreaty(prop.id)}
+          >
             <Icon name="close" size={12} /> Recusar
           </button>
         </div>
@@ -369,10 +401,21 @@
     {/if}
 
     <!-- Global World Tension Gauge (One-way Escalation) -->
-    <div class="world-tension-wrap" data-testid="world-tension-badge" title="Tensão Mundial: {game.worldTension ?? 0}% (Alianças Militares em 50%)">
+    <div
+      class="world-tension-wrap"
+      data-testid="world-tension-badge"
+      title="Tensão Mundial: {game.worldTension ??
+        0}% (Alianças Militares em 50%)"
+    >
       <div class="tension-top-row">
-        <span class="tension-title"><Icon name="globe" size={12} /> TENSÃO MUNDIAL</span>
-        <strong class="tension-value" class:high-tension={(game.worldTension ?? 0) >= 50}>{game.worldTension ?? 0}%</strong>
+        <span class="tension-title"
+          ><Icon name="globe" size={12} /> TENSÃO MUNDIAL</span
+        >
+        <strong
+          class="tension-value"
+          class:high-tension={(game.worldTension ?? 0) >= 50}
+          >{game.worldTension ?? 0}%</strong
+        >
       </div>
       <div class="tension-gauge-bar">
         <div
@@ -381,7 +424,11 @@
           class:elevated={(game.worldTension ?? 0) >= 34}
           style="width: {game.worldTension ?? 0}%;"
         ></div>
-        <div class="tension-threshold-marker" style="left: 50%;" title="Desbloqueio de Alianças Militares (50%)"></div>
+        <div
+          class="tension-threshold-marker"
+          style="left: 50%;"
+          title="Desbloqueio de Alianças Militares (50%)"
+        ></div>
       </div>
       <div class="tension-subtext">
         {#if (game.worldTension ?? 0) < 50}
@@ -396,15 +443,25 @@
       <!-- DOSSIÊ DIPLOMÁTICO VIEW -->
       <div class="diplomacy-dossier">
         <div class="dossier-header">
-          <button class="btn-dossier-back" onclick={() => (activeDiplomacyTargetId = null)}>
+          <button
+            class="btn-dossier-back"
+            onclick={() => (activeDiplomacyTargetId = null)}
+          >
             <Icon name="back" size={13} />
             <span>Voltar ao Quadro Geral</span>
           </button>
         </div>
 
-        <div class="dossier-target-card" style="border-left-color: {COLOR_HEX[activeDiplomacyTarget.color]};">
+        <div
+          class="dossier-target-card"
+          style="border-left-color: {COLOR_HEX[activeDiplomacyTarget.color]};"
+        >
           <div class="target-card-top">
-            <FactionFlag color={activeDiplomacyTarget.color} width={24} height={16} />
+            <FactionFlag
+              color={activeDiplomacyTarget.color}
+              width={24}
+              height={16}
+            />
             <div class="target-card-info">
               <strong>{activeDiplomacyTarget.name}</strong>
               <small>DOSSIÊ DO GENERAL</small>
@@ -415,7 +472,10 @@
           <div class="infamy-wrap">
             <div class="infamy-row">
               <span>INFÂMIA DO GENERAL</span>
-              <strong class="infamy-value" class:high-infamy={(activeDiplomacyTarget.infamy ?? 0) >= 50}>
+              <strong
+                class="infamy-value"
+                class:high-infamy={(activeDiplomacyTarget.infamy ?? 0) >= 50}
+              >
                 {activeDiplomacyTarget.infamy ?? 0}%
               </strong>
             </div>
@@ -423,11 +483,20 @@
               <div
                 class="infamy-fill"
                 class:grand-threat={(activeDiplomacyTarget.infamy ?? 0) >= 100}
-                class:bilateral-threat={(activeDiplomacyTarget.infamy ?? 0) >= 50}
+                class:bilateral-threat={(activeDiplomacyTarget.infamy ?? 0) >=
+                  50}
                 style="width: {activeDiplomacyTarget.infamy ?? 0}%;"
               ></div>
-              <div class="infamy-marker" style="left: 50%;" title="Coalizão Bilateral (50%)"></div>
-              <div class="infamy-marker" style="left: 100%;" title="Grande Coalizão (100%)"></div>
+              <div
+                class="infamy-marker"
+                style="left: 50%;"
+                title="Coalizão Bilateral (50%)"
+              ></div>
+              <div
+                class="infamy-marker"
+                style="left: 100%;"
+                title="Grande Coalizão (100%)"
+              ></div>
             </div>
           </div>
         </div>
@@ -440,9 +509,15 @@
               <div class="treaty-active-box">
                 <div class="treaty-active-badge">
                   <Icon name="shield" size={13} />
-                  <span>{targetTreatyWithMe.type === "alliance" ? "Aliança Militar Ativa" : "Pacto de Não-Agressão (NAP) Ativo"}</span>
+                  <span
+                    >{targetTreatyWithMe.type === "alliance"
+                      ? "Aliança Militar Ativa"
+                      : "Pacto de Não-Agressão (NAP) Ativo"}</span
+                  >
                 </div>
-                <p class="treaty-rule-desc">Ataques mútuos estão suspensos pelas leis de guerra.</p>
+                <p class="treaty-rule-desc">
+                  Ataques mútuos estão suspensos pelas leis de guerra.
+                </p>
                 <button
                   class="btn-treaty-break"
                   onclick={() => handleBreakTreaty(targetTreatyWithMe.id)}
@@ -455,19 +530,36 @@
             {:else if targetTreatyWithMe.status === "pending"}
               {#if targetTreatyWithMe.fromPlayerId === myPlayerId}
                 <div class="treaty-pending-box">
-                  <span>Proposta de {targetTreatyWithMe.type === "alliance" ? "Aliança" : "NAP"} enviada.</span>
-                  <button class="btn-ghost-sm" onclick={() => handleRejectTreaty(targetTreatyWithMe.id)}>
+                  <span
+                    >Proposta de {targetTreatyWithMe.type === "alliance"
+                      ? "Aliança"
+                      : "NAP"} enviada.</span
+                  >
+                  <button
+                    class="btn-ghost-sm"
+                    onclick={() => handleRejectTreaty(targetTreatyWithMe.id)}
+                  >
                     Cancelar Proposta
                   </button>
                 </div>
               {:else}
                 <div class="treaty-incoming-box">
-                  <strong>Proposta de {targetTreatyWithMe.type === "alliance" ? "Aliança Militar" : "Pacto de Não-Agressão"}</strong>
+                  <strong
+                    >Proposta de {targetTreatyWithMe.type === "alliance"
+                      ? "Aliança Militar"
+                      : "Pacto de Não-Agressão"}</strong
+                  >
                   <div class="treaty-incoming-actions">
-                    <button class="btn-tactical-success" onclick={() => handleAcceptTreaty(targetTreatyWithMe.id)}>
+                    <button
+                      class="btn-tactical-success"
+                      onclick={() => handleAcceptTreaty(targetTreatyWithMe.id)}
+                    >
                       <Icon name="check" size={13} /> Aceitar
                     </button>
-                    <button class="btn-tactical-danger" onclick={() => handleRejectTreaty(targetTreatyWithMe.id)}>
+                    <button
+                      class="btn-tactical-danger"
+                      onclick={() => handleRejectTreaty(targetTreatyWithMe.id)}
+                    >
                       <Icon name="close" size={13} /> Recusar
                     </button>
                   </div>
@@ -478,7 +570,8 @@
             <div class="treaty-propose-box">
               <button
                 class="btn-treaty-propose"
-                onclick={() => handleProposeTreaty(activeDiplomacyTarget.id, "nap")}
+                onclick={() =>
+                  handleProposeTreaty(activeDiplomacyTarget.id, "nap")}
               >
                 <Icon name="handshake" size={13} />
                 <span>Propor Pacto de Não-Agressão (NAP)</span>
@@ -487,11 +580,18 @@
                 class="btn-treaty-propose"
                 class:btn-disabled={(game.worldTension ?? 0) < 50}
                 disabled={(game.worldTension ?? 0) < 50}
-                onclick={() => handleProposeTreaty(activeDiplomacyTarget.id, "alliance")}
-                title={(game.worldTension ?? 0) < 50 ? "Requer Tensão Mundial de pelo menos 50%" : "Propor aliança militar mútua"}
+                onclick={() =>
+                  handleProposeTreaty(activeDiplomacyTarget.id, "alliance")}
+                title={(game.worldTension ?? 0) < 50
+                  ? "Requer Tensão Mundial de pelo menos 50%"
+                  : "Propor aliança militar mútua"}
               >
                 <Icon name="crown" size={13} />
-                <span>Propor Aliança Militar {(game.worldTension ?? 0) < 50 ? "(Requer 50% Tensão)" : ""}</span>
+                <span
+                  >Propor Aliança Militar {(game.worldTension ?? 0) < 50
+                    ? "(Requer 50% Tensão)"
+                    : ""}</span
+                >
               </button>
             </div>
           {/if}
@@ -499,37 +599,54 @@
 
         <!-- Coalitions Section -->
         <div class="dossier-section">
-          <div class="dossier-section-title">Coalizões Militares de Contenção</div>
+          <div class="dossier-section-title">
+            Coalizões Militares de Contenção
+          </div>
           {#if activeCoalitionAgainstTarget}
             <div class="coalition-active-box">
               <div class="coalition-header">
                 <Icon name="swords" size={14} />
-                <span>COALIZÃO ATIVA ({activeCoalitionAgainstTarget.memberPlayerIds.length}/{(activeDiplomacyTarget.infamy ?? 0) >= 100 ? 3 : 2} Membros)</span>
+                <span
+                  >COALIZÃO ATIVA ({activeCoalitionAgainstTarget.memberPlayerIds
+                    .length}/{(activeDiplomacyTarget.infamy ?? 0) >= 100
+                    ? 3
+                    : 2} Membros)</span
+                >
               </div>
               <div class="coalition-members">
                 {#each activeCoalitionAgainstTarget.memberPlayerIds as mid}
                   {@const mem = game.players.find((p) => p.id === mid)}
                   {#if mem}
-                    <span class="coalition-member-tag" style="border-color: {COLOR_HEX[mem.color]};">
+                    <span
+                      class="coalition-member-tag"
+                      style="border-color: {COLOR_HEX[mem.color]};"
+                    >
                       <FactionFlag color={mem.color} width={14} height={9} />
-                      {mem.name} {mid === myPlayerId ? "(Você)" : ""}
+                      {mem.name}
+                      {mid === myPlayerId ? "(Você)" : ""}
                     </span>
                   {/if}
                 {/each}
               </div>
 
               {#if !activeCoalitionAgainstTarget.memberPlayerIds.includes(myPlayerId)}
-                {@const maxMembers = (activeDiplomacyTarget.infamy ?? 0) >= 100 ? 3 : 2}
+                {@const maxMembers =
+                  (activeDiplomacyTarget.infamy ?? 0) >= 100 ? 3 : 2}
                 {#if activeCoalitionAgainstTarget.memberPlayerIds.length < maxMembers}
                   <button
                     class="btn-coalition-join"
-                    onclick={() => handleJoinCoalition(activeCoalitionAgainstTarget.id)}
+                    onclick={() =>
+                      handleJoinCoalition(activeCoalitionAgainstTarget.id)}
                   >
                     <Icon name="swords" size={13} />
-                    <span>Unir-se à Coalizão contra {activeDiplomacyTarget.name}</span>
+                    <span
+                      >Unir-se à Coalizão contra {activeDiplomacyTarget.name}</span
+                    >
                   </button>
                 {:else}
-                  <p class="coalition-full-note">Capacidade máxima da coalizão atingida.</p>
+                  <p class="coalition-full-note">
+                    Capacidade máxima da coalizão atingida.
+                  </p>
                 {/if}
               {:else}
                 <div class="coalition-joined-badge">
@@ -540,7 +657,8 @@
           {:else if (activeDiplomacyTarget.infamy ?? 0) >= 50}
             <div class="coalition-call-box">
               <p class="coalition-call-desc">
-                A Infâmia de {activeDiplomacyTarget.name} ({activeDiplomacyTarget.infamy}%) ultrapassou o limiar de alarme global.
+                A Infâmia de {activeDiplomacyTarget.name} ({activeDiplomacyTarget.infamy}%)
+                ultrapassou o limiar de alarme global.
               </p>
               <button
                 class="btn-coalition-declare"
@@ -553,15 +671,25 @@
           {:else}
             <div class="coalition-locked-box">
               <Icon name="lock" size={13} />
-              <span>Coalizões bloqueadas. Alvo possui apenas {activeDiplomacyTarget.infamy ?? 0}% de Infâmia (requer ≥ 50%).</span>
+              <span
+                >Coalizões bloqueadas. Alvo possui apenas {activeDiplomacyTarget.infamy ??
+                  0}% de Infâmia (requer ≥ 50%).</span
+              >
             </div>
           {/if}
 
           <!-- Hegemon Last Stand Alert -->
           {#if activeCoalitionAgainstTarget && activeCoalitionAgainstTarget.memberPlayerIds.length >= 2}
-            {@const bonus = (activeDiplomacyTarget.infamy ?? 0) >= 100 && activeCoalitionAgainstTarget.memberPlayerIds.length >= 3 ? 2 : 1}
+            {@const bonus =
+              (activeDiplomacyTarget.infamy ?? 0) >= 100 &&
+              activeCoalitionAgainstTarget.memberPlayerIds.length >= 3
+                ? 2
+                : 1}
             <div class="hegemon-bonus-banner">
-              <span>⭐ Mobilização Total Hegemon: +{bonus} nos dados contra membros da coalizão</span>
+              <span
+                >⭐ Mobilização Total Hegemon: +{bonus} nos dados contra membros
+                da coalizão</span
+              >
             </div>
           {/if}
         </div>
@@ -577,8 +705,13 @@
           {#each playerMetrics as m}
             <div
               class="hegemony-segment"
-              style="width: {m.sharePct}%; background: {COLOR_HEX[m.player.color]};"
-              title="{m.player.name}: {m.sharePct}% ({m.terrCount} {t('territories_count', { count: m.terrCount })}, {m.totalArmies} {t('divisions', { count: m.totalArmies })})"
+              style="width: {m.sharePct}%; background: {COLOR_HEX[
+                m.player.color
+              ]};"
+              title="{m.player.name}: {m.sharePct}% ({m.terrCount} {t(
+                'territories_count',
+                { count: m.terrCount },
+              )}, {m.totalArmies} {t('divisions', { count: m.totalArmies })})"
             ></div>
           {/each}
         </div>
@@ -603,22 +736,38 @@
                 {/if}
               </span>
               {#if isTurn}
-                <span class="turn-indicator" title={t("turn")}><Icon name="crown" size={13} /></span>
+                <span class="turn-indicator" title={t("turn")}
+                  ><Icon name="crown" size={13} /></span
+                >
               {/if}
             </div>
             <div class="g-stats">
-              <span title={t("territories_count", { count: m.terrCount })} class="stat-pill">T: {m.terrCount}</span>
-              <span title={t("divisions", { count: m.totalArmies })} class="stat-pill">D: {m.totalArmies}</span>
-              <span title={t("cards_title")} class="stat-pill">C: {m.player.cards.length}</span>
+              <span
+                title={t("territories_count", { count: m.terrCount })}
+                class="stat-pill">T: {m.terrCount}</span
+              >
+              <span
+                title={t("divisions", { count: m.totalArmies })}
+                class="stat-pill">D: {m.totalArmies}</span
+              >
+              <span title={t("cards_title")} class="stat-pill"
+                >C: {m.player.cards.length}</span
+              >
               {#if (m.player.infamy ?? 0) > 0}
-                <span title="Infâmia do General" class="stat-pill infamy-pill"><Icon name="infamy" size={11} /> {m.player.infamy}%</span>
+                <span title="Infâmia do General" class="stat-pill infamy-pill"
+                  ><Icon name="infamy" size={11} /> {m.player.infamy}%</span
+                >
               {/if}
               {#if m.player.id !== myPlayerId && !m.player.eliminated}
                 <button
                   class="btn-diplomacy-icon"
                   class:active={activeDiplomacyTargetId === m.player.id}
                   title="Dossiê Diplomático com {m.player.name}"
-                  onclick={() => (activeDiplomacyTargetId = activeDiplomacyTargetId === m.player.id ? null : m.player.id)}
+                  onclick={() =>
+                    (activeDiplomacyTargetId =
+                      activeDiplomacyTargetId === m.player.id
+                        ? null
+                        : m.player.id)}
                 >
                   <Icon name="handshake" size={12} />
                 </button>
@@ -631,7 +780,10 @@
 
     <!-- Continents & Asian Sub-Regions Toggle -->
     <div class="continents-toggle-row">
-      <button class="btn-ghost" onclick={() => (showContinents = !showContinents)}>
+      <button
+        class="btn-ghost"
+        onclick={() => (showContinents = !showContinents)}
+      >
         <span><Icon name="globe" size={14} /> {t("theatres_and_bonuses")}</span>
         <Icon name={showContinents ? "chevron-up" : "chevron-down"} size={14} />
       </button>
@@ -639,17 +791,27 @@
 
     {#if showContinents}
       <div class="continents-dropdown">
-        <div class="dropdown-section-title">{t("classic_continents_section")}</div>
+        <div class="dropdown-section-title">
+          {t("classic_continents_section")}
+        </div>
         {#each CLASSIC_MAP.continents.filter((c) => c.id !== "asia") as c}
-          {@const terrs = CLASSIC_MAP.territories.filter((t) => t.continent === c.id)}
+          {@const terrs = CLASSIC_MAP.territories.filter(
+            (t) => t.continent === c.id,
+          )}
           {@const ownerId = game.territories[terrs[0].id]?.ownerId}
-          {@const isMonopoly = terrs.every((t) => game!.territories[t.id].ownerId === ownerId)}
+          {@const isMonopoly = terrs.every(
+            (t) => game!.territories[t.id].ownerId === ownerId,
+          )}
           <div class="cont-pill">
             <span>{getContinentName(c.id)}</span>
             <div class="cont-right">
               {#if isMonopoly}
                 {@const p = game.players.find((plr) => plr.id === ownerId)}
-                {#if p}<FactionFlag color={p.color} width={16} height={10} />{/if}
+                {#if p}<FactionFlag
+                    color={p.color}
+                    width={16}
+                    height={10}
+                  />{/if}
               {/if}
               <span class="bonus-tag">+{c.bonus}</span>
             </div>
@@ -659,13 +821,19 @@
         <div class="dropdown-section-title">{t("asia_subregions_section")}</div>
         {#each ASIA_SUBREGIONS as sub}
           {@const ownerId = game.territories[sub.territoryIds[0]]?.ownerId}
-          {@const isMonopoly = sub.territoryIds.every((tid) => game!.territories[tid]?.ownerId === ownerId)}
+          {@const isMonopoly = sub.territoryIds.every(
+            (tid) => game!.territories[tid]?.ownerId === ownerId,
+          )}
           <div class="cont-pill asia-sub-pill">
             <span>{getSubregionName(sub.id)}</span>
             <div class="cont-right">
               {#if isMonopoly}
                 {@const p = game.players.find((plr) => plr.id === ownerId)}
-                {#if p}<FactionFlag color={p.color} width={16} height={10} />{/if}
+                {#if p}<FactionFlag
+                    color={p.color}
+                    width={16}
+                    height={10}
+                  />{/if}
               {/if}
               <span class="bonus-tag">+{sub.bonus}</span>
             </div>
@@ -684,19 +852,23 @@
         <FactionFlag color={currentTurnPlayer.color} width={24} height={15} />
         <div class="tc-text">
           <span class="tc-kicker">
-            {isMyTurn ? t("banner_your_turn") : t("banner_waiting", { name: currentTurnPlayer.name.toUpperCase() })}
+            {isMyTurn
+              ? t("banner_your_turn")
+              : t("banner_waiting", {
+                  name: currentTurnPlayer.name.toUpperCase(),
+                })}
           </span>
           <strong class="tc-directive">
             {#if game.pendingConquest}
               {t("phase_pending_conquest")}
             {:else if game.phase === "deploy"}
               {isMyTurn
-                ? t("phase_deploy_my_turn", { count: myPlayerState?.unplacedArmies ?? 0 })
+                ? t("phase_deploy_my_turn", {
+                    count: myPlayerState?.unplacedArmies ?? 0,
+                  })
                 : t("phase_deploy_waiting")}
             {:else if game.phase === "attack"}
-              {isMyTurn
-                ? t("phase_attack_my_turn")
-                : t("phase_attack_waiting")}
+              {isMyTurn ? t("phase_attack_my_turn") : t("phase_attack_waiting")}
             {:else if game.phase === "maneuver"}
               {isMyTurn
                 ? t("phase_maneuver_my_turn")
@@ -727,7 +899,8 @@
 
         {#if isMyTurn && myPlayerState.unplacedArmies > 0}
           <div class="reserve-badge">
-            <Icon name="shield" size={13} /> {t("reserve_badge", { count: myPlayerState.unplacedArmies })}
+            <Icon name="shield" size={13} />
+            {t("reserve_badge", { count: myPlayerState.unplacedArmies })}
           </div>
         {/if}
       {/if}
@@ -737,12 +910,15 @@
           class="hud-btn"
           data-testid="btn-open-cards"
           class:highlight={Boolean(validTradeTriplet)}
-          class:mandatory={Boolean(myPlayerState && myPlayerState.cards.length >= 5)}
+          class:mandatory={Boolean(
+            myPlayerState && myPlayerState.cards.length >= 5,
+          )}
           class:active={activeRightDrawer === "cards"}
           onclick={() => toggleRightDrawer("cards")}
           title={t("cards_title")}
         >
-          <Icon name="cards" size={14} /> {myPlayerState?.cards.length ?? 0}/5
+          <Icon name="cards" size={14} />
+          {myPlayerState?.cards.length ?? 0}/5
         </button>
 
         <button
@@ -752,7 +928,8 @@
           onclick={() => toggleRightDrawer("objective")}
           title={t("secret_objective_label")}
         >
-          <Icon name="target" size={14} /> {t("secret_objective_label")}
+          <Icon name="target" size={14} />
+          {t("secret_objective_label")}
         </button>
 
         <button
@@ -763,18 +940,24 @@
           onclick={() => toggleRightDrawer("market")}
           title={t("market_btn_open")}
         >
-          <Icon name="market" size={14} /> {t("market_btn_open")}
+          <Icon name="market" size={14} />
+          {t("market_btn_open")}
         </button>
 
         <button
           class="hud-btn"
           data-testid="btn-open-audio"
-          class:active={activeRightDrawer === "audio" || (ui.isMusicPlaying && !ui.isMuted)}
+          class:active={activeRightDrawer === "audio" ||
+            (ui.isMusicPlaying && !ui.isMuted)}
           onclick={() => toggleRightDrawer("audio")}
           title={t("audio_radio_eq")}
         >
           <Icon name={ui.isMuted ? "mute" : "radio"} size={14} />
-          {ui.isMuted ? t("audio_muted") : ui.isMusicPlaying ? t("audio_radio_on") : t("audio_status")}
+          {ui.isMuted
+            ? t("audio_muted")
+            : ui.isMusicPlaying
+              ? t("audio_radio_on")
+              : t("audio_status")}
         </button>
 
         <button
@@ -801,16 +984,29 @@
     </div>
 
     {#if myPlayerState}
-      {@const res = myPlayerState.resources ?? { money: 0, steel: 0, oil: 0, gold: 0 }}
+      {@const res = myPlayerState.resources ?? {
+        money: 0,
+        steel: 0,
+        oil: 0,
+        gold: 0,
+      }}
       <div class="hq-economy-bar">
-        <div class="econ-pill money" data-testid="res-money" title={t("res_money")}>
+        <div
+          class="econ-pill money"
+          data-testid="res-money"
+          title={t("res_money")}
+        >
           <Icon name="coins" size={13} />
           <span class="econ-val">${res.money}</span>
           {#if myEconomyIncome && myEconomyIncome.netMoney > 0}
             <span class="econ-delta">+{myEconomyIncome.netMoney}</span>
           {/if}
         </div>
-        <div class="econ-pill steel" data-testid="res-steel" title={t("res_steel")}>
+        <div
+          class="econ-pill steel"
+          data-testid="res-steel"
+          title={t("res_steel")}
+        >
           <Icon name="steel" size={13} />
           <span class="econ-val">{res.steel}</span>
           {#if myEconomyIncome && myEconomyIncome.steel > 0}
@@ -824,7 +1020,11 @@
             <span class="econ-delta">+{myEconomyIncome.oil}</span>
           {/if}
         </div>
-        <div class="econ-pill gold" data-testid="res-gold" title={t("res_gold")}>
+        <div
+          class="econ-pill gold"
+          data-testid="res-gold"
+          title={t("res_gold")}
+        >
           <Icon name="gold" size={13} />
           <span class="econ-val">{res.gold}</span>
           {#if myEconomyIncome && myEconomyIncome.gold > 0}
@@ -872,7 +1072,8 @@
               onclick={() => (overlays.regional = !overlays.regional)}
               title={t("map_mode_regional_title")}
             >
-              <Icon name="globe" size={12} /> {t("map_mode_regional")}
+              <Icon name="globe" size={12} />
+              {t("map_mode_regional")}
             </button>
             <button
               class="mode-btn overlay-btn"
@@ -880,7 +1081,8 @@
               onclick={() => (overlays.economic = !overlays.economic)}
               title={t("map_mode_economic_title")}
             >
-              <Icon name="coins" size={12} /> {t("map_mode_economic")}
+              <Icon name="coins" size={12} />
+              {t("map_mode_economic")}
             </button>
             {#if overlays.regional || overlays.economic}
               <button
@@ -891,7 +1093,8 @@
                 }}
                 title={t("map_clear_overlays_title")}
               >
-                <Icon name="close" size={10} /> {t("map_clear_overlays")}
+                <Icon name="close" size={10} />
+                {t("map_clear_overlays")}
               </button>
             {/if}
           </div>
@@ -907,13 +1110,22 @@
             onclick={() => (cleanMapMode = !cleanMapMode)}
             title={t("map_mode_clean_title")}
           >
-            <Icon name="eye" size={12} /> {cleanMapMode ? t("mode_clean_active") : t("mode_clean_label")}
+            <Icon name="eye" size={12} />
+            {cleanMapMode ? t("mode_clean_active") : t("mode_clean_label")}
           </button>
 
           <div class="zoom-cluster">
-            <button class="tool-btn" onclick={zoomIn} title="Aproximar (+)">+</button>
-            <button class="tool-btn" onclick={zoomOut} title="Afastar (Q)">-</button>
-            <button class="tool-btn" onclick={resetZoom} title="Centralizar Mapa">RST</button>
+            <button class="tool-btn" onclick={zoomIn} title="Aproximar (+)"
+              >+</button
+            >
+            <button class="tool-btn" onclick={zoomOut} title="Afastar (Q)"
+              >-</button
+            >
+            <button
+              class="tool-btn"
+              onclick={resetZoom}
+              title="Centralizar Mapa">RST</button
+            >
           </div>
         </div>
       </div>
@@ -942,11 +1154,19 @@
       <div class="floating-drawer music-drawer">
         <div class="drawer-header">
           <h4><Icon name="radio" size={15} /> Equalizador & Rádio Militar</h4>
-          <button class="btn-close" onclick={() => (activeRightDrawer = null)} aria-label={t("close")}><Icon name="close" size={14} /></button>
+          <button
+            class="btn-close"
+            onclick={() => (activeRightDrawer = null)}
+            aria-label={t("close")}><Icon name="close" size={14} /></button
+          >
         </div>
         <div class="radio-controls">
           <div class="radio-top-btns">
-            <button class="btn primary-gold" style="flex: 1;" onclick={() => ui.toggleMusic()}>
+            <button
+              class="btn primary-gold"
+              style="flex: 1;"
+              onclick={() => ui.toggleMusic()}
+            >
               {ui.isMusicPlaying ? "Pausar Trilha" : "Iniciar Trilha"}
             </button>
             <button
@@ -970,7 +1190,10 @@
               max="1"
               step="0.05"
               value={ui.musicVolume}
-              oninput={(e) => ui.setMusicVolume(parseFloat((e.currentTarget as HTMLInputElement).value))}
+              oninput={(e) =>
+                ui.setMusicVolume(
+                  parseFloat((e.currentTarget as HTMLInputElement).value),
+                )}
             />
           </div>
 
@@ -985,7 +1208,10 @@
               max="1"
               step="0.05"
               value={ui.sfxVolume}
-              oninput={(e) => ui.setSfxVolume(parseFloat((e.currentTarget as HTMLInputElement).value))}
+              oninput={(e) =>
+                ui.setSfxVolume(
+                  parseFloat((e.currentTarget as HTMLInputElement).value),
+                )}
             />
           </div>
 
@@ -1005,7 +1231,10 @@
           </div>
 
           <div class="combat-anim-settings">
-            <span class="combat-anim-label"><Icon name="swords" size={12} /> {t("settings_combat_anim_label")}:</span>
+            <span class="combat-anim-label"
+              ><Icon name="swords" size={12} />
+              {t("settings_combat_anim_label")}:</span
+            >
             <div class="combat-anim-btn-group">
               <button
                 class="combat-anim-opt"
@@ -1029,7 +1258,9 @@
                 {t("settings_combat_anim_off")}
               </button>
             </div>
-            <small class="combat-anim-hint">{t("settings_combat_anim_hint")}</small>
+            <small class="combat-anim-hint"
+              >{t("settings_combat_anim_hint")}</small
+            >
           </div>
         </div>
       </div>
@@ -1039,18 +1270,31 @@
     {#if activeRightDrawer === "objective" && myPlayerState}
       <div class="floating-drawer objective-drawer">
         <div class="drawer-header">
-          <h4><Icon name="target" size={15} /> Diretriz Secreta de Alto Comando</h4>
-          <button class="btn-close" onclick={() => (activeRightDrawer = null)} aria-label={t("close")}><Icon name="close" size={14} /></button>
+          <h4>
+            <Icon name="target" size={15} /> Diretriz Secreta de Alto Comando
+          </h4>
+          <button
+            class="btn-close"
+            onclick={() => (activeRightDrawer = null)}
+            aria-label={t("close")}><Icon name="close" size={14} /></button
+          >
         </div>
-        <p class="objective-body">{getObjectiveDescription(myPlayerState.objective.id)}</p>
+        <p class="objective-body">
+          {getObjectiveDescription(myPlayerState.objective.id)}
+        </p>
         {#if objectiveProgress}
           <div class="objective-progress-box">
             <div class="progress-bar-header">
               <span>Progresso da Operação:</span>
-              <strong>{objectiveProgress.pct}% ({objectiveProgress.owned}/{objectiveProgress.total})</strong>
+              <strong
+                >{objectiveProgress.pct}% ({objectiveProgress.owned}/{objectiveProgress.total})</strong
+              >
             </div>
             <div class="progress-track">
-              <div class="progress-fill" style="width: {objectiveProgress.pct}%;"></div>
+              <div
+                class="progress-fill"
+                style="width: {objectiveProgress.pct}%;"
+              ></div>
             </div>
           </div>
         {/if}
@@ -1064,13 +1308,19 @@
               highlightObjectiveTerritories = !highlightObjectiveTerritories;
             }}
           >
-            <Icon name={highlightObjectiveTerritories ? "eye" : "eye-off"} size={13} />
-            {highlightObjectiveTerritories ? "Ocultar Alvos no Mapa" : "Destacar Alvos no Mapa (Verde / Vermelho)"}
+            <Icon
+              name={highlightObjectiveTerritories ? "eye" : "eye-off"}
+              size={13}
+            />
+            {highlightObjectiveTerritories
+              ? "Ocultar Alvos no Mapa"
+              : "Destacar Alvos no Mapa (Verde / Vermelho)"}
           </button>
         </div>
 
         <small class="objective-note">
-          Documento confidencial mascarado no servidor. O cumprimento garante vitória imediata.
+          Documento confidencial mascarado no servidor. O cumprimento garante
+          vitória imediata.
         </small>
       </div>
     {/if}
@@ -1079,8 +1329,14 @@
     {#if showHudManager}
       <div class="floating-drawer hud-drawer">
         <div class="drawer-header">
-          <h4><Icon name="eye" size={15} /> Personalização da Interface (HUD)</h4>
-          <button class="btn-close" onclick={() => (showHudManager = false)} aria-label={t("close")}><Icon name="close" size={14} /></button>
+          <h4>
+            <Icon name="eye" size={15} /> Personalização da Interface (HUD)
+          </h4>
+          <button
+            class="btn-close"
+            onclick={() => (showHudManager = false)}
+            aria-label={t("close")}><Icon name="close" size={14} /></button
+          >
         </div>
 
         <div class="hud-immersive-box">
@@ -1091,16 +1347,23 @@
             onclick={toggleImmersiveMode}
           >
             <Icon name={isImmersiveMode ? "eye" : "eye-off"} size={14} />
-            {isImmersiveMode ? "Desativar Modo Imersivo" : "Modo Imersivo (Ocultar Tudo - Tecla H)"}
+            {isImmersiveMode
+              ? "Desativar Modo Imersivo"
+              : "Modo Imersivo (Ocultar Tudo - Tecla H)"}
           </button>
-          <small>Dica: Pressione <strong>H</strong> a qualquer momento para alternar o modo 100% mapa limpo.</small>
+          <small
+            >Dica: Pressione <strong>H</strong> a qualquer momento para alternar
+            o modo 100% mapa limpo.</small
+          >
         </div>
 
         <div class="hud-toggle-list">
           <span class="hud-section-label">Painéis e Docks Visíveis:</span>
 
           <label class="hud-toggle-row">
-            <span><Icon name="clock" size={13} /> Barra de Comando & Timer (Topo)</span>
+            <span
+              ><Icon name="clock" size={13} /> Barra de Comando & Timer (Topo)</span
+            >
             <input
               type="checkbox"
               checked={hudVisibility.topBanner}
@@ -1109,7 +1372,9 @@
           </label>
 
           <label class="hud-toggle-row">
-            <span><Icon name="crown" size={13} /> Generais & Teatros (Esquerda)</span>
+            <span
+              ><Icon name="crown" size={13} /> Generais & Teatros (Esquerda)</span
+            >
             <input
               type="checkbox"
               checked={hudVisibility.continents}
@@ -1118,7 +1383,9 @@
           </label>
 
           <label class="hud-toggle-row">
-            <span><Icon name="shield" size={13} /> Console de Ordens & Fases (Inferior)</span>
+            <span
+              ><Icon name="shield" size={13} /> Console de Ordens & Fases (Inferior)</span
+            >
             <input
               type="checkbox"
               checked={hudVisibility.bottomDock}
@@ -1127,7 +1394,9 @@
           </label>
 
           <label class="hud-toggle-row">
-            <span><Icon name="radio" size={13} /> Diário de Guerra & Chat (Direita)</span>
+            <span
+              ><Icon name="radio" size={13} /> Diário de Guerra & Chat (Direita)</span
+            >
             <input
               type="checkbox"
               checked={hudVisibility.warJournal}
@@ -1136,7 +1405,9 @@
           </label>
 
           <label class="hud-toggle-row">
-            <span><Icon name="globe" size={13} /> Modos de Mapa & Zoom (Superior)</span>
+            <span
+              ><Icon name="globe" size={13} /> Modos de Mapa & Zoom (Superior)</span
+            >
             <input
               type="checkbox"
               checked={hudVisibility.mapControls}
@@ -1145,7 +1416,9 @@
           </label>
 
           <label class="hud-toggle-row">
-            <span><Icon name="target" size={13} /> Reconhecimento & Dicas (Inferior)</span>
+            <span
+              ><Icon name="target" size={13} /> Reconhecimento & Dicas (Inferior)</span
+            >
             <input
               type="checkbox"
               checked={hudVisibility.recon}
@@ -1155,7 +1428,10 @@
         </div>
 
         <div class="combat-anim-settings">
-          <span class="combat-anim-label"><Icon name="swords" size={12} /> {t("settings_combat_anim_label")}:</span>
+          <span class="combat-anim-label"
+            ><Icon name="swords" size={12} />
+            {t("settings_combat_anim_label")}:</span
+          >
           <div class="combat-anim-btn-group">
             <button
               class="combat-anim-opt"
@@ -1179,7 +1455,9 @@
               {t("settings_combat_anim_off")}
             </button>
           </div>
-          <small class="combat-anim-hint">{t("settings_combat_anim_hint")}</small>
+          <small class="combat-anim-hint"
+            >{t("settings_combat_anim_hint")}</small
+          >
         </div>
       </div>
     {/if}
@@ -1188,13 +1466,27 @@
     {#if activeRightDrawer === "cards" && myPlayerState}
       <div class="floating-drawer cards-drawer">
         <div class="drawer-header">
-          <h4><Icon name="cards" size={15} /> {t("cards_count", { count: myPlayerState.cards.length })}</h4>
-          <button class="btn-close" onclick={() => (activeRightDrawer = null)} aria-label={t("close")}><Icon name="close" size={14} /></button>
+          <h4>
+            <Icon name="cards" size={15} />
+            {t("cards_count", { count: myPlayerState.cards.length })}
+          </h4>
+          <button
+            class="btn-close"
+            onclick={() => (activeRightDrawer = null)}
+            aria-label={t("close")}><Icon name="close" size={14} /></button
+          >
         </div>
 
         <div class="escalation-banner">
-          <span>{t("cards_exchange_next", { count: (game.tradeCount ?? 0) + 1 })}</span>
-          <strong>+{nextTradeBonus} {t("divisions", { count: nextTradeBonus })}</strong>
+          <span
+            >{t("cards_exchange_next", {
+              count: (game.tradeCount ?? 0) + 1,
+            })}</span
+          >
+          <strong
+            >+{nextTradeBonus}
+            {t("divisions", { count: nextTradeBonus })}</strong
+          >
         </div>
 
         <div class="cards-grid">
@@ -1210,7 +1502,9 @@
                       : t("card_symbol_joker")}
               </span>
               <span class="card-territory">
-                {c.territoryId ? getTerritoryName(c.territoryId) : t("card_wildcard")}
+                {c.territoryId
+                  ? getTerritoryName(c.territoryId)
+                  : t("card_wildcard")}
               </span>
             </div>
           {/each}
@@ -1224,16 +1518,27 @@
         {#if isMyTurn && validTradeTriplet && (game.phase === "deploy" || myPlayerState.cards.length >= 5)}
           <button
             class="btn primary-gold full-width"
-            onclick={() => sendAction({ type: "trade_cards", cardIds: validTradeTriplet })}
+            onclick={() =>
+              sendAction({ type: "trade_cards", cardIds: validTradeTriplet })}
           >
-            <Icon name="shield" size={15} /> {t("cards_exchange_btn", { armies: nextTradeBonus })}
+            <Icon name="shield" size={15} />
+            {t("cards_exchange_btn", { armies: nextTradeBonus })}
           </button>
         {/if}
 
         {#if isMyTurn && game.phase === "deploy" && myPlayerState.cards.length < 5}
-          {@const res = myPlayerState.resources ?? { money: 0, steel: 0, oil: 0, gold: 0 }}
-          {@const canBuyGoldOnly = !myPlayerState.boughtCardWithGoldThisTurn && res.gold >= 2}
-          {@const canBuyGoldMoney = !myPlayerState.boughtCardWithGoldThisTurn && res.gold >= 1 && res.money >= 4}
+          {@const res = myPlayerState.resources ?? {
+            money: 0,
+            steel: 0,
+            oil: 0,
+            gold: 0,
+          }}
+          {@const canBuyGoldOnly =
+            !myPlayerState.boughtCardWithGoldThisTurn && res.gold >= 2}
+          {@const canBuyGoldMoney =
+            !myPlayerState.boughtCardWithGoldThisTurn &&
+            res.gold >= 1 &&
+            res.money >= 4}
           <div class="gold-card-purchase-box">
             <div class="gold-card-purchase-head">
               <Icon name="gold" size={13} />
@@ -1242,23 +1547,34 @@
             <p class="gold-card-purchase-sub">{t("cards_buy_gold_sub")}</p>
             {#if myPlayerState.boughtCardWithGoldThisTurn}
               <div class="gold-card-bought-tag">
-                <Icon name="check" size={12} /> {t("cards_buy_gold_done")}
+                <Icon name="check" size={12} />
+                {t("cards_buy_gold_done")}
               </div>
             {:else}
               <div class="gold-card-btn-row">
                 <button
                   class="hud-btn gold-buy-btn"
                   disabled={!canBuyGoldOnly}
-                  onclick={() => sendAction({ type: "buy_card_with_gold", paymentMode: "gold_only" })}
+                  onclick={() =>
+                    sendAction({
+                      type: "buy_card_with_gold",
+                      paymentMode: "gold_only",
+                    })}
                 >
-                  <Icon name="gold" size={12} /> {t("cards_buy_gold_only_btn")}
+                  <Icon name="gold" size={12} />
+                  {t("cards_buy_gold_only_btn")}
                 </button>
                 <button
                   class="hud-btn gold-buy-btn"
                   disabled={!canBuyGoldMoney}
-                  onclick={() => sendAction({ type: "buy_card_with_gold", paymentMode: "gold_and_money" })}
+                  onclick={() =>
+                    sendAction({
+                      type: "buy_card_with_gold",
+                      paymentMode: "gold_and_money",
+                    })}
                 >
-                  <Icon name="coins" size={12} /> {t("cards_buy_gold_money_btn")}
+                  <Icon name="coins" size={12} />
+                  {t("cards_buy_gold_money_btn")}
                 </button>
               </div>
             {/if}
@@ -1267,12 +1583,33 @@
       </div>
     {/if}
 
-    <!-- Global Dynamic Market & Allied Trade Drawer (HEGEM-22) -->
+    <!-- Global Dynamic Market & Allied Trade Drawer (HEGEM-22 & HEGEM-82) -->
     {#if activeRightDrawer === "market" && myPlayerState && game}
+      {@const treasuryMoney = myPlayerState.resources?.money ?? 0}
       <div class="floating-drawer market-drawer" data-testid="market-modal">
         <div class="drawer-header">
           <h4><Icon name="market" size={15} /> {t("market_modal_title")}</h4>
-          <button class="btn-close" onclick={() => (activeRightDrawer = null)} aria-label={t("close")}><Icon name="close" size={14} /></button>
+          <div class="market-header-right">
+            <span
+              class="market-treasury-badge"
+              data-testid="market-treasury-balance"
+              title={t("res_money")}
+            >
+              <Icon name="coins" size={13} />
+              <strong
+                >{t("market_treasury_balance", {
+                  amount: treasuryMoney,
+                })}</strong
+              >
+            </span>
+            <button
+              class="btn-close"
+              onclick={() => (activeRightDrawer = null)}
+              aria-label={t("close")}
+            >
+              <Icon name="close" size={14} />
+            </button>
+          </div>
         </div>
         <p class="drawer-sub">{t("market_modal_sub")}</p>
 
@@ -1284,15 +1621,19 @@
         {:else}
           <div class="market-active-banner">
             <div class="market-status-tag">
-              <Icon name="industry" size={13} /> {t("market_has_access")}
+              <Icon name="industry" size={13} />
+              {t("market_has_access")}
             </div>
             <div class="market-batch-selector">
-              <span class="batch-label">{t("market_batch_qty", { qty: "" })}</span>
+              <span class="batch-label"
+                >{t("market_batch_qty", { qty: "" })}</span
+              >
               <div class="batch-buttons">
                 {#each [1, 5, 10] as qty}
                   <button
                     class="batch-btn"
                     class:active={marketBatchQty === qty}
+                    data-testid="market-batch-{qty}"
                     onclick={() => (marketBatchQty = qty)}
                   >
                     {qty}x
@@ -1304,20 +1645,34 @@
 
           <!-- Commodities Grid -->
           <div class="market-commodities-grid">
-            {#each (["steel", "oil", "gold"] as const) as res}
+            {#each ["steel", "oil", "gold"] as const as res}
               {@const stock = myPlayerState.resources[res] ?? 0}
               {@const buyCost = getEstBuyCost(res, marketBatchQty)}
               {@const sellRev = getEstSellRevenue(res, marketBatchQty)}
               {@const currentPrice = game.marketPrices[res]}
-              {@const canAffordBuy = isMyTurn && myPlayerState.resources.money >= buyCost}
-              {@const canSell = isMyTurn && stock >= marketBatchQty}
-              <div class="commodity-card">
+              {@const lacksFunds = treasuryMoney < buyCost}
+              {@const lacksStock = stock < marketBatchQty}
+              {@const canAffordBuy = isMyTurn && !lacksFunds}
+              {@const canSell = isMyTurn && !lacksStock}
+              <div
+                class="commodity-card"
+                class:cannot-afford-buy={lacksFunds}
+                class:cannot-afford-sell={lacksStock}
+                data-testid="market-card-{res}"
+              >
                 <div class="commodity-head">
                   <div class="res-badge">
                     <Icon name={res} size={15} />
                     <strong>{t(`res_${res}`)}</strong>
                   </div>
-                  <span class="res-stock-count">{stock} {t("building_built_tag")}</span>
+                  <span
+                    class="res-stock-pill"
+                    class:stock-empty={stock === 0}
+                    class:stock-low={stock > 0 && lacksStock}
+                    data-testid="market-stock-{res}"
+                  >
+                    {t("market_your_stock", { count: stock })}
+                  </span>
                 </div>
                 <div class="commodity-prices">
                   <div class="price-pill buy">
@@ -1332,21 +1687,33 @@
                 <div class="commodity-actions">
                   <button
                     class="btn-trade buy"
+                    class:insufficient={lacksFunds}
                     data-testid="market-buy-{res}"
                     disabled={!canAffordBuy}
                     onclick={() => handleMarketTrade(res, "buy")}
-                    title={!isMyTurn ? "Apenas no seu turno" : !canAffordBuy ? "Dinheiro insuficiente" : ""}
+                    title={!isMyTurn
+                      ? t("market_only_your_turn")
+                      : lacksFunds
+                        ? t("market_insufficient_funds")
+                        : ""}
                   >
-                    {t("market_btn_buy")} {marketBatchQty}x (-${buyCost})
+                    {t("market_btn_buy")}
+                    {marketBatchQty}x (-${buyCost})
                   </button>
                   <button
                     class="btn-trade sell"
+                    class:insufficient={lacksStock}
                     data-testid="market-sell-{res}"
                     disabled={!canSell}
                     onclick={() => handleMarketTrade(res, "sell")}
-                    title={!isMyTurn ? "Apenas no seu turno" : !canSell ? "Estoque insuficiente" : ""}
+                    title={!isMyTurn
+                      ? t("market_only_your_turn")
+                      : lacksStock
+                        ? t("market_insufficient_stock")
+                        : ""}
                   >
-                    {t("market_btn_sell")} {marketBatchQty}x (+${sellRev})
+                    {t("market_btn_sell")}
+                    {marketBatchQty}x (+${sellRev})
                   </button>
                 </div>
               </div>
@@ -1358,22 +1725,33 @@
         <div class="drawer-section-divider"></div>
         <div class="routes-section">
           <div class="routes-header">
-            <h5><Icon name="handshake" size={14} /> {t("investment_routes_title")}</h5>
+            <h5>
+              <Icon name="handshake" size={14} />
+              {t("investment_routes_title")}
+            </h5>
             <span class="routes-hint">{t("investment_routes_sub")}</span>
           </div>
 
           <!-- Active Routes -->
-          {#if game.investmentRoutes && game.investmentRoutes.filter(r => r.status === "active" && (r.playerAId === myPlayerId || r.playerBId === myPlayerId)).length > 0}
+          {#if game.investmentRoutes && game.investmentRoutes.filter((r) => r.status === "active" && (r.playerAId === myPlayerId || r.playerBId === myPlayerId)).length > 0}
             <div class="routes-list">
-              {#each game.investmentRoutes.filter(r => r.status === "active" && (r.playerAId === myPlayerId || r.playerBId === myPlayerId)) as r}
-                {@const partnerId = r.playerAId === myPlayerId ? r.playerBId : r.playerAId}
-                {@const partner = game.players.find(p => p.id === partnerId)}
+              {#each game.investmentRoutes.filter((r) => r.status === "active" && (r.playerAId === myPlayerId || r.playerBId === myPlayerId)) as r}
+                {@const partnerId =
+                  r.playerAId === myPlayerId ? r.playerBId : r.playerAId}
+                {@const partner = game.players.find((p) => p.id === partnerId)}
                 <div class="route-item active">
                   <div class="route-info">
-                    <FactionFlag color={partner?.color ?? "blue"} width={16} height={10} />
+                    <FactionFlag
+                      color={partner?.color ?? "blue"}
+                      width={16}
+                      height={10}
+                    />
                     <strong>{partner?.name ?? "Aliado"}</strong>
                     <span class="route-badge">
-                      {t("investment_status_active", { income: r.roundsActive >= 3 ? 3 : 2, rounds: r.roundsActive })}
+                      {t("investment_status_active", {
+                        income: r.roundsActive >= 3 ? 3 : 2,
+                        rounds: r.roundsActive,
+                      })}
                     </span>
                   </div>
                 </div>
@@ -1382,14 +1760,22 @@
           {/if}
 
           <!-- Pending Proposals to Me -->
-          {#if game.investmentRoutes && game.investmentRoutes.some(r => r.status === "pending" && r.playerBId === myPlayerId)}
+          {#if game.investmentRoutes && game.investmentRoutes.some((r) => r.status === "pending" && r.playerBId === myPlayerId)}
             <div class="pending-proposals-list">
-              {#each game.investmentRoutes.filter(r => r.status === "pending" && r.playerBId === myPlayerId) as r}
-                {@const proposer = game.players.find(p => p.id === r.playerAId)}
+              {#each game.investmentRoutes.filter((r) => r.status === "pending" && r.playerBId === myPlayerId) as r}
+                {@const proposer = game.players.find(
+                  (p) => p.id === r.playerAId,
+                )}
                 <div class="route-item pending">
                   <div class="route-info">
-                    <FactionFlag color={proposer?.color ?? "blue"} width={16} height={10} />
-                    <span>{proposer?.name}: {t("investment_status_pending")}</span>
+                    <FactionFlag
+                      color={proposer?.color ?? "blue"}
+                      width={16}
+                      height={10}
+                    />
+                    <span
+                      >{proposer?.name}: {t("investment_status_pending")}</span
+                    >
                   </div>
                   <div class="route-actions">
                     <button
@@ -1430,26 +1816,42 @@
                 </div>
               {/each}
             </div>
-          {:else if (!game.investmentRoutes || !game.investmentRoutes.some(r => r.playerAId === myPlayerId || r.playerBId === myPlayerId))}
+          {:else if !game.investmentRoutes || !game.investmentRoutes.some((r) => r.playerAId === myPlayerId || r.playerBId === myPlayerId)}
             <p class="empty-routes-hint">{t("investment_no_allies")}</p>
           {/if}
         </div>
 
         <!-- Border Trade Pending Deals -->
-        {#if game.borderTrades && game.borderTrades.some(d => d.status === "pending" && d.toPlayerId === myPlayerId)}
+        {#if game.borderTrades && game.borderTrades.some((d) => d.status === "pending" && d.toPlayerId === myPlayerId)}
           <div class="drawer-section-divider"></div>
           <div class="border-trade-section">
             <div class="routes-header">
-              <h5><Icon name="handshake" size={14} /> {t("border_trade_title")}</h5>
+              <h5>
+                <Icon name="handshake" size={14} />
+                {t("border_trade_title")}
+              </h5>
               <span class="routes-hint">{t("border_trade_sub")}</span>
             </div>
             <div class="pending-proposals-list">
-              {#each game.borderTrades.filter(d => d.status === "pending" && d.toPlayerId === myPlayerId) as d}
-                {@const seller = game.players.find(p => p.id === d.fromPlayerId)}
+              {#each game.borderTrades.filter((d) => d.status === "pending" && d.toPlayerId === myPlayerId) as d}
+                {@const seller = game.players.find(
+                  (p) => p.id === d.fromPlayerId,
+                )}
                 <div class="route-item pending">
                   <div class="route-info">
-                    <FactionFlag color={seller?.color ?? "blue"} width={16} height={10} />
-                    <span>{t("border_trade_pending_desc", { from: getTerritoryName(d.fromTerritoryId), to: getTerritoryName(d.toTerritoryId), resource: t(`res_${d.resource}`), price: d.price })}</span>
+                    <FactionFlag
+                      color={seller?.color ?? "blue"}
+                      width={16}
+                      height={10}
+                    />
+                    <span
+                      >{t("border_trade_pending_desc", {
+                        from: getTerritoryName(d.fromTerritoryId),
+                        to: getTerritoryName(d.toTerritoryId),
+                        resource: t(`res_${d.resource}`),
+                        price: d.price,
+                      })}</span
+                    >
                   </div>
                   <div class="route-actions">
                     <button
@@ -1480,10 +1882,16 @@
   .hud-panel {
     pointer-events: auto;
     backdrop-filter: blur(14px);
-    background: linear-gradient(180deg, rgba(11, 18, 33, 0.94) 0%, rgba(6, 11, 21, 0.96) 100%);
+    background: linear-gradient(
+      180deg,
+      rgba(11, 18, 33, 0.94) 0%,
+      rgba(6, 11, 21, 0.96) 100%
+    );
     border: 1px solid rgba(212, 175, 55, 0.44);
     border-radius: 7px;
-    box-shadow: 0 14px 36px rgba(0, 0, 0, 0.8), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+    box-shadow:
+      0 14px 36px rgba(0, 0, 0, 0.8),
+      inset 0 1px 0 rgba(255, 255, 255, 0.06);
     padding: 0.7rem 0.78rem;
     display: flex;
     flex-direction: column;
@@ -1506,7 +1914,11 @@
     display: flex;
     align-items: center;
     gap: 0.65rem;
-    background: linear-gradient(135deg, rgba(15, 23, 42, 0.95), rgba(30, 41, 59, 0.95));
+    background: linear-gradient(
+      135deg,
+      rgba(15, 23, 42, 0.95),
+      rgba(30, 41, 59, 0.95)
+    );
     border: 1px solid rgba(234, 179, 8, 0.7);
     box-shadow: 0 10px 25px rgba(0, 0, 0, 0.7);
     padding: 0.55rem 0.85rem;
@@ -2236,7 +2648,11 @@
     grid-row: 1;
     justify-self: center;
     align-self: start;
-    background: linear-gradient(180deg, rgba(11, 18, 33, 0.94) 0%, rgba(6, 11, 21, 0.96) 100%);
+    background: linear-gradient(
+      180deg,
+      rgba(11, 18, 33, 0.94) 0%,
+      rgba(6, 11, 21, 0.96) 100%
+    );
     border: 1px solid rgba(148, 163, 184, 0.35);
     border-radius: 7px;
     padding: 0.48rem 0.95rem;
@@ -2247,7 +2663,9 @@
   }
   .top-center-banner.my-turn-banner {
     border-color: rgba(234, 179, 8, 0.75);
-    box-shadow: 0 12px 30px rgba(0, 0, 0, 0.8), 0 0 20px rgba(234, 179, 8, 0.18);
+    box-shadow:
+      0 12px 30px rgba(0, 0, 0, 0.8),
+      0 0 20px rgba(234, 179, 8, 0.18);
   }
   .tc-main-row {
     display: flex;
@@ -2370,12 +2788,22 @@
     animation: pulseAlert 1.2s infinite;
   }
   @keyframes pulseBadge {
-    0%, 100% { box-shadow: 0 0 4px rgba(234, 179, 8, 0.3); }
-    50% { box-shadow: 0 0 14px rgba(234, 179, 8, 0.75); }
+    0%,
+    100% {
+      box-shadow: 0 0 4px rgba(234, 179, 8, 0.3);
+    }
+    50% {
+      box-shadow: 0 0 14px rgba(234, 179, 8, 0.75);
+    }
   }
   @keyframes pulseAlert {
-    0%, 100% { box-shadow: 0 0 4px rgba(239, 68, 68, 0.4); }
-    50% { box-shadow: 0 0 14px rgba(239, 68, 68, 0.85); }
+    0%,
+    100% {
+      box-shadow: 0 0 4px rgba(239, 68, 68, 0.4);
+    }
+    50% {
+      box-shadow: 0 0 14px rgba(239, 68, 68, 0.85);
+    }
   }
   .btn-exit-room {
     color: #94a3b8;
@@ -2571,7 +2999,11 @@
     position: absolute;
     top: calc(100% + 0.5rem);
     right: 0;
-    background: linear-gradient(180deg, rgba(11, 18, 33, 0.97) 0%, rgba(6, 11, 21, 0.98) 100%);
+    background: linear-gradient(
+      180deg,
+      rgba(11, 18, 33, 0.97) 0%,
+      rgba(6, 11, 21, 0.98) 100%
+    );
     border: 1px solid rgba(212, 175, 55, 0.45);
     border-radius: 7px;
     box-shadow: 0 16px 40px rgba(0, 0, 0, 0.9);
@@ -2586,6 +3018,7 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
+    gap: 0.5rem;
     border-bottom: 1px solid rgba(148, 163, 184, 0.15);
     padding-bottom: 0.35rem;
   }
@@ -2603,6 +3036,9 @@
     color: #94a3b8;
     font-size: 0.8rem;
     cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
   }
   .btn-close:hover {
     color: #f8fafc;
@@ -2897,11 +3333,37 @@
     font-weight: 600;
   }
 
-  /* Market Drawer */
+  /* Market Drawer (HEGEM-22 & HEGEM-82) */
   .market-drawer {
-    width: 360px;
+    width: 375px;
     max-height: calc(100vh - 120px);
     overflow-y: auto;
+  }
+  .market-header-right {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+  }
+  .market-treasury-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.28rem;
+    padding: 0.18rem 0.5rem;
+    border-radius: 4px;
+    background: linear-gradient(
+      135deg,
+      rgba(16, 185, 129, 0.2),
+      rgba(234, 179, 8, 0.16)
+    );
+    border: 1px solid rgba(52, 211, 153, 0.45);
+    color: #6ee7b7;
+    font-family: var(--font-mono);
+    font-size: 0.68rem;
+    white-space: nowrap;
+  }
+  .market-treasury-badge strong {
+    color: #ecfdf5;
+    font-weight: 800;
   }
   .drawer-sub {
     margin: 0;
@@ -2982,6 +3444,7 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
+    gap: 0.45rem;
   }
   .res-badge {
     display: flex;
@@ -2990,9 +3453,28 @@
     font-size: 0.76rem;
     color: #f8fafc;
   }
-  .res-stock-count {
-    font-size: 0.66rem;
-    color: #94a3b8;
+  .res-stock-pill {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.14rem 0.48rem;
+    border-radius: 4px;
+    background: rgba(16, 185, 129, 0.16);
+    border: 1px solid rgba(52, 211, 153, 0.45);
+    color: #a7f3d0;
+    font-family: var(--font-mono);
+    font-size: 0.68rem;
+    font-weight: 800;
+    white-space: nowrap;
+  }
+  .res-stock-pill.stock-low {
+    background: rgba(245, 158, 11, 0.16);
+    border-color: rgba(251, 191, 36, 0.45);
+    color: #fde68a;
+  }
+  .res-stock-pill.stock-empty {
+    background: rgba(127, 29, 29, 0.25);
+    border-color: rgba(248, 113, 113, 0.45);
+    color: #fca5a5;
   }
   .commodity-prices {
     display: flex;
@@ -3028,6 +3510,7 @@
     padding: 0.28rem 0.45rem;
     border-radius: 4px;
     cursor: pointer;
+    transition: all 0.15s ease;
   }
   .btn-trade.buy {
     background: rgba(220, 38, 38, 0.2);
@@ -3047,6 +3530,9 @@
     background: #10b981;
     color: #ffffff;
   }
+  .btn-trade.insufficient {
+    border-style: dashed;
+  }
   .btn-trade:disabled {
     opacity: 0.4;
     cursor: not-allowed;
@@ -3056,7 +3542,8 @@
     background: rgba(148, 163, 184, 0.15);
     margin: 0.2rem 0;
   }
-  .routes-section, .border-trade-section {
+  .routes-section,
+  .border-trade-section {
     display: flex;
     flex-direction: column;
     gap: 0.35rem;
@@ -3073,7 +3560,9 @@
     font-size: 0.62rem;
     color: #94a3b8;
   }
-  .routes-list, .pending-proposals-list, .eligible-partners-list {
+  .routes-list,
+  .pending-proposals-list,
+  .eligible-partners-list {
     display: flex;
     flex-direction: column;
     gap: 0.28rem;
