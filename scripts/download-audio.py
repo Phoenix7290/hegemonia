@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
 Hegemonia — Audio Assets Downloader & SFX Processor
-Downloads requested historical & Hoi4 soundtracks and military SFX for local testing.
-These audio files are ignored by git (.gitignore) to keep the repository clean and legal.
+Downloads requested military SFX for local testing.
+These audio files are ignored by git (.gitignore) to keep the repository clean.
 """
 
 import os
@@ -15,16 +15,9 @@ MUSIC_DIR = os.path.join(BASE_DIR, "apps/web/public/music")
 SFX_DIR = os.path.join(BASE_DIR, "apps/web/public/sfx")
 TMP_DIR = "/tmp/hegemonia_audio_tmp"
 
-TRACKS = [
-    ("https://youtu.be/A_kGaUY5cUM", "hoi4_axis_theme.mp3"),
-    ("https://youtu.be/xSjnN39Qhmc", "hoi4_katyusha.mp3"),
-    ("https://www.youtube.com/watch?v=Ee13rPImb1I", "the_second_european_war.mp3"),
-    ("https://www.youtube.com/watch?v=JqquBi4X31U", "tno_taboritsky_theme.mp3"),
-    ("https://www.youtube.com/watch?v=6PxlJLUqFzY", "hoi4_great_patriotic_war.mp3"),
-    ("https://www.youtube.com/watch?v=S0HqDefYnUw", "teufelslied.mp3"),
-    ("https://www.youtube.com/watch?v=ZJ26fFLNLB4", "tno_burgundian_lullaby.mp3"),
-    ("https://www.youtube.com/watch?v=u-qTuXDEnFo", "hoi4_bella_ciao.mp3"),
-]
+# Hegemonia uses procedural Web Audio synthesis by default to maintain ideological neutrality
+# and eliminate copyrighted content. Players can place an optional 'track1.mp3' in apps/web/public/music/.
+TRACKS = []
 
 SFX_ITEMS = [
     ("https://www.youtube.com/watch?v=dEHqgEjNsms", "raw_dice.mp3", "sfx_dice.mp3", "00:00:00", "1.5"),

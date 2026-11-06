@@ -40,20 +40,10 @@
       id: "ambient_procedural",
       label: "Marcha Tática (Sintetizador Web Audio)",
     },
-    { id: "hoi4_axis_theme.mp3", label: "Hearts of Iron IV — Axis Theme" },
-    { id: "hoi4_katyusha.mp3", label: "Hearts of Iron IV — Katyusha" },
     {
-      id: "hoi4_great_patriotic_war.mp3",
-      label: "Hearts of Iron IV — The Great Patriotic War",
+      id: "track1.mp3",
+      label: "Trilha Customizada Local (track1.mp3)",
     },
-    { id: "hoi4_bella_ciao.mp3", label: "Hearts of Iron IV — Bella Ciao" },
-    {
-      id: "the_second_european_war.mp3",
-      label: "The Fire Rises — The Second European War",
-    },
-    { id: "tno_taboritsky_theme.mp3", label: "TNO — The Mad Regent's Lullaby" },
-    { id: "tno_burgundian_lullaby.mp3", label: "TNO — Burgundian Lullaby" },
-    { id: "teufelslied.mp3", label: "Histórico — Teufelslied" },
   ];
 
   interface PlayerMetric {
