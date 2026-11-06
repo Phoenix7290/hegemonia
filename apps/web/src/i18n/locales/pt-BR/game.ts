@@ -375,6 +375,14 @@ export const ptBRGame: TranslationCatalog = {
   settings_combat_anim_fast: "Blitz (400ms)",
   settings_combat_anim_off: "Off (Instantâneo)",
   settings_combat_anim_hint: "Efeitos vetoriais no mapa por categoria de tropa sem bloquear o turno.",
+
+  // Exit Campaign Confirmation (HEGEM-106)
+  exit_button_tooltip: "Abandonar Campanha",
+  exit_confirm_title: "Abandonar Partida",
+  exit_confirm_subtitle: "Aviso de Evasão de Comando",
+  exit_confirm_desc: "Deseja realmente sair da partida? Seus territórios e exércitos permanecerão em campo sob controle defensivo da IA e você perderá a conexão com esta campanha.",
+  exit_confirm_cancel: "Permanecer na Partida",
+  exit_confirm_leave: "Abandonar Partida",
 };
 
 export const game = ptBRGame;

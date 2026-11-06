@@ -40,20 +40,10 @@
       id: "ambient_procedural",
       label: "Marcha Tática (Sintetizador Web Audio)",
     },
-    { id: "hoi4_axis_theme.mp3", label: "Hearts of Iron IV — Axis Theme" },
-    { id: "hoi4_katyusha.mp3", label: "Hearts of Iron IV — Katyusha" },
     {
-      id: "hoi4_great_patriotic_war.mp3",
-      label: "Hearts of Iron IV — The Great Patriotic War",
+      id: "track1.mp3",
+      label: "Trilha Customizada Local (track1.mp3)",
     },
-    { id: "hoi4_bella_ciao.mp3", label: "Hearts of Iron IV — Bella Ciao" },
-    {
-      id: "the_second_european_war.mp3",
-      label: "The Fire Rises — The Second European War",
-    },
-    { id: "tno_taboritsky_theme.mp3", label: "TNO — The Mad Regent's Lullaby" },
-    { id: "tno_burgundian_lullaby.mp3", label: "TNO — Burgundian Lullaby" },
-    { id: "teufelslied.mp3", label: "Histórico — Teufelslied" },
   ];
 
   interface PlayerMetric {
@@ -129,6 +119,7 @@
   let activeDiplomacyTargetId = $state<string | null>(null);
   let showContinents = $state(false);
   let marketBatchQty = $state(1);
+  let showExitConfirmModal = $state(false);
 
   // HEGEM-62: Backward compatibility bridge for callers using legacy mapMode
   $effect(() => {
@@ -975,10 +966,17 @@
 
         <button
           class="hud-btn btn-exit-room"
-          onclick={leaveCurrentRoom}
-          title={t("victory_return_btn")}
+          onclick={() => {
+            sound.playClick();
+            if (game?.phase === "game_over") {
+              leaveCurrentRoom();
+            } else {
+              showExitConfirmModal = true;
+            }
+          }}
+          title={t("exit_button_tooltip")}
         >
-          <Icon name="back" size={14} />
+          <Icon name="logout" size={14} />
         </button>
       </div>
     </div>
@@ -1876,6 +1874,59 @@
       </div>
     {/if}
   </aside>
+{/if}
+
+{#if showExitConfirmModal}
+  <div
+    class="exit-modal-backdrop"
+    onclick={() => (showExitConfirmModal = false)}
+    onkeydown={(e) => {
+      if (e.key === "Escape") showExitConfirmModal = false;
+    }}
+    role="presentation"
+  >
+    <div
+      class="exit-modal-box"
+      tabindex="-1"
+      onclick={(e) => e.stopPropagation()}
+      onkeydown={(e) => e.stopPropagation()}
+      role="dialog"
+      aria-modal="true"
+    >
+      <div class="exit-modal-header">
+        <div class="exit-modal-icon-badge">
+          <Icon name="logout" size={20} />
+        </div>
+        <div class="exit-modal-titles">
+          <h4>{t("exit_confirm_title")}</h4>
+          <span class="exit-modal-sub">{t("exit_confirm_subtitle")}</span>
+        </div>
+      </div>
+      <p class="exit-modal-desc">
+        {t("exit_confirm_desc")}
+      </p>
+      <div class="exit-modal-actions">
+        <button
+          type="button"
+          class="btn-cancel"
+          onclick={() => (showExitConfirmModal = false)}
+        >
+          {t("exit_confirm_cancel")}
+        </button>
+        <button
+          type="button"
+          class="btn-confirm-leave"
+          onclick={() => {
+            showExitConfirmModal = false;
+            leaveCurrentRoom();
+          }}
+        >
+          <Icon name="logout" size={14} />
+          {t("exit_confirm_leave")}
+        </button>
+      </div>
+    </div>
+  </div>
 {/if}
 
 <style>
@@ -2806,7 +2857,127 @@
     }
   }
   .btn-exit-room {
+    color: #ef4444;
+    background: rgba(239, 68, 68, 0.12);
+    border-color: rgba(239, 68, 68, 0.35);
+    transition: all 0.15s ease;
+  }
+
+  .btn-exit-room:hover {
+    color: #fca5a5;
+    background: rgba(239, 68, 68, 0.25);
+    border-color: #ef4444;
+    box-shadow: 0 0 10px rgba(239, 68, 68, 0.35);
+  }
+
+  /* Exit Campaign Modal (HEGEM-106) */
+  .exit-modal-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(3, 7, 18, 0.78);
+    backdrop-filter: blur(8px);
+    z-index: 9999;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1rem;
+    pointer-events: auto;
+  }
+
+  .exit-modal-box {
+    background: #0f172a;
+    border: 1px solid rgba(239, 68, 68, 0.45);
+    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.75), 0 0 28px rgba(239, 68, 68, 0.2);
+    border-radius: 12px;
+    padding: 1.5rem;
+    max-width: 440px;
+    width: 100%;
+    color: #f8fafc;
+  }
+
+  .exit-modal-header {
+    display: flex;
+    align-items: center;
+    gap: 0.85rem;
+    margin-bottom: 1rem;
+  }
+
+  .exit-modal-icon-badge {
+    width: 42px;
+    height: 42px;
+    border-radius: 8px;
+    background: rgba(239, 68, 68, 0.15);
+    border: 1px solid rgba(239, 68, 68, 0.4);
+    color: #ef4444;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+
+  .exit-modal-titles h4 {
+    margin: 0;
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: #f8fafc;
+  }
+
+  .exit-modal-sub {
+    font-size: 0.72rem;
+    color: #ef4444;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+  }
+
+  .exit-modal-desc {
+    margin: 0 0 1.25rem 0;
+    font-size: 0.85rem;
+    line-height: 1.5;
     color: #94a3b8;
+  }
+
+  .exit-modal-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.65rem;
+  }
+
+  .exit-modal-actions .btn-cancel {
+    padding: 0.5rem 1rem;
+    font-size: 0.8rem;
+    font-weight: 600;
+    background: rgba(148, 163, 184, 0.1);
+    border: 1px solid rgba(148, 163, 184, 0.25);
+    color: #cbd5e1;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+
+  .exit-modal-actions .btn-cancel:hover {
+    background: rgba(148, 163, 184, 0.2);
+    color: #fff;
+  }
+
+  .exit-modal-actions .btn-confirm-leave {
+    padding: 0.5rem 1rem;
+    font-size: 0.8rem;
+    font-weight: 600;
+    background: #dc2626;
+    border: 1px solid #ef4444;
+    color: #fff;
+    border-radius: 6px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    transition: all 0.15s ease;
+  }
+
+  .exit-modal-actions .btn-confirm-leave:hover {
+    background: #b91c1c;
+    box-shadow: 0 0 14px rgba(239, 68, 68, 0.5);
   }
 
   /* Economy Bar */
