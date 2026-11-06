@@ -149,6 +149,9 @@ function stepSimulation(
         }
       }
     }
+    if (state.phase === "deploy" && player.unplacedArmies === 0 && state.round > 1) {
+      return applyAction(state, player.id, { type: "end_deploy" }, rng);
+    }
     // If deploy cannot proceed, force advance turn
     if (state.round === 1) {
       player.unplacedArmies = 0;
@@ -260,8 +263,10 @@ describe("QA Layer 1: Headless Simulation & Invariant Testing", () => {
 
     // Execute step: bot should successfully bypass encircled Peru and deploy in Brasil
     state = stepSimulation(state, rng, mapById);
-
     expect(state.territories["brasil"].armies).toBeGreaterThanOrEqual(1);
+
+    // Conclude deploy phase manually (HEGEM-96)
+    state = stepSimulation(state, rng, mapById);
     expect(state.phase).toBe("attack"); // successfully completed deploy phase
   });
 

@@ -643,7 +643,7 @@ describe("Diplomacy, Treaties, World Tension and Coalitions", () => {
 
     // Round advanced to 2
     expect(state.round).toBe(2);
-    expect(state.worldTension).toBe(1.5);
+    expect(state.worldTension).toBe(3.0);
     expect(state.players[0].infamy).toBe(5);
   });
 });
@@ -1545,6 +1545,51 @@ describe("Combined Arms and Infantry Escort (HEGEM-27)", () => {
     expect(state.territories["argentina"].armies).toBe(3);
   });
 
+  it("allows occupying with >3 armies and flexible compositions including pure tanks (HEGEM-88)", () => {
+    let { state, activeId, defenderId } = createUnitTestState("attack");
+    state.round = 2;
+    state.territories["sao_paulo"].ownerId = activeId;
+    state.territories["sao_paulo"].units = unitCounts(1, 5); // 1 infantry + 5 tanks = 6 armies
+    state.territories["sao_paulo"].armies = 6;
+    state.territories["argentina"].ownerId = defenderId;
+    state.territories["argentina"].units = unitCounts(1);
+    state.territories["argentina"].armies = 1;
+
+    // São Paulo attacks Argentina with 4 tanks
+    state = applyAction(
+      state,
+      activeId,
+      {
+        type: "attack",
+        fromTerritoryId: "sao_paulo",
+        toTerritoryId: "argentina",
+        diceCount: 3,
+        units: unitCounts(0, 4), // 4 tanks
+      },
+      combatRng([6, 6, 6, 1])
+    );
+
+    // Conquest pending: maxMove should be 4 (not capped to 3!)
+    expect(state.pendingConquest).toBeDefined();
+    expect(state.pendingConquest?.maxMove).toBe(4);
+
+    // Player occupies with all 4 tanks (moving > 3 armies without requiring infantry!)
+    state = applyAction(
+      state,
+      activeId,
+      { type: "occupy", armies: 4, units: unitCounts(0, 4) },
+      combatRng([])
+    );
+
+    expect(state.pendingConquest).toBeNull();
+    // Origin keeps 1 infantry and 1 tank (2 armies total)
+    expect(getTerritoryUnits(state.territories["sao_paulo"])).toEqual(unitCounts(1, 1));
+    expect(state.territories["sao_paulo"].armies).toBe(2);
+    // Destination gets all 4 tanks (4 armies total)
+    expect(getTerritoryUnits(state.territories["argentina"])).toEqual(unitCounts(0, 4));
+    expect(state.territories["argentina"].armies).toBe(4);
+  });
+
   it("preserves compositions in maneuver, blocks second movement, and restricts airlift to infantry", () => {
     let { state, activeId } = createUnitTestState("maneuver");
     for (const territoryId of ["sao_paulo", "argentina", "peru", "japao"]) {
@@ -2404,16 +2449,16 @@ describe("Advanced Artillery Mechanics, Maintenance & Escort Vulnerability (HEGE
 
       expect(state.worldTension).toBe(0);
 
-      // 1. Round advancement should increase by +1.5%
+      // 1. Round advancement should increase by +3.0% (for <= 3 players)
       state.round = 1;
       state.phase = "maneuver";
       state.turnIndex = state.players.length - 1;
       const lastPlayer = state.players[state.turnIndex];
       state = applyAction(state, lastPlayer.id, { type: "end_turn" }, rng);
       expect(state.round).toBe(2);
-      expect(state.worldTension).toBe(1.5);
+      expect(state.worldTension).toBe(3.0);
 
-      // 2. Artillery barrage should add +0.2%
+      // 2. Artillery barrage should add +0.3%
       const currP = state.players[state.turnIndex];
       currP.unplacedArmies = 0;
       state.phase = "attack";
@@ -2431,9 +2476,9 @@ describe("Advanced Artillery Mechanics, Maintenance & Escort Vulnerability (HEGE
         { type: "artillery_barrage", fromTerritoryId: "brasil", toTerritoryId: "venezuela" },
         rng
       );
-      expect(state.worldTension).toBe(1.7);
+      expect(state.worldTension).toBe(3.3);
 
-      // 3. Common conquest should add +0.1%
+      // 3. Common conquest should add +1.0%
       state.territories["brasil"].units = unitCounts(10, 0, 0, 0, 0);
       state.territories["brasil"].armies = 10;
       state.territories["venezuela"].units = unitCounts(1, 0, 0, 0, 0);
@@ -2451,7 +2496,7 @@ describe("Advanced Artillery Mechanics, Maintenance & Escort Vulnerability (HEGE
         { type: "attack", fromTerritoryId: "brasil", toTerritoryId: "venezuela" },
         rng
       );
-      expect(state.worldTension).toBe(1.8); // 1.7 + 0.1
+      expect(state.worldTension).toBe(4.3); // 3.3 + 1.0
       expect(state.lastCombat?.attackerUnits).toEqual(unitCounts(9, 0, 0, 0, 0));
       expect(state.lastStrike).toEqual({
         kind: "artillery_barrage",
@@ -2461,6 +2506,47 @@ describe("Advanced Artillery Mechanics, Maintenance & Escort Vulnerability (HEGE
         round: 2,
       });
     });
+  });
+});
+
+describe("HEGEM-96: Manual Deploy Phase Transition (end_deploy)", () => {
+  it("does not automatically advance from deploy to attack when unplacedArmies hits 0 in round > 1", () => {
+    const rng = createSeededRng("seed_hegem_96");
+    let state = createGame({
+      id: "g_hegem_96",
+      seed: "hegem_96_seed",
+      players: [
+        { id: "p1", name: "Alice", color: "blue" },
+        { id: "p2", name: "Bob", color: "red" },
+      ],
+    });
+
+    state.round = 2;
+    state.phase = "deploy";
+    state.turnIndex = 0;
+    const p1 = state.players[0];
+    p1.unplacedArmies = 3;
+
+    const owned = Object.values(state.territories).find((t) => t.ownerId === p1.id)!;
+    state = applyAction(state, p1.id, { type: "deploy", territoryId: owned.id, armies: 3 }, rng);
+
+    expect(state.players[0].unplacedArmies).toBe(0);
+    // Player remains in deploy phase!
+    expect(state.phase).toBe("deploy");
+
+    // Player cannot end_deploy if in round 1
+    state.round = 1;
+    expect(() => applyAction(state, p1.id, { type: "end_deploy" }, rng)).toThrow(/primeira rodada/);
+    state.round = 2;
+
+    // Player cannot end_deploy if unplacedArmies > 0
+    state.players[0].unplacedArmies = 1;
+    expect(() => applyAction(state, p1.id, { type: "end_deploy" }, rng)).toThrow(/Posicione todas as tropas/);
+    state.players[0].unplacedArmies = 0;
+
+    // Player explicitly concludes deploy phase and advances to attack
+    state = applyAction(state, p1.id, { type: "end_deploy" }, rng);
+    expect(state.phase).toBe("attack");
   });
 });
 
