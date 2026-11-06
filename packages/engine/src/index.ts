@@ -1074,6 +1074,7 @@ export function applyAction(
   }
 
   const isOutOfTurnAction =
+    action.type === "market_trade" ||
     action.type === "select_doctrine" ||
     action.type === "propose_treaty" ||
     action.type === "accept_treaty" ||
@@ -1426,23 +1427,23 @@ case "select_doctrine": {
             tempSell + cfg.step
           );
         }
-        if (currentPlayer.resources.money < totalCost) {
+        if (actingPlayer.resources.money < totalCost) {
           throw new Error(
-            `Dinheiro insuficiente para comprar ${action.quantity}x ${resName}. Necessários $${totalCost}, você possui $${currentPlayer.resources.money}.`
+            `Dinheiro insuficiente para comprar ${action.quantity}x ${resName}. Necessários $${totalCost}, você possui $${actingPlayer.resources.money}.`
           );
         }
-        currentPlayer.resources.money -= totalCost;
-        currentPlayer.resources[action.resource] += action.quantity;
+        actingPlayer.resources.money -= totalCost;
+        actingPlayer.resources[action.resource] += action.quantity;
         marketPrice.buyPrice = tempBuy;
         marketPrice.sellPrice = tempSell;
 
         state.log.push(
-          `📈 MERCADO GLOBAL: ${currentPlayer.name} comprou ${action.quantity}x ${resName} por $${totalCost}. (Novo Preço: Compra $${tempBuy} / Venda $${tempSell})`
+          `📈 MERCADO GLOBAL: ${actingPlayer.name} comprou ${action.quantity}x ${resName} por $${totalCost}. (Novo Preço: Compra $${tempBuy} / Venda $${tempSell})`
         );
       } else {
-        if (currentPlayer.resources[action.resource] < action.quantity) {
+        if (actingPlayer.resources[action.resource] < action.quantity) {
           throw new Error(
-            `Estoque insuficiente de ${resName}. Você possui ${currentPlayer.resources[action.resource]}, tentativa de vender ${action.quantity}.`
+            `Estoque insuficiente de ${resName}. Você possui ${actingPlayer.resources[action.resource]}, tentativa de vender ${action.quantity}.`
           );
         }
         let totalRevenue = 0;
@@ -1456,13 +1457,13 @@ case "select_doctrine": {
             tempBuy - cfg.step
           );
         }
-        currentPlayer.resources[action.resource] -= action.quantity;
-        currentPlayer.resources.money += totalRevenue;
+        actingPlayer.resources[action.resource] -= action.quantity;
+        actingPlayer.resources.money += totalRevenue;
         marketPrice.buyPrice = tempBuy;
         marketPrice.sellPrice = tempSell;
 
         state.log.push(
-          `📉 MERCADO GLOBAL: ${currentPlayer.name} vendeu ${action.quantity}x ${resName} por $${totalRevenue}. (Novo Preço: Compra $${tempBuy} / Venda $${tempSell})`
+          `📉 MERCADO GLOBAL: ${actingPlayer.name} vendeu ${action.quantity}x ${resName} por $${totalRevenue}. (Novo Preço: Compra $${tempBuy} / Venda $${tempSell})`
         );
       }
       break;
