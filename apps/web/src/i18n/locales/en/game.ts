@@ -303,7 +303,7 @@ export const enGame: TranslationCatalog = {
   building_coastal_only: "Coastal Only",
   airlift_btn_label: "Strategic Airlift (Airfield)",
 
-  // Global Dynamic Market & Trade (HEGEM-22)
+  // Global Dynamic Market & Trade (HEGEM-22 & HEGEM-82)
   market_modal_title: "Global Commodity Market",
   market_modal_sub: "Dynamic AoE2-style pricing. Trade surpluses and purchase vital raw materials.",
   market_locked_notice: "Access Blocked: Construct at least one Market in your territory to trade on the global exchange.",
@@ -316,6 +316,11 @@ export const enGame: TranslationCatalog = {
   market_batch_qty: "Batch: {qty}x",
   market_est_cost: "Est. Cost",
   market_est_revenue: "Est. Revenue",
+  market_treasury_balance: "Treasury: ${amount}",
+  market_your_stock: "Your Stock: {count}",
+  market_insufficient_funds: "Insufficient Treasury funds",
+  market_insufficient_stock: "Insufficient stock for batch",
+  market_only_your_turn: "Only on your turn",
 
   // Allied Investment Routes (HEGEM-22)
   investment_routes_title: "Allied Investment Routes",
