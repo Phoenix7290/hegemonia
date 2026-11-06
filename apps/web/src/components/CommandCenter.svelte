@@ -90,8 +90,8 @@
     red: "#ef4444",
     green: "#10b981",
     yellow: "#f59e0b",
-    black: "#0f172a",
-    white: "#f8fafc",
+    black: "#21262B",
+    white: "#F0F0F5",
   };
 
   const ALL_COLORS: PlayerColor[] = [

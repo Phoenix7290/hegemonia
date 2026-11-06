@@ -27,7 +27,7 @@
     green: "#10b981",
     yellow: "#f59e0b",
     black: "#cbd5e1",
-    white: "#f8fafc",
+    white: "#F0F0F5",
   };
 
   interface ParsedLogEntry {

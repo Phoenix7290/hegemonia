@@ -19,7 +19,7 @@
     <rect width="24" height="16" fill="#1d4ed8" />
     <rect y="6.5" width="24" height="3" fill="#93c5fd" opacity="0.45" />
     <rect x="10.5" width="3" height="16" fill="#93c5fd" opacity="0.45" />
-    <polygon points="12,2 14,6 18,8 14,10 12,14 10,10 6,8 10,6" fill="#f8fafc" />
+    <polygon points="12,2 14,6 18,8 14,10 12,14 10,10 6,8 10,6" fill="#F0F0F5" />
   {:else if color === "red"}
     <rect width="24" height="16" fill="#b91c1c" />
     <path d="M0,0 L24,16 M24,0 L0,16" stroke="#fca5a5" stroke-width="2.2" opacity="0.5" />
@@ -33,15 +33,15 @@
     <rect width="24" height="16" fill="#d97706" />
     <rect y="0" width="24" height="4" fill="#1e293b" />
     <rect y="12" width="24" height="4" fill="#1e293b" />
-    <circle cx="12" cy="8" r="3.2" fill="#fef08a" stroke="#0f172a" stroke-width="1" />
+    <circle cx="12" cy="8" r="3.2" fill="#fef08a" stroke="#21262B" stroke-width="1" />
   {:else if color === "black"}
-    <rect width="24" height="16" fill="#0f172a" />
+    <rect width="24" height="16" fill="#21262B" />
     <path d="M0,8 H24 M12,0 V16" stroke="#cbd5e1" stroke-width="3.2" />
-    <path d="M0,8 H24 M12,0 V16" stroke="#0f172a" stroke-width="1.4" />
-    <rect x="9.5" y="5.5" width="5" height="5" fill="#f8fafc" />
+    <path d="M0,8 H24 M12,0 V16" stroke="#21262B" stroke-width="1.4" />
+    <rect x="9.5" y="5.5" width="5" height="5" fill="#F0F0F5" />
   {:else}
-    <rect width="24" height="16" fill="#f8fafc" />
-    <path d="M0,8 H24 M9,0 V16" stroke="#0f172a" stroke-width="3" />
+    <rect width="24" height="16" fill="#F0F0F5" />
+    <path d="M0,8 H24 M9,0 V16" stroke="#21262B" stroke-width="3" />
     <circle cx="9" cy="8" r="2.2" fill="#f59e0b" />
   {/if}
   <rect width="24" height="16" fill="none" stroke="rgba(255,255,255,0.38)" stroke-width="1" />

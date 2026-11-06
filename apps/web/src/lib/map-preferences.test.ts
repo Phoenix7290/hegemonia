@@ -166,15 +166,15 @@ describe("Map Preferences & Overlays (HEGEM-62)", () => {
     );
     const tmSource = fs.readFileSync(tacticalMapPath, "utf8");
 
-    expect(tmSource).toContain('black: "#0f172a"');
-    expect(tmSource).toContain('white: "#f8fafc"');
+    expect(tmSource).toContain('black: "#21262B"');
+    expect(tmSource).toContain('white: "#F0F0F5"');
     expect(tmSource).not.toContain('black: "#475569"');
     expect(tmSource).not.toContain('white: "#94a3b8"');
 
-    expect(tmSource).toContain("fill={isWhite");
-    expect(tmSource).toContain("#1e293b");
+    expect(tmSource).toContain('fill={isBlack ? "#F0F0F5" : "#090e1a"}');
+    expect(tmSource).toContain('isBlack ? "#21262B"');
     expect(tmSource).toContain("#cbd5e1");
-    expect(tmSource).toContain('fill={isWhite ? "#0f172a" : "#ffffff"}');
+    expect(tmSource).toContain('fill={isBlack ? "#21262B" : "#ffffff"}');
 
     const flagPath = path.resolve(
       import.meta.dirname,
@@ -182,8 +182,8 @@ describe("Map Preferences & Overlays (HEGEM-62)", () => {
     );
     const flagSource = fs.readFileSync(flagPath, "utf8");
     expect(flagSource).toContain('color === "black"');
-    expect(flagSource).toContain("#0f172a");
+    expect(flagSource).toContain("#21262B");
     expect(flagSource).toContain("#cbd5e1");
-    expect(flagSource).toContain("#f8fafc");
+    expect(flagSource).toContain("#F0F0F5");
   });
 });

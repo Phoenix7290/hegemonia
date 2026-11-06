@@ -31,8 +31,8 @@
     red: "#ef4444",
     green: "#10b981",
     yellow: "#f59e0b",
-    black: "#0f172a",
-    white: "#f8fafc",
+    black: "#21262B",
+    white: "#F0F0F5",
   };
 
   const SOUNDTRACKS = [
@@ -696,7 +696,7 @@
           {#each playerMetrics as m}
             <div
               class="hegemony-segment"
-              style="width: {m.sharePct}%; background: {m.player.color === 'black' ? '#1e293b' : COLOR_HEX[
+              style="width: {m.sharePct}%; background: {m.player.color === 'black' ? '#21262B' : COLOR_HEX[
                 m.player.color
               ]}; {m.player.color === 'black' ? 'box-shadow: inset 0 0 0 1px #cbd5e1;' : ''}"
               title="{m.player.name}: {m.sharePct}% ({m.terrCount} {t(
