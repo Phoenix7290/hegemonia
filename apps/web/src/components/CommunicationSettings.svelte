@@ -29,7 +29,9 @@
   function keyLabel(code: string): string {
     if (code.startsWith("Key")) return code.slice(3);
     if (code.startsWith("Digit")) return code.slice(5);
-    return code.replace("Arrow", t("key_arrow") + " ").replace("Space", t("key_space"));
+    return code
+      .replace("Arrow", t("key_arrow") + " ")
+      .replace("Space", t("key_space"));
   }
 
   function captureKey(event: KeyboardEvent): void {
@@ -59,14 +61,31 @@
 <svelte:window onkeydown={captureKey} />
 
 <!-- svelte-ignore a11y_click_events_have_key_events -->
-<div class="settings-layer" use:portal role="presentation" onclick={handleBackdropClick}>
-  <div class="settings-dialog" role="dialog" aria-modal="true" aria-labelledby="comms-settings-title">
+<div
+  class="settings-layer"
+  use:portal
+  role="presentation"
+  onclick={handleBackdropClick}
+>
+  <div
+    class="settings-dialog"
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="comms-settings-title"
+  >
     <header class="settings-header">
       <div>
         <span class="eyebrow">{t("comms_settings_eyebrow")}</span>
-        <h3 id="comms-settings-title"><Icon name="settings" size={17} /> {t("comms_settings_title")}</h3>
+        <h3 id="comms-settings-title">
+          <Icon name="settings" size={17} />
+          {t("comms_settings_title")}
+        </h3>
       </div>
-      <button class="icon-button" onclick={onClose} aria-label={t("comms_close_settings")}>
+      <button
+        class="icon-button"
+        onclick={onClose}
+        aria-label={t("comms_close_settings")}
+      >
         <Icon name="close" size={17} />
       </button>
     </header>
@@ -98,7 +117,8 @@
             <button
               type="button"
               class:active={controller.settings.chatSize === "expanded"}
-              onclick={() => controller.updateSettings({ chatSize: "expanded" })}
+              onclick={() =>
+                controller.updateSettings({ chatSize: "expanded" })}
             >
               {t("comms_size_expanded")}
             </button>
@@ -106,43 +126,78 @@
         </div>
 
         <label class="toggle-row">
-          <span><strong>{t("comms_opt_avatars_label")}</strong><small>{t("comms_opt_avatars_desc")}</small></span>
+          <span
+            ><strong>{t("comms_opt_avatars_label")}</strong><small
+              >{t("comms_opt_avatars_desc")}</small
+            ></span
+          >
           <input
             type="checkbox"
             checked={controller.settings.showAvatars}
-            onchange={(event) => controller.updateSettings({ showAvatars: event.currentTarget.checked })}
+            onchange={(event) =>
+              controller.updateSettings({
+                showAvatars: event.currentTarget.checked,
+              })}
           />
         </label>
         <label class="toggle-row">
-          <span><strong>{t("comms_opt_timestamps_label")}</strong><small>{t("comms_opt_timestamps_desc")}</small></span>
+          <span
+            ><strong>{t("comms_opt_timestamps_label")}</strong><small
+              >{t("comms_opt_timestamps_desc")}</small
+            ></span
+          >
           <input
             type="checkbox"
             checked={controller.settings.showTimestamps}
-            onchange={(event) => controller.updateSettings({ showTimestamps: event.currentTarget.checked })}
+            onchange={(event) =>
+              controller.updateSettings({
+                showTimestamps: event.currentTarget.checked,
+              })}
           />
         </label>
         <label class="toggle-row">
-          <span><strong>{t("comms_opt_enter_send_label")}</strong><small>{t("comms_opt_enter_send_desc")}</small></span>
+          <span
+            ><strong>{t("comms_opt_enter_send_label")}</strong><small
+              >{t("comms_opt_enter_send_desc")}</small
+            ></span
+          >
           <input
             type="checkbox"
             checked={controller.settings.enterToSend}
-            onchange={(event) => controller.updateSettings({ enterToSend: event.currentTarget.checked })}
+            onchange={(event) =>
+              controller.updateSettings({
+                enterToSend: event.currentTarget.checked,
+              })}
           />
         </label>
         <label class="toggle-row">
-          <span><strong>{t("comms_opt_intel_label")}</strong><small>{t("comms_opt_intel_desc")}</small></span>
+          <span
+            ><strong>{t("comms_opt_intel_label")}</strong><small
+              >{t("comms_opt_intel_desc")}</small
+            ></span
+          >
           <input
             type="checkbox"
             checked={controller.settings.showIntel}
-            onchange={(event) => controller.updateSettings({ showIntel: event.currentTarget.checked })}
+            onchange={(event) =>
+              controller.updateSettings({
+                showIntel: event.currentTarget.checked,
+              })}
           />
         </label>
         <label class="toggle-row">
-          <span><strong>{t("comms_opt_sound_label")}</strong><small>{t("comms_opt_sound_desc")}</small></span>
+          <span
+            ><strong>{t("comms_opt_sound_label")}</strong><small
+              >{t("comms_opt_sound_desc")}</small
+            ></span
+          >
           <input
             type="checkbox"
             checked={controller.settings.notificationSound}
-            onchange={(event) => controller.updateSettings({ notificationSound: event.currentTarget.checked })}
+            onchange={(event) =>
+              controller.updateSettings({
+                notificationSound: event.currentTarget.checked,
+              })}
           />
         </label>
       </section>
@@ -171,9 +226,20 @@
 
         {#if controller.settings.pushToTalk}
           <div class="key-row">
-            <span><strong>{t("comms_key_ptt_label")}</strong><small>{t("comms_key_ptt_desc")}</small></span>
-            <button type="button" class:capturing={capturingKey} class="key-capture" onclick={() => (capturingKey = true)}>
-              {capturingKey ? t("comms_key_press_key") : keyLabel(controller.settings.pushToTalkKey)}
+            <span
+              ><strong>{t("comms_key_ptt_label")}</strong><small
+                >{t("comms_key_ptt_desc")}</small
+              ></span
+            >
+            <button
+              type="button"
+              class:capturing={capturingKey}
+              class="key-capture"
+              onclick={() => (capturingKey = true)}
+            >
+              {capturingKey
+                ? t("comms_key_press_key")
+                : keyLabel(controller.settings.pushToTalkKey)}
             </button>
           </div>
         {/if}
@@ -183,12 +249,16 @@
           <select
             id="microphone-select"
             value={controller.settings.microphoneId}
-            onchange={(event) => controller.updateSettings({ microphoneId: event.currentTarget.value })}
+            onchange={(event) =>
+              controller.updateSettings({
+                microphoneId: event.currentTarget.value,
+              })}
           >
             <option value="">{t("comms_mic_default")}</option>
             {#each controller.microphones as microphone, index}
               <option value={microphone.deviceId}>
-                {microphone.label || t("comms_mic_fallback", { index: index + 1 })}
+                {microphone.label ||
+                  t("comms_mic_fallback", { index: index + 1 })}
               </option>
             {/each}
           </select>
@@ -197,7 +267,8 @@
         <div class="field-block">
           <div class="volume-label">
             <span class="field-label">{t("comms_volume_voices")}</span>
-            <strong>{Math.round(controller.settings.voiceVolume * 100)}%</strong>
+            <strong>{Math.round(controller.settings.voiceVolume * 100)}%</strong
+            >
           </div>
           <input
             aria-label={t("comms_volume_voices")}
@@ -206,7 +277,10 @@
             max="1"
             step="0.05"
             value={controller.settings.voiceVolume}
-            oninput={(event) => controller.updateSettings({ voiceVolume: Number(event.currentTarget.value) })}
+            oninput={(event) =>
+              controller.updateSettings({
+                voiceVolume: Number(event.currentTarget.value),
+              })}
           />
         </div>
       </section>
@@ -214,7 +288,9 @@
 
     <footer class="settings-footer">
       <span>{t("comms_settings_saved_hint")}</span>
-      <button type="button" class="primary-button" onclick={onClose}>{t("comms_settings_btn_done")}</button>
+      <button type="button" class="primary-button" onclick={onClose}
+        >{t("comms_settings_btn_done")}</button
+      >
     </footer>
   </div>
 </div>
@@ -352,7 +428,9 @@
     height: 12px;
     border-radius: 50%;
     background: #94a3b8;
-    transition: transform 0.15s, background 0.15s;
+    transition:
+      transform 0.15s,
+      background 0.15s;
   }
   input[type="checkbox"]:checked {
     background: #a16207;
@@ -433,10 +511,16 @@
     color: #090d16;
   }
   @keyframes pulse {
-    to { box-shadow: 0 0 12px rgba(234, 179, 8, 0.4); }
+    to {
+      box-shadow: 0 0 12px rgba(234, 179, 8, 0.4);
+    }
   }
   @media (max-width: 680px) {
-    .settings-content { grid-template-columns: 1fr; }
-    .settings-footer { align-items: flex-end; }
+    .settings-content {
+      grid-template-columns: 1fr;
+    }
+    .settings-footer {
+      align-items: flex-end;
+    }
   }
 </style>

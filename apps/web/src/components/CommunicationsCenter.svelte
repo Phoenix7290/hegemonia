@@ -480,9 +480,13 @@
   .communications-center {
     position: relative;
     display: flex;
+    flex: 1;
     flex-direction: column;
+    min-width: 0;
     min-height: 0;
     height: 100%;
+    max-height: 100%;
+    overflow: hidden;
     color: #e2e8f0;
   }
   .comms-toolbar {
@@ -821,9 +825,13 @@
     display: flex;
     flex: 1;
     flex-direction: column;
-    min-height: 100px;
+    min-width: 0;
+    min-height: 0;
     gap: 6px;
     overflow-y: auto;
+    overflow-x: hidden;
+    overflow-wrap: anywhere;
+    word-break: break-word;
     padding: 7px 3px 7px 0;
     user-select: text;
   }
@@ -831,6 +839,7 @@
     display: flex;
     align-items: flex-start;
     gap: 7px;
+    min-width: 0;
     padding: 5px 6px;
     background: rgba(15, 23, 42, 0.48);
     border-left: 2px solid #334155;
@@ -881,12 +890,14 @@
     font-size: 0.7rem;
     line-height: 1.35;
     overflow-wrap: anywhere;
+    word-break: break-word;
     white-space: pre-wrap;
   }
   .intel-message {
     display: flex;
     align-items: center;
     gap: 7px;
+    min-width: 0;
     padding: 6px 8px;
     background: repeating-linear-gradient(
       135deg,
@@ -904,6 +915,7 @@
   }
   .intel-message > div {
     flex: 1;
+    min-width: 0;
   }
   .intel-message strong {
     color: #7dd3fc;
@@ -914,6 +926,8 @@
   .intel-message p {
     color: #bae6fd;
     font-size: 0.66rem;
+    overflow-wrap: anywhere;
+    word-break: break-word;
   }
   .empty-channel {
     display: flex;
@@ -962,109 +976,32 @@
   .composer-actions > small {
     color: #475569;
     font-family: var(--font-mono);
-    font-size: 0.5rem;
+    font-size: 0.55rem;
   }
   .send-button {
     display: inline-flex;
     align-items: center;
     gap: 4px;
-    min-height: 34px;
-    padding: 6px 8px;
+    height: 34px;
+    padding: 0 10px;
     background: linear-gradient(135deg, #eab308, #a16207);
-    border-color: #fde047;
-    color: #090d16;
-    font-size: 0.63rem;
+    border: 1px solid #fef08a;
+    border-radius: 4px;
+    color: #050911;
+    font-family: var(--font-tactical);
+    font-size: 0.66rem;
+    font-weight: 800;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
   }
-  .compact .radio-identity small {
+  .send-button:disabled {
+    opacity: 0.45;
+  }
+  .compact .radio-console {
+    min-height: 36px;
+    padding: 4px 5px;
+  }
+  .compact .send-button > span {
     display: none;
-  }
-  .compact .channel-status-line small {
-    display: none;
-  }
-  .compact .messages-scroller {
-    min-height: 90px;
-  }
-
-  .communications-center.size-large .channel-select {
-    font-size: 0.74rem;
-    max-width: 165px;
-    padding: 5px 8px;
-  }
-  .communications-center.size-large .channel-tab {
-    max-width: 185px;
-  }
-  .communications-center.size-large .sender-name {
-    font-size: 0.75rem;
-  }
-  .communications-center.size-large .message-body p {
-    font-size: 0.79rem;
-    line-height: 1.42;
-  }
-  .communications-center.size-large .intel-message p {
-    font-size: 0.74rem;
-  }
-  .communications-center.size-large textarea {
-    font-size: 0.78rem;
-    min-height: 40px;
-  }
-  .communications-center.size-large .send-button {
-    min-height: 40px;
-    font-size: 0.7rem;
-    padding: 6px 11px;
-  }
-
-  .communications-center.size-expanded .channel-select {
-    font-size: 0.78rem;
-    max-width: 195px;
-    padding: 6px 10px;
-  }
-  .communications-center.size-expanded .channel-tab {
-    max-width: 220px;
-  }
-  .communications-center.size-expanded .chat-message {
-    padding: 8px 10px;
-    gap: 10px;
-  }
-  .communications-center.size-expanded .chat-message > :global(.avatar) {
-    width: 32px;
-    height: 32px;
-    font-size: 0.65rem;
-  }
-  .communications-center.size-expanded .sender-name {
-    font-size: 0.82rem;
-  }
-  .communications-center.size-expanded time {
-    font-size: 0.62rem;
-  }
-  .communications-center.size-expanded .message-body p {
-    font-size: 0.86rem;
-    line-height: 1.46;
-  }
-  .communications-center.size-expanded .intel-message p {
-    font-size: 0.78rem;
-  }
-  .communications-center.size-expanded textarea {
-    font-size: 0.84rem;
-    min-height: 44px;
-    padding: 8px 10px;
-  }
-  .communications-center.size-expanded .send-button {
-    min-height: 44px;
-    font-size: 0.74rem;
-    padding: 7px 13px;
-  }
-
-  @media (max-width: 520px) {
-    .radio-identity small,
-    .voice-participants,
-    .send-button span {
-      display: none;
-    }
-    .channel-status-line small {
-      display: none;
-    }
-    .channel-tab {
-      max-width: 120px;
-    }
   }
 </style>

@@ -1064,6 +1064,7 @@
     display: flex;
     flex-direction: column;
     gap: 24px;
+    min-width: 0;
   }
   .roster-block,
   .faction-picker-panel,
@@ -1356,23 +1357,31 @@
     display: flex;
     flex-direction: column;
     gap: 16px;
+    min-width: 0;
   }
   .lobby-comms-box {
     flex: 1;
     display: flex;
     flex-direction: column;
+    min-width: 0;
     min-height: 360px;
+    max-height: 460px;
+    overflow: hidden;
     background: rgba(5, 9, 18, 0.85);
     border: 1px solid rgba(148, 163, 184, 0.22);
     border-radius: 6px;
     padding: 14px;
-    transition: min-height 0.2s ease;
+    transition:
+      min-height 0.2s ease,
+      max-height 0.2s ease;
   }
   .lobby-comms-box.chat-size-large {
     min-height: 460px;
+    max-height: 560px;
   }
   .lobby-comms-box.chat-size-expanded {
     min-height: 580px;
+    max-height: 680px;
   }
 
   .campaign-protocol-box {
@@ -1507,6 +1516,7 @@
     }
     .lobby-comms-box {
       min-height: 310px;
+      max-height: 420px;
     }
   }
 
