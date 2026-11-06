@@ -1176,6 +1176,80 @@ describe("Territorial Infrastructure & Building System (HEGEM-32)", () => {
     expect(state.marketPrices.gold.sellPrice).toBe(8);
   });
 
+  it("permits asynchronous market operations for out-of-turn players who control a Market (HEGEM-94)", () => {
+    const rng = createSeededRng("hegem-94-async-market");
+    let state = createGame({
+      id: "g_async_market",
+      seed: "hegem-94-async-market",
+      players: [
+        { id: "p1", name: "Alice", color: "blue" },
+        { id: "p2", name: "Bob", color: "red" },
+      ],
+    });
+
+    const activeId = state.players[state.turnIndex].id;
+    const inactiveId = state.players.find((p) => p.id !== activeId)!.id;
+
+    for (const p of state.players) {
+      p.resources = { money: 50, steel: 5, oil: 5, gold: 5 };
+    }
+
+    // Out-of-turn player p2 without a market cannot trade
+    expect(() =>
+      applyAction(
+        state,
+        inactiveId,
+        { type: "market_trade", resource: "oil", operation: "buy", quantity: 1 },
+        rng
+      )
+    ).toThrow(/Mercado construído/i);
+
+    // Give inactive player p2 a territory with a Market
+    const p2Terr = Object.values(state.territories).find((t) => t.ownerId === inactiveId)!;
+    p2Terr.buildings = [{ type: "market", level: 1 }];
+
+    const p1Before = state.players.find((p) => p.id === activeId)!;
+    const p2Before = state.players.find((p) => p.id === inactiveId)!;
+    const p1MoneyBefore = p1Before.resources.money;
+    const p2MoneyBefore = p2Before.resources.money;
+    const p2OilBefore = p2Before.resources.oil;
+
+    // Out-of-turn player buys 2 Oil
+    const oilBuy1 = state.marketPrices.oil.buyPrice; // 4
+    state = applyAction(
+      state,
+      inactiveId,
+      { type: "market_trade", resource: "oil", operation: "buy", quantity: 2 },
+      rng
+    );
+
+    const p1After = state.players.find((p) => p.id === activeId)!;
+    const p2After = state.players.find((p) => p.id === inactiveId)!;
+
+    // p1 (active player) resources were NOT touched
+    expect(p1After.resources.money).toBe(p1MoneyBefore);
+
+    // p2 (inactive player) paid for 2 Oil and received 2 Oil
+    expect(p2After.resources.oil).toBe(p2OilBefore + 2);
+    expect(p2After.resources.money).toBeLessThan(p2MoneyBefore);
+
+    // Global market prices updated for all players
+    expect(state.marketPrices.oil.buyPrice).toBeGreaterThan(oilBuy1);
+
+    // Out-of-turn player sells 1 Oil back
+    const p2MoneyBeforeSell = p2After.resources.money;
+    state = applyAction(
+      state,
+      inactiveId,
+      { type: "market_trade", resource: "oil", operation: "sell", quantity: 1 },
+      rng
+    );
+
+    const p2AfterSell = state.players.find((p) => p.id === inactiveId)!;
+    expect(p2AfterSell.resources.oil).toBe(p2OilBefore + 1);
+    expect(p2AfterSell.resources.money).toBeGreaterThan(p2MoneyBeforeSell);
+  });
+
   it("establishes Allied Investment Routes between treatied nations with Markets, generates escalating income, and dissolves upon treaty breach (HEGEM-22)", () => {
     const rng = createSeededRng("hegem-22-investment");
     let state = createGame({
