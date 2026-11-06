@@ -2,7 +2,7 @@
 """
 Hegemonia — Audio Assets Downloader & SFX Processor
 Downloads requested military SFX for local testing.
-These audio files are ignored by git (.gitignore) to keep the repository clean and legal.
+These audio files are ignored by git (.gitignore) to keep the repository clean.
 """
 
 import os
@@ -15,6 +15,8 @@ MUSIC_DIR = os.path.join(BASE_DIR, "apps/web/public/music")
 SFX_DIR = os.path.join(BASE_DIR, "apps/web/public/sfx")
 TMP_DIR = "/tmp/hegemonia_audio_tmp"
 
+# Hegemonia uses procedural Web Audio synthesis by default to maintain ideological neutrality
+# and eliminate copyrighted content. Players can place an optional 'track1.mp3' in apps/web/public/music/.
 TRACKS = []
 
 SFX_ITEMS = [
