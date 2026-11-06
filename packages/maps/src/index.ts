@@ -482,7 +482,6 @@ export const CLASSIC_MAP: GameMapDef = {
       "islandia",
       "suecia",
       "franca",
-      "espanha",
       "alemanha"
     ],
     "center": [
@@ -551,7 +550,6 @@ export const CLASSIC_MAP: GameMapDef = {
     "continent": "europe",
     "symbol": "circle",
     "neighbors": [
-      "inglaterra",
       "franca",
       "italia",
       "argelia"
@@ -836,7 +834,6 @@ export const CLASSIC_MAP: GameMapDef = {
       "oriente_medio",
       "aral",
       "xinjiang",
-      "china",
       "vietna",
       "sumatra",
       "madagascar"
@@ -1035,8 +1032,7 @@ export const CLASSIC_MAP: GameMapDef = {
       "xinjiang",
       "pequim",
       "japao",
-      "vietna",
-      "india"
+      "vietna"
     ],
     "center": [
       972,
@@ -1158,9 +1154,9 @@ export const CLASSIC_OBJECTIVES: ObjectiveCard[] = [
   },
   {
     id: "obj_18_two_armies",
-    descriptionPt: "Conquistar 20 TERRITÓRIOS e ocupar cada um deles com pelo menos dois exércitos.",
-    descriptionEn: "Conquer 20 TERRITORIES with at least 2 armies in each.",
-    rule: { type: "territories", count: 20, minArmiesPerTerritory: 2 },
+    descriptionPt: "Conquistar 18 TERRITÓRIOS e ocupar cada um deles com pelo menos dois exércitos.",
+    descriptionEn: "Conquer 18 TERRITORIES with at least 2 armies in each.",
+    rule: { type: "territories", count: 18, minArmiesPerTerritory: 2 },
   },
   {
     id: "obj_as_af",
@@ -1176,9 +1172,9 @@ export const CLASSIC_OBJECTIVES: ObjectiveCard[] = [
   },
   {
     id: "obj_24_any",
-    descriptionPt: "Conquistar 28 TERRITÓRIOS à sua escolha.",
-    descriptionEn: "Conquer 28 TERRITORIES of your choice.",
-    rule: { type: "territories", count: 28, minArmiesPerTerritory: 1 },
+    descriptionPt: "Conquistar 24 TERRITÓRIOS à sua escolha.",
+    descriptionEn: "Conquer 24 TERRITORIES of your choice.",
+    rule: { type: "territories", count: 24, minArmiesPerTerritory: 1 },
   },
   {
     id: "obj_na_oc",
@@ -1188,39 +1184,39 @@ export const CLASSIC_OBJECTIVES: ObjectiveCard[] = [
   },
   {
     id: "obj_destroy_blue",
-    descriptionPt: "Destruir totalmente os exércitos AZUIS (se for você ou ausente/eliminado por outro: 28 territórios).",
-    descriptionEn: "Destroy all BLUE armies (or 28 territories fallback).",
-    rule: { type: "destroy_color", targetColor: "blue", fallbackTerritories: 28 },
+    descriptionPt: "Destruir totalmente os exércitos AZUIS (se for você ou ausente/eliminado por outro: 24 territórios).",
+    descriptionEn: "Destroy all BLUE armies (or 24 territories fallback).",
+    rule: { type: "destroy_color", targetColor: "blue", fallbackTerritories: 24 },
   },
   {
     id: "obj_destroy_red",
-    descriptionPt: "Destruir totalmente os exércitos VERMELHOS (se for você ou ausente/eliminado por outro: 28 territórios).",
-    descriptionEn: "Destroy all RED armies (or 28 territories fallback).",
-    rule: { type: "destroy_color", targetColor: "red", fallbackTerritories: 28 },
+    descriptionPt: "Destruir totalmente os exércitos VERMELHOS (se for você ou ausente/eliminado por outro: 24 territórios).",
+    descriptionEn: "Destroy all RED armies (or 24 territories fallback).",
+    rule: { type: "destroy_color", targetColor: "red", fallbackTerritories: 24 },
   },
   {
     id: "obj_destroy_green",
-    descriptionPt: "Destruir totalmente os exércitos VERDES (se for você ou ausente/eliminado por outro: 28 territórios).",
-    descriptionEn: "Destroy all GREEN armies (or 28 territories fallback).",
-    rule: { type: "destroy_color", targetColor: "green", fallbackTerritories: 28 },
+    descriptionPt: "Destruir totalmente os exércitos VERDES (se for você ou ausente/eliminado por outro: 24 territórios).",
+    descriptionEn: "Destroy all GREEN armies (or 24 territories fallback).",
+    rule: { type: "destroy_color", targetColor: "green", fallbackTerritories: 24 },
   },
   {
     id: "obj_destroy_yellow",
-    descriptionPt: "Destruir totalmente os exércitos AMARELOS (se for você ou ausente/eliminado por outro: 28 territórios).",
-    descriptionEn: "Destroy all YELLOW armies (or 28 territories fallback).",
-    rule: { type: "destroy_color", targetColor: "yellow", fallbackTerritories: 28 },
+    descriptionPt: "Destruir totalmente os exércitos AMARELOS (se for você ou ausente/eliminado por outro: 24 territórios).",
+    descriptionEn: "Destroy all YELLOW armies (or 24 territories fallback).",
+    rule: { type: "destroy_color", targetColor: "yellow", fallbackTerritories: 24 },
   },
   {
     id: "obj_destroy_black",
-    descriptionPt: "Destruir totalmente os exércitos PRETOS (se for você ou ausente/eliminado por outro: 28 territórios).",
-    descriptionEn: "Destroy all BLACK armies (or 28 territories fallback).",
-    rule: { type: "destroy_color", targetColor: "black", fallbackTerritories: 28 },
+    descriptionPt: "Destruir totalmente os exércitos PRETOS (se for você ou ausente/eliminado por outro: 24 territórios).",
+    descriptionEn: "Destroy all BLACK armies (or 24 territories fallback).",
+    rule: { type: "destroy_color", targetColor: "black", fallbackTerritories: 24 },
   },
   {
     id: "obj_destroy_white",
-    descriptionPt: "Destruir totalmente os exércitos BRANCOS (se for você ou ausente/eliminado por outro: 28 territórios).",
-    descriptionEn: "Destroy all WHITE armies (or 28 territories fallback).",
-    rule: { type: "destroy_color", targetColor: "white", fallbackTerritories: 28 },
+    descriptionPt: "Destruir totalmente os exércitos BRANCOS (se for você ou ausente/eliminado por outro: 24 territórios).",
+    descriptionEn: "Destroy all WHITE armies (or 24 territories fallback).",
+    rule: { type: "destroy_color", targetColor: "white", fallbackTerritories: 24 },
   },
 ];
 

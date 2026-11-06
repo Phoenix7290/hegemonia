@@ -599,6 +599,11 @@ export class HegemoniaRoom extends Room {
           }
         }
 
+        if (gs.phase === "deploy" && active.unplacedArmies === 0 && gs.round > 1) {
+          await this.executePlayerAction(timedOutPlayerId, { type: "end_deploy" });
+          continue;
+        }
+
         await this.executePlayerAction(timedOutPlayerId, { type: "end_turn" });
         break;
       } catch {
@@ -655,6 +660,11 @@ export class HegemoniaRoom extends Room {
           territoryId: target.id,
           armies: player.unplacedArmies,
         });
+        return;
+      }
+
+      if (this.gameState.phase === "deploy" && player.unplacedArmies === 0 && this.gameState.round > 1) {
+        await this.executePlayerAction(playerId, { type: "end_deploy" });
         return;
       }
 

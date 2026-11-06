@@ -1,5 +1,13 @@
 import type { PoolClient } from "pg";
-import type { CompetitionMode, GameAction, GameState, MatchOrigin, PlayerColor } from "@hegemonia/shared";
+import {
+  calculateLevel,
+  calculateMatchXp,
+  type CompetitionMode,
+  type GameAction,
+  type GameState,
+  type MatchOrigin,
+  type PlayerColor,
+} from "@hegemonia/shared";
 import { calculateObjectiveProgress } from "@hegemonia/engine";
 import { query, withTransaction } from "./connection.js";
 import { awardMatchBadges } from "./badge-service.js";
@@ -381,6 +389,75 @@ async function finalizeMatch(
   );
 
   await awardMatchBadges(client, match.id);
+
+  // Concessão de XP e evolução de nível de jogador (HEGEM-85)
+  const competitionMode = (match.competition_mode as CompetitionMode) ?? "casual";
+  const totalHumanPlayers = participants.rows.filter((p) => !p.is_bot).length;
+  const totalBotPlayers = participants.rows.filter((p) => p.is_bot).length;
+
+  for (const participant of participants.rows) {
+    if (!participant.user_id || participant.is_bot) continue;
+
+    const placement = placements.get(participant.engine_player_id) ?? 2;
+    const won = participant.engine_player_id === state.winnerId;
+
+    const xpResult = calculateMatchXp({
+      competitionMode,
+      roundsPlayed: state.round,
+      placement,
+      won,
+      isBot: false,
+      hasAuthenticatedUser: true,
+      totalHumanPlayers,
+      totalBotPlayers,
+    });
+
+    if (!xpResult.eligible || xpResult.totalXp <= 0) continue;
+
+    const userRes = await client.query<{ total_xp: string; level: number }>(
+      `SELECT total_xp, level FROM users WHERE id = $1 FOR UPDATE`,
+      [participant.user_id]
+    );
+
+    if (userRes.rows.length === 0) continue;
+
+    const userRow = userRes.rows[0];
+    const totalXpBefore = BigInt(userRow.total_xp ?? "0");
+    const levelBefore = userRow.level ?? calculateLevel(Number(totalXpBefore));
+    const totalXpAfter = totalXpBefore + BigInt(xpResult.totalXp);
+    const levelAfter = calculateLevel(Number(totalXpAfter));
+
+    const grantInsert = await client.query(
+      `INSERT INTO player_xp_grants (
+         user_id, match_id, participant_id, competition_mode,
+         base_xp, bonus_xp, total_xp, level_before, level_after,
+         breakdown_json, reason
+       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'match_completion')
+       ON CONFLICT (user_id, match_id) DO NOTHING
+       RETURNING id`,
+      [
+        participant.user_id,
+        match.id,
+        participant.id,
+        competitionMode,
+        xpResult.baseXp,
+        xpResult.winBonus + xpResult.placementBonus,
+        xpResult.totalXp,
+        levelBefore,
+        levelAfter,
+        JSON.stringify(xpResult),
+      ]
+    );
+
+    if (grantInsert.rows.length > 0) {
+      await client.query(
+        `UPDATE users
+         SET total_xp = $1, level = $2, updated_at = now()
+         WHERE id = $3`,
+        [totalXpAfter.toString(), levelAfter, participant.user_id]
+      );
+    }
+  }
 
   if (match.ranked_eligible && match.season_id) {
     for (const participant of participants.rows) {

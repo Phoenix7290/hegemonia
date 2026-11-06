@@ -1,5 +1,4 @@
 <script lang="ts">
-  import DoctrineCrest from "./DoctrineCrest.svelte";
   import FactionFlag from "./FactionFlag.svelte";
   import Icon from "./Icon.svelte";
   import UnitSelector from "./UnitSelector.svelte";
@@ -13,15 +12,12 @@
     subtractUnits,
     totalUnits,
   } from "@hegemonia/engine";
-  import {
-    DOCTRINE_LIST,
-    DoctrineIdSchema,
-    type AirMissionType,
-    type DoctrineId,
-    type GameState,
-    type PlayerState,
-    type TerritoryDef,
-    type UnitCounts,
+  import type {
+    AirMissionType,
+    GameState,
+    PlayerState,
+    TerritoryDef,
+    UnitCounts,
   } from "@hegemonia/shared";
 
   interface Props {
@@ -79,70 +75,10 @@
     getOccupationAvailable,
     clearSelection,
   }: Props = $props();
-
-  let syncedMatchId = $state<string | null>(null);
-  let showDoctrinePicker = $state(false);
-
-  // Sincroniza automaticamente na Rodada 1 a doutrina escolhida no Lobby
-  $effect(() => {
-    if (
-      game.round === 1 &&
-      myPlayerState &&
-      syncedMatchId !== game.id &&
-      typeof window !== "undefined"
-    ) {
-      const saved = window.localStorage.getItem("hegemonia_doctrine");
-      const parsed = DoctrineIdSchema.safeParse(saved);
-      syncedMatchId = game.id;
-      if (parsed.success && myPlayerState.doctrineId !== parsed.data) {
-        sendAction({ type: "select_doctrine", doctrineId: parsed.data });
-      }
-    }
-  });
-
-  function chooseDoctrineInRound1(doctrineId: DoctrineId) {
-    if (typeof window !== "undefined") {
-      window.localStorage.setItem("hegemonia_doctrine", doctrineId);
-    }
-    sendAction({ type: "select_doctrine", doctrineId });
-    showDoctrinePicker = false;
-  }
 </script>
 
 {#if !isImmersiveMode && hudVisible}
   <footer class="hud-panel bottom-center-dock">
-    {#if !game.winnerId && game.round === 1 && (!myPlayerState?.doctrineId || showDoctrinePicker)}
-      <div class="action-popup doctrine-r1-popup">
-        <div class="popup-head">
-          <h4>
-            <Icon name="shield" size={14} /> Escolha a sua Doutrina Militar Nacional (Rodada 1)
-          </h4>
-          {#if myPlayerState?.doctrineId}
-            <button class="preset-btn" onclick={() => (showDoctrinePicker = false)} aria-label={t("close")}>
-              <Icon name="close" size={12} />
-            </button>
-          {/if}
-        </div>
-        <div class="r1-doctrine-grid">
-          {#each DOCTRINE_LIST as doc}
-            {@const isCurrent = myPlayerState?.doctrineId === doc.id}
-            <button
-              type="button"
-              class="r1-doctrine-btn"
-              class:active={isCurrent}
-              style="--doc-accent: {doc.accentColor};"
-              onclick={() => chooseDoctrineInRound1(doc.id)}
-            >
-              <DoctrineCrest doctrineId={doc.id} size={24} />
-              <div class="r1-doc-copy">
-                <strong>{i18n.locale === "en" ? doc.nameEn : doc.namePt}</strong>
-                <small>{i18n.locale === "en" ? doc.summaryEn : doc.summaryPt}</small>
-              </div>
-            </button>
-          {/each}
-        </div>
-      </div>
-    {/if}
 
     {#if isMyTurn && !game.winnerId}
       {#if game.pendingConquest}
@@ -167,7 +103,7 @@
         </div>
 
       {:else if game.phase === "deploy"}
-        {#if selectedFromId}
+        {#if selectedFromId && (myPlayerState?.unplacedArmies ?? 0) > 0}
           {@const fromTerr = game.territories[selectedFromId]}
           {@const maxD = myPlayerState?.unplacedArmies ?? 1}
           <div class="action-popup">
@@ -446,21 +382,6 @@
 
     <!-- 1 - 2 - 3 Step Phase Navigator -->
     <div class="phase-stepper-row">
-      <div class="phase-balance-slot">
-        {#if myPlayerState?.doctrineId}
-          <button
-            type="button"
-            class="doctrine-hud-trigger"
-            title={game.round === 1 ? "Clique para alterar a sua Doutrina Militar (Rodada 1)" : undefined}
-            onclick={() => {
-              if (game.round === 1) showDoctrinePicker = !showDoctrinePicker;
-            }}
-          >
-            <DoctrineCrest doctrineId={myPlayerState.doctrineId} size={22} showLabel={false} />
-          </button>
-        {/if}
-      </div>
-
       <div class="phase-steps-group" role="group" aria-label="Turn Phases">
         <div class="phase-step" class:active-phase={game.phase === "deploy"} title={t("phase_deploy_desc")}>
           <span class="num">1</span>
@@ -481,7 +402,18 @@
 
       <div class="phase-action-slot">
         {#if isMyTurn && !game.winnerId}
-          {#if game.phase === "attack" && !game.pendingConquest}
+          {#if game.phase === "deploy" && game.round > 1}
+            <button
+              class="btn secondary phase-cta-btn"
+              disabled={(myPlayerState?.unplacedArmies ?? 0) > 0}
+              title={(myPlayerState?.unplacedArmies ?? 0) > 0
+                ? "Posicione todas as tropas de reforço antes de avançar para o ataque"
+                : "Avançar para a fase de ataque"}
+              onclick={() => sendAction({ type: "end_deploy" })}
+            >
+              {t("advance_to_attack")}
+            </button>
+          {:else if game.phase === "attack" && !game.pendingConquest}
             <button class="btn secondary phase-cta-btn" onclick={() => sendAction({ type: "end_attack" })}>
               {t("advance_to_maneuver")}
             </button>
@@ -525,52 +457,6 @@
     display: flex;
     flex-direction: column;
     gap: 0.45rem;
-  }
-  .r1-doctrine-grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 0.4rem;
-  }
-  .r1-doctrine-btn {
-    display: flex;
-    align-items: flex-start;
-    gap: 0.45rem;
-    padding: 0.45rem 0.55rem;
-    background: rgba(15, 23, 42, 0.85);
-    border: 1px solid rgba(148, 163, 184, 0.25);
-    border-radius: 4px;
-    text-align: left;
-    cursor: pointer;
-  }
-  .r1-doctrine-btn:hover,
-  .r1-doctrine-btn.active {
-    border-color: var(--doc-accent, #eab308);
-    background: rgba(30, 41, 59, 0.95);
-  }
-  .r1-doc-copy {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-    min-width: 0;
-  }
-  .r1-doc-copy strong {
-    font-family: var(--font-tactical);
-    font-size: 0.72rem;
-    color: #f8fafc;
-  }
-  .r1-doc-copy small {
-    font-size: 0.62rem;
-    color: #94a3b8;
-    line-height: 1.25;
-  }
-  .doctrine-hud-trigger {
-    background: transparent;
-    border: 0;
-    padding: 2px;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    cursor: pointer;
   }
   .popup-head {
     display: flex;
@@ -800,16 +686,10 @@
   .phase-stepper-row {
     display: flex;
     align-items: center;
-    justify-content: space-between;
+    justify-content: center;
     gap: 0.65rem;
     width: 100%;
     min-height: 34px;
-  }
-  .phase-balance-slot {
-    display: inline-flex;
-    align-items: center;
-    flex-shrink: 0;
-    min-width: 24px;
   }
   .phase-steps-group {
     display: inline-flex;
@@ -882,16 +762,10 @@
     .bottom-center-dock {
       min-width: min(calc(100vw - 1rem), 440px);
     }
-    .r1-doctrine-grid {
-      grid-template-columns: 1fr;
-    }
     .phase-stepper-row {
       flex-wrap: wrap;
       justify-content: center;
       gap: 0.35rem;
-    }
-    .phase-balance-slot {
-      display: none;
     }
     .phase-step {
       padding: 0.25rem 0.45rem;

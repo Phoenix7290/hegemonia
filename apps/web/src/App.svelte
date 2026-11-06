@@ -9,6 +9,7 @@
   import {
     UNIT_COSTS,
     addUnits,
+    calculateObjectiveProgress,
     emptyUnitCounts,
     getMovedInUnits,
     getTerritoryUnits,
@@ -259,14 +260,12 @@
       for (const t of CLASSIC_MAP.territories) {
         if (rule.continents.includes(t.continent)) targetIds.add(t.id);
       }
-    } else if (rule.type === "territory_count") {
-      for (const t of CLASSIC_MAP.territories) {
-        if (game.territories[t.id]?.ownerId !== myPlayerId) targetIds.add(t.id);
-      }
-    } else if (rule.type === "eliminate_color") {
-      for (const t of CLASSIC_MAP.territories) {
-        const owner = game.players.find((p) => p.id === game.territories[t.id]?.ownerId);
-        if (owner && owner.color === rule.targetColor) targetIds.add(t.id);
+    } else if (rule.type === "destroy_color") {
+      const targetPlayer = game.players.find((p) => p.color === rule.targetColor);
+      if (targetPlayer && targetPlayer.id !== myPlayerId && !targetPlayer.eliminated) {
+        for (const t of CLASSIC_MAP.territories) {
+          if (game.territories[t.id]?.ownerId === targetPlayer.id) targetIds.add(t.id);
+        }
       }
     }
     return targetIds;
@@ -274,14 +273,12 @@
 
   let objectiveProgress = $derived.by(() => {
     if (!myPlayerState || !game) return null;
-    const targetIds = objectiveTargetTerritoryIds;
-    if (targetIds.size === 0) return null;
-    let owned = 0;
-    for (const tid of targetIds) {
-      if (game.territories[tid]?.ownerId === myPlayerId) owned++;
-    }
-    const total = targetIds.size;
-    return { owned, total, pct: Math.round((owned / total) * 100) };
+    const prog = calculateObjectiveProgress(game, myPlayerId, CLASSIC_MAP);
+    return {
+      owned: prog.held,
+      total: prog.total,
+      pct: prog.completionPct,
+    };
   });
 
   let currentAttackOdds = $derived.by(() => {
@@ -855,9 +852,19 @@
       return;
     }
     const territory = game.territories[selectedFromId];
-    selectedUnits = territory
-      ? selectUnits(getTerritoryUnits(territory), Math.max(0, territory.armies - 1))
-      : emptyUnitCounts();
+    if (!territory) {
+      selectedUnits = emptyUnitCounts();
+      return;
+    }
+    const isBlitzAdvance = territory.conqueredTurnRound === game.round;
+    if (isBlitzAdvance && territory.blitzkriegAvailable) {
+      // Em avanço imediato pós-conquista (Blitzkrieg), pré-seleciona apenas os blindados sobreviventes
+      const tUnits = getTerritoryUnits(territory);
+      const tankCount = Math.min(tUnits.tank, Math.max(0, territory.armies - 1));
+      selectedUnits = { ...emptyUnitCounts(), tank: tankCount };
+    } else {
+      selectedUnits = selectUnits(getTerritoryUnits(territory), Math.max(0, territory.armies - 1));
+    }
   }
 
   function resetManeuverSelection() {
