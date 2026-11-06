@@ -158,4 +158,32 @@ describe("Map Preferences & Overlays (HEGEM-62)", () => {
     expect(source).toContain("rank-card-footer");
     expect(source).toContain("/api/leaderboard?limit=6");
   });
+
+  it("enforces high contrast chromatic palette for Obsidian Black and Platinum White (HEGEM-92)", () => {
+    const tacticalMapPath = path.resolve(
+      import.meta.dirname,
+      "../components/TacticalMap.svelte"
+    );
+    const tmSource = fs.readFileSync(tacticalMapPath, "utf8");
+
+    expect(tmSource).toContain('black: "#0f172a"');
+    expect(tmSource).toContain('white: "#f8fafc"');
+    expect(tmSource).not.toContain('black: "#475569"');
+    expect(tmSource).not.toContain('white: "#94a3b8"');
+
+    expect(tmSource).toContain("fill={isWhite");
+    expect(tmSource).toContain("#1e293b");
+    expect(tmSource).toContain("#cbd5e1");
+    expect(tmSource).toContain('fill={isWhite ? "#0f172a" : "#ffffff"}');
+
+    const flagPath = path.resolve(
+      import.meta.dirname,
+      "../components/FactionFlag.svelte"
+    );
+    const flagSource = fs.readFileSync(flagPath, "utf8");
+    expect(flagSource).toContain('color === "black"');
+    expect(flagSource).toContain("#0f172a");
+    expect(flagSource).toContain("#cbd5e1");
+    expect(flagSource).toContain("#f8fafc");
+  });
 });

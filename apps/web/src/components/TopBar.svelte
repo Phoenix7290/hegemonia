@@ -27,12 +27,12 @@
   import type { BaseMapMode, MapOverlays } from "../lib/map-preferences";
 
   const COLOR_HEX: Record<PlayerColor, string> = {
-    red: "#ef4444",
     blue: "#3b82f6",
-    green: "#22c55e",
-    yellow: "#eab308",
-    purple: "#a855f7",
-    orange: "#f97316",
+    red: "#ef4444",
+    green: "#10b981",
+    yellow: "#f59e0b",
+    black: "#0f172a",
+    white: "#f8fafc",
   };
 
   const SOUNDTRACKS = [
@@ -445,7 +445,7 @@
 
         <div
           class="dossier-target-card"
-          style="border-left-color: {COLOR_HEX[activeDiplomacyTarget.color]};"
+          style="border-left-color: {activeDiplomacyTarget.color === 'black' ? '#cbd5e1' : COLOR_HEX[activeDiplomacyTarget.color]};"
         >
           <div class="target-card-top">
             <FactionFlag
@@ -610,7 +610,7 @@
                   {#if mem}
                     <span
                       class="coalition-member-tag"
-                      style="border-color: {COLOR_HEX[mem.color]};"
+                      style="border-color: {mem.color === 'black' ? '#cbd5e1' : COLOR_HEX[mem.color]};"
                     >
                       <FactionFlag color={mem.color} width={14} height={9} />
                       {mem.name}
@@ -696,9 +696,9 @@
           {#each playerMetrics as m}
             <div
               class="hegemony-segment"
-              style="width: {m.sharePct}%; background: {COLOR_HEX[
+              style="width: {m.sharePct}%; background: {m.player.color === 'black' ? '#1e293b' : COLOR_HEX[
                 m.player.color
-              ]};"
+              ]}; {m.player.color === 'black' ? 'box-shadow: inset 0 0 0 1px #cbd5e1;' : ''}"
               title="{m.player.name}: {m.sharePct}% ({m.terrCount} {t(
                 'territories_count',
                 { count: m.terrCount },
@@ -716,7 +716,7 @@
             class="general-row"
             class:active-turn={isTurn}
             class:eliminated={m.player.eliminated}
-            style="border-left-color: {COLOR_HEX[m.player.color]};"
+            style="border-left-color: {m.player.color === 'black' ? '#cbd5e1' : COLOR_HEX[m.player.color]};"
           >
             <div class="g-info">
               <FactionFlag color={m.player.color} width={20} height={13} />

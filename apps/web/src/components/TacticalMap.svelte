@@ -89,8 +89,8 @@
     red: "#ef4444",
     green: "#10b981",
     yellow: "#f59e0b",
-    black: "#475569",
-    white: "#94a3b8",
+    black: "#0f172a",
+    white: "#f8fafc",
   };
 
   const REGION_COLOR_HEX: Record<string, string> = {
@@ -933,6 +933,8 @@
                 {@const badgeY = t.center[1] + anchorOffset[1]}
                 {@const isUnderArmorShock = armorShockTerritoryIds.has(t.id)}
                 {@const isUnderFire = underFireTerritoryIds.has(t.id)}
+                {@const isBlack = owner?.color === "black"}
+                {@const isWhite = owner?.color === "white"}
 
                 <!-- HOI4-STYLE MILITARY DIVISION COUNTER WITH OPTIONAL COMPACT ECONOMIC SUB-BADGE -->
                 <g
@@ -957,28 +959,35 @@
                       <Icon name="capital-fallen" size={6.4} x={-3.2} y={-3.2} color="#fca5a5" strokeWidth={2.1} />
                     </g>
                   {/if}
-
                   <rect
                     x="-13"
                     y="-6.5"
                     width="26"
                     height="13"
                     rx="2.2"
-                    fill="#090e1a"
+                    fill={isWhite
+                      ? "#f8fafc"
+                      : isBlack
+                        ? "#1e293b"
+                        : "#090e1a"}
                     stroke={isCapital
                       ? "#f59e0b"
                       : isFallenCapital
                         ? "#ef4444"
                         : isSelected
-                           ? "#ffffff"
+                           ? (isWhite ? "#0f172a" : "#ffffff")
                            : isValidTarget
                              ? "#facc15"
                              : isObjPending
                                ? "#ef4444"
                                : isObjOwned
                                  ? "#10b981"
-                                 : ownerColor}
-                    stroke-width={isCapital || isFallenCapital || isSelected || isValidTarget || isObjTarget ? "1.6" : "1.1"}
+                                 : isBlack
+                                   ? "#cbd5e1"
+                                   : isWhite
+                                     ? "#94a3b8"
+                                     : ownerColor}
+                    stroke-width={isCapital || isFallenCapital || isSelected || isValidTarget || isObjTarget || isBlack ? "1.6" : "1.1"}
                     filter="drop-shadow(0 1.5px 3px rgba(0,0,0,0.85))"
                   />
                   <!-- Mini Faction Flag inside Left Half of Counter -->
@@ -997,23 +1006,30 @@
                         <rect width="13" height="12" fill="#d97706" />
                         <circle cx="6.5" cy="6" r="2.8" fill="#fef08a" />
                       {:else if owner.color === "black"}
-                        <rect width="13" height="12" fill="#1e293b" />
+                        <rect width="13" height="12" fill="#0f172a" />
                         <path d="M0,6 H13 M6.5,0 V12" stroke="#e2e8f0" stroke-width="2" />
                       {:else}
-                        <rect width="13" height="12" fill="#e2e8f0" />
-                        <path d="M0,6 H13 M5,0 V12" stroke="#1e293b" stroke-width="2.2" />
+                        <rect width="13" height="12" fill="#f8fafc" />
+                        <path d="M0,6 H13 M5,0 V12" stroke="#0f172a" stroke-width="2.2" />
                       {/if}
                     </g>
                   {/if}
                   <!-- Divider Line -->
-                  <line x1="-0.8" y1="-5.8" x2="-0.8" y2="5.8" stroke="rgba(148, 163, 184, 0.35)" stroke-width="0.7" />
+                  <line
+                    x1="-0.8"
+                    y1="-5.8"
+                    x2="-0.8"
+                    y2="5.8"
+                    stroke={isWhite ? "rgba(15, 23, 42, 0.35)" : "rgba(148, 163, 184, 0.35)"}
+                    stroke-width="0.7"
+                  />
                   <!-- Crisp Troop Count -->
                   <text
                     x="6"
                     y="0.4"
                     text-anchor="middle"
                     dominant-baseline="central"
-                    fill="#ffffff"
+                    fill={isWhite ? "#0f172a" : "#ffffff"}
                     font-size={troopFontSize}
                     font-weight="800"
                     font-family="system-ui, -apple-system, sans-serif"

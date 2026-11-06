@@ -85,6 +85,15 @@
     onStartGame: () => void;
   } = $props();
 
+  const COLOR_HEX: Record<PlayerColor, string> = {
+    blue: "#3b82f6",
+    red: "#ef4444",
+    green: "#10b981",
+    yellow: "#f59e0b",
+    black: "#0f172a",
+    white: "#f8fafc",
+  };
+
   const ALL_COLORS: PlayerColor[] = [
     "blue",
     "red",
@@ -383,7 +392,7 @@
                   <div
                     class="slot-card occupied"
                     class:is-me={p.token === myPlayerId}
-                    style="border-left-color: var(--faction-{p.color}, #eab308);"
+                    style="border-left-color: {p.color === 'black' ? '#cbd5e1' : COLOR_HEX[p.color]};"
                   >
                     <FactionFlag color={p.color} width={30} height={19} />
                     <Avatar

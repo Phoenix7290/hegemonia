@@ -35,13 +35,13 @@
     <rect y="12" width="24" height="4" fill="#1e293b" />
     <circle cx="12" cy="8" r="3.2" fill="#fef08a" stroke="#0f172a" stroke-width="1" />
   {:else if color === "black"}
-    <rect width="24" height="16" fill="#1e293b" />
-    <path d="M0,8 H24 M12,0 V16" stroke="#94a3b8" stroke-width="3.2" />
+    <rect width="24" height="16" fill="#0f172a" />
+    <path d="M0,8 H24 M12,0 V16" stroke="#cbd5e1" stroke-width="3.2" />
     <path d="M0,8 H24 M12,0 V16" stroke="#0f172a" stroke-width="1.4" />
-    <rect x="9.5" y="5.5" width="5" height="5" fill="#e2e8f0" />
+    <rect x="9.5" y="5.5" width="5" height="5" fill="#f8fafc" />
   {:else}
-    <rect width="24" height="16" fill="#e2e8f0" />
-    <path d="M0,8 H24 M9,0 V16" stroke="#334155" stroke-width="3" />
+    <rect width="24" height="16" fill="#f8fafc" />
+    <path d="M0,8 H24 M9,0 V16" stroke="#0f172a" stroke-width="3" />
     <circle cx="9" cy="8" r="2.2" fill="#f59e0b" />
   {/if}
   <rect width="24" height="16" fill="none" stroke="rgba(255,255,255,0.38)" stroke-width="1" />
