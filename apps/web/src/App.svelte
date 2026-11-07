@@ -959,8 +959,10 @@
       }
 
       if (selectedToId === terrId) {
+        selectedFromId = terrId;
         selectedToId = null;
-        selectedUnits = emptyUnitCounts();
+        resetManeuverSelection();
+        sliderArmies = Math.max(1, tState.armies - tState.movedInArmies - 1);
         return;
       }
 
