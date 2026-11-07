@@ -389,6 +389,21 @@ export const ptBRGame: TranslationCatalog = {
   settings_tooltips_on: "Ativadas (~350ms)",
   settings_tooltips_off: "Desativadas",
   settings_tooltips_hint: "Exibe explicações táticas contextuais com hover contínuo sobre botões e recursos.",
+
+  // Tactical Alerts & Camera Auto-Zoom (HEGEM-102)
+  tactical_alerts_artillery_ready: "Artilharia Pronta",
+  tactical_alerts_aircraft_ready: "Aviação Pronta",
+  tactical_alerts_encircled_warning: "Cerco Militar",
+  tactical_alerts_encircled_opportunity: "Inimigo Sitiado",
+  tactical_alerts_out_of_fuel: "Sem Petróleo",
+  turn_start_title: "Alto Comando: Início de Turno",
+  turn_start_reinforcements: "Reforços Mobilizados",
+  turn_start_economic_report: "Balanço de Commodities",
+  turn_start_dismiss: "Assumir Comando",
+  settings_auto_camera_label: "Auto-Zoom Tático da Câmera",
+  settings_auto_camera_on: "Ativado",
+  settings_auto_camera_off: "Desativado",
+  settings_auto_camera_hint: "Centraliza e aproxima suavemente o mapa ao interagir com alertas táticos e setores operacionais.",
 };
 
 export const game = ptBRGame;
