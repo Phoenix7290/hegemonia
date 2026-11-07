@@ -13,7 +13,9 @@ describe("VersionGuardState", () => {
 
   it("initializes with current client version and clean state", () => {
     expect(guard.clientVersion).toBe(HEGEMONIA_VERSION);
+    expect(guard.clientCommitHash).toBeDefined();
     expect(guard.serverVersion).toBeNull();
+    expect(guard.serverCommitHash).toBeNull();
     expect(guard.isOutdated).toBe(false);
     expect(guard.dismissed).toBe(false);
     expect(guard.countdown).toBeNull();

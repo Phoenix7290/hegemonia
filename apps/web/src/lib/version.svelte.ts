@@ -1,10 +1,17 @@
 import { HEGEMONIA_VERSION } from "@hegemonia/shared";
 
+declare const __COMMIT_HASH__: string | undefined;
+
+export const CLIENT_COMMIT_HASH: string =
+  typeof __COMMIT_HASH__ !== "undefined" && __COMMIT_HASH__ ? __COMMIT_HASH__ : "dev";
+
 const RELOAD_ATTEMPT_PREFIX = "hegemonia_auto_reload_attempt_";
 
 export class VersionGuardState {
   readonly clientVersion: string = HEGEMONIA_VERSION;
+  readonly clientCommitHash: string = CLIENT_COMMIT_HASH;
   serverVersion = $state<string | null>(null);
+  serverCommitHash = $state<string | null>(null);
   isOutdated = $state<boolean>(false);
   dismissed = $state<boolean>(false);
   countdown = $state<number | null>(null);
@@ -66,7 +73,10 @@ export class VersionGuardState {
         headers: { "Cache-Control": "no-cache", Pragma: "no-cache" },
       });
       if (res.ok) {
-        const data = (await res.json()) as { version?: string };
+        const data = (await res.json()) as { version?: string; commitHash?: string };
+        if (data.commitHash) {
+          this.serverCommitHash = data.commitHash;
+        }
         if (data.version) {
           this.checkServerVersion(data.version, inActiveBattle);
         }
