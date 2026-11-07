@@ -9,6 +9,7 @@
   import LanguageSelector from "./components/LanguageSelector.svelte";
   import TacticalTooltip from "./components/TacticalTooltip.svelte";
   import VersionUpdateBanner from "./components/VersionUpdateBanner.svelte";
+  import VersionFooterBadge from "./components/VersionFooterBadge.svelte";
   import { auth } from "./lib/auth.svelte";
   import { versionGuard } from "./lib/version.svelte";
   import { ui } from "./lib/ui.svelte";
@@ -238,6 +239,7 @@
 <AuthDialog />
 <TacticalTooltip />
 <VersionUpdateBanner />
+<VersionFooterBadge />
 
 {#if path === "/"}
   <App />

@@ -1,5 +1,6 @@
 import express from "express";
 import cors from "cors";
+import { execSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { ZodError } from "zod";
@@ -12,6 +13,19 @@ import { MatchmakingError } from "./matchmaking.js";
 import { HEGEMONIA_VERSION, MATCHMAKING_RULESET_VERSION } from "@hegemonia/shared";
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+let serverCommitHash = process.env.GIT_COMMIT_HASH ?? "dev";
+try {
+  if (serverCommitHash === "dev") {
+    serverCommitHash = execSync("git rev-parse --short HEAD", {
+      stdio: ["ignore", "pipe", "ignore"],
+    })
+      .toString()
+      .trim();
+  }
+} catch {
+  // Fallback se git não estiver disponível
+}
 
 export async function createApp(): Promise<express.Express> {
   const app = express();
@@ -50,6 +64,7 @@ export async function createApp(): Promise<express.Express> {
     res.json({
       version: HEGEMONIA_VERSION,
       rulesetVersion: MATCHMAKING_RULESET_VERSION,
+      commitHash: serverCommitHash,
     });
   });
 

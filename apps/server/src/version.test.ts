@@ -24,9 +24,11 @@ describe("version handshake and cache busting API", () => {
       expect(res.headers.get("cache-control")).toContain("no-store");
       expect(res.headers.get("cache-control")).toContain("must-revalidate");
 
-      const body = (await res.json()) as { version: string; rulesetVersion: string };
+      const body = (await res.json()) as { version: string; rulesetVersion: string; commitHash: string };
       expect(body.version).toBe(HEGEMONIA_VERSION);
       expect(body.rulesetVersion).toBe(MATCHMAKING_RULESET_VERSION);
+      expect(body.commitHash).toBeDefined();
+      expect(typeof body.commitHash).toBe("string");
     } finally {
       server.close();
     }
