@@ -506,6 +506,14 @@ export const BuildStructureActionSchema = z.object({
   territoryId: z.string(),
   buildingType: BuildingTypeSchema,
 });
+export type BuildStructureAction = z.infer<typeof BuildStructureActionSchema>;
+
+export const DemolishStructureActionSchema = z.object({
+  type: z.literal("demolish_structure"),
+  territoryId: z.string(),
+  buildingType: BuildingTypeSchema,
+});
+export type DemolishStructureAction = z.infer<typeof DemolishStructureActionSchema>;
 
 export const RecruitUnitActionSchema = z.object({
   type: z.literal("recruit_unit"),
@@ -649,6 +657,7 @@ export const GameActionSchema = z.discriminatedUnion("type", [
   TradeCardsActionSchema,
   BuyCardWithGoldActionSchema,
   BuildStructureActionSchema,
+  DemolishStructureActionSchema,
   RecruitUnitActionSchema,
   AirliftActionSchema,
   MarketTradeActionSchema,

@@ -1319,6 +1319,68 @@ case "select_doctrine": {
       break;
     }
 
+    case "demolish_structure": {
+      if (state.pendingConquest) {
+        throw new Error("Conclua a ocupação do território conquistado antes de demolir.");
+      }
+      if (state.phase !== "deploy") {
+        throw new Error("A demolição de estruturas só é permitida na fase de posicionamento/engenharia.");
+      }
+      const terr = state.territories[action.territoryId];
+      if (!terr || terr.ownerId !== playerId) {
+        throw new Error("Você só pode demolir estruturas em territórios sob seu controle.");
+      }
+      const def = mapById.get(terr.id);
+      if (!def) {
+        throw new Error("Território inválido.");
+      }
+
+      terr.buildings = terr.buildings ?? [];
+      const idx = terr.buildings.findIndex((b) => b.type === action.buildingType);
+      if (idx === -1) {
+        throw new Error("Este território não possui esta estrutura construída.");
+      }
+
+      const targetBldg = terr.buildings[idx];
+      const baseCost = BUILDING_COSTS[action.buildingType];
+      let totalMoneySpent = baseCost.money;
+      let totalSteelSpent = baseCost.steel;
+
+      if (action.buildingType === "fortification" && targetBldg.level >= 2) {
+        totalMoneySpent += FORTIFICATION_LEVEL_2_COST.money;
+        totalSteelSpent += FORTIFICATION_LEVEL_2_COST.steel;
+      }
+
+      const moneyRefund = Math.floor(totalMoneySpent * 0.5);
+      const steelRefund = Math.ceil(totalSteelSpent * 0.5);
+
+      terr.buildings.splice(idx, 1);
+      actingPlayer.resources.money += moneyRefund;
+      actingPlayer.resources.steel += steelRefund;
+
+      const buildingNamesPt: Record<BuildingType, string> = {
+        market: "Mercado Global",
+        industry: "Complexo Industrial",
+        fortification: targetBldg.level >= 2 ? "Fortaleza Nv. 2" : "Casamata Nv. 1",
+        airfield: "Aeródromo Militar",
+        port: "Porto Naval",
+      };
+      const bName = buildingNamesPt[action.buildingType] ?? action.buildingType;
+      const refundSummary =
+        steelRefund > 0
+          ? `+$${moneyRefund} e +${steelRefund} Aço recuperados`
+          : `+$${moneyRefund} recuperados`;
+
+      state.log.push(
+        `ENGENHARIA: ${actingPlayer.name} demoliu ${bName} em ${def.namePt} para desobstrução estratégica (${refundSummary}).`
+      );
+
+      if (action.buildingType === "port") {
+        updateSupplyAndEncirclement(state, map);
+      }
+      break;
+    }
+
     case "recruit_unit": {
       if (state.phase !== "deploy") {
         throw new Error("O recrutamento só é permitido na fase de posicionamento.");
@@ -2132,25 +2194,42 @@ case "select_doctrine": {
         toTerr.casBonusAttackerId = undefined;
         state.worldTension = Math.min(100, Number(((state.worldTension ?? 0) + 1.0).toFixed(1)));
 
-        // HEGEM-32 & Epic IX (Defesa em Profundidade):
-        // Fortificação Nv. 2 degrada para Nv. 1; Fortificação Nv. 1 degrada em assalto apenas se atacada por tanques ou artilharia
-        const fortBuilding = toTerr.buildings?.find((b) => b.type === "fortification");
-        if (fortBuilding) {
-          if (fortBuilding.level >= 2) {
-            fortBuilding.level = 1;
+        // HEGEM-98: Dano Colateral Dinâmico em Conquistas (Aço & Artilharia)
+        if (toTerr.buildings && toTerr.buildings.length > 0) {
+          const fort = toTerr.buildings.find((b) => b.type === "fortification");
+          if (fort && fort.level >= 2) {
+            fort.level = 1;
             state.log.push(
-              `🏰 A Fortaleza em ${toName} sofreu danos estruturais na captura e degradou para Casamata Nv. 1.`
-            );
-          } else if (
-            fortBuilding.level === 1 &&
-            defenderPlayer?.doctrineId === "defense_in_depth" &&
-            canDegradeFortificationInCombat(defenderPlayer, attackingUnits)
-          ) {
-            toTerr.buildings = toTerr.buildings?.filter((b) => b.type !== "fortification");
-            state.log.push(
-              `🛡️ A Casamata Nv. 1 em ${toName} foi destruída pelo poder de fogo pesado (blindados/artilharia).`
+              `A Fortaleza em ${toName} sofreu danos estruturais na captura e degradou para Casamata Nv. 1.`
             );
           }
+
+          let collapseChance = 0.30;
+          if ((attackingUnits.tank ?? 0) > 0) collapseChance += 0.25;
+          if ((attackingUnits.artillery ?? 0) > 0) collapseChance += 0.40;
+          collapseChance = Math.min(0.95, collapseChance);
+
+          const buildingLabelsPt: Record<BuildingType, string> = {
+            market: "Mercado Global",
+            industry: "Complexo Industrial",
+            fortification: "Casamata",
+            airfield: "Aeródromo Militar",
+            port: "Porto Naval",
+          };
+
+          const survivingBuildings: typeof toTerr.buildings = [];
+          for (const b of toTerr.buildings) {
+            const roll = rng.nextFloat();
+            if (roll < collapseChance) {
+              const bLabel = buildingLabelsPt[b.type] ?? b.type;
+              state.log.push(
+                `A infraestrutura ${bLabel} em ${toName} foi destruída durante a ofensiva de ${currentPlayer.name}!`
+              );
+            } else {
+              survivingBuildings.push(b);
+            }
+          }
+          toTerr.buildings = survivingBuildings;
         }
 
         if (currentPlayer.capitalTerritoryId === toTerr.id && currentPlayer.isCapitalLost) {
