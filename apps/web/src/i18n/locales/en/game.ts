@@ -404,6 +404,14 @@ export const enGame: TranslationCatalog = {
   settings_auto_camera_on: "Enabled",
   settings_auto_camera_off: "Disabled",
   settings_auto_camera_hint: "Smoothly centers and zooms the map when interacting with tactical alerts and frontlines.",
+
+  // Version Guard & Client Update Notification (HEGEM-114)
+  version_update_available_title: "Tactical Server Update Available",
+  version_update_available_desc: "A new theater version ({serverVersion}) has been deployed. Reload to synchronize mechanics and fixes.",
+  version_update_in_battle_desc: "A new version ({serverVersion}) is available. Finish your turn or reload when tactical situation is safe.",
+  version_update_lobby_autoreload: "New version ({serverVersion}) detected. Updating theater in {seconds}s...",
+  version_update_reload_now: "Reload Operations Theater",
+  version_update_dismiss: "Dismiss",
 };
 
 export const game = enGame;
