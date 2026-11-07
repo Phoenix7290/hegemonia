@@ -469,6 +469,25 @@ export interface GameState {
   borderTrades: BorderTradeDeal[];
 }
 
+export interface LobbyPlayerView {
+  token: string;
+  name: string;
+  color: PlayerColor;
+  doctrineId?: DoctrineId | null;
+  isHost: boolean;
+  isBot: boolean;
+  connected: boolean;
+  isReady?: boolean;
+  userId?: string | null;
+  username?: string | null;
+  avatarUrl?: string | null;
+}
+
+export const SetReadyActionSchema = z.object({
+  ready: z.boolean(),
+});
+export type SetReadyAction = z.infer<typeof SetReadyActionSchema>;
+
 // Client -> Server Action Schemas (Zod)
 export const SelectDoctrineActionSchema = z.object({
   type: z.literal("select_doctrine"),

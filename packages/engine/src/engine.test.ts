@@ -13,10 +13,12 @@ import {
   damageTerritoryFortification,
   findAirMissionTargets,
   getMovedInUnits,
+  getReachableManeuverTargets,
   getTerritoryBuildingLevel,
   getTerritoryMaxBuildingSlots,
   getTerritoryUnits,
   getTradeBonusArmies,
+  isConnectedByFriendlyPath,
   isValidCardSet,
   setTerritoryUnits,
   updateSupplyAndEncirclement,
@@ -1731,6 +1733,63 @@ describe("Combined Arms and Infantry Escort (HEGEM-27)", () => {
         createSeededRng("hegem-27-airlift-infantry")
       )
     ).toThrow(/infantaria/);
+  });
+
+  it("allows tactical maneuver across contiguous friendly territory paths (HEGEM-121)", () => {
+    let state = createGame({
+      id: "hegem-121-maneuver",
+      seed: "hegem-121-seed",
+      players: [
+        { id: "p1", name: "General A", color: "blue" },
+        { id: "p2", name: "General B", color: "red" },
+      ],
+    });
+    const activeId = state.players[state.turnIndex].id;
+    const otherId = state.players.find((p) => p.id !== activeId)!.id;
+
+    // p1 owns sao_paulo, argentina, and patagonia in a contiguous chain
+    state.territories["sao_paulo"].ownerId = activeId;
+    state.territories["sao_paulo"].armies = 5;
+    state.territories["sao_paulo"].units = unitCounts(5);
+    state.territories["sao_paulo"].movedInArmies = 0;
+    state.territories["sao_paulo"].movedInUnits = unitCounts();
+
+    state.territories["argentina"].ownerId = activeId;
+    state.territories["argentina"].armies = 2;
+    state.territories["argentina"].units = unitCounts(2);
+
+    state.territories["patagonia"].ownerId = activeId;
+    state.territories["patagonia"].armies = 1;
+    state.territories["patagonia"].units = unitCounts(1);
+
+    state.phase = "maneuver";
+    state.round = 2;
+
+    expect(CLASSIC_MAP.territories.find((t) => t.id === "sao_paulo")!.neighbors).not.toContain("patagonia");
+    expect(isConnectedByFriendlyPath(state, "sao_paulo", "patagonia", activeId, CLASSIC_MAP)).toBe(true);
+
+    const reachable = getReachableManeuverTargets(state, "sao_paulo", activeId, CLASSIC_MAP);
+    expect(reachable.has("patagonia")).toBe(true);
+    expect(reachable.has("argentina")).toBe(true);
+
+    state = applyAction(
+      state,
+      activeId,
+      {
+        type: "maneuver",
+        fromTerritoryId: "sao_paulo",
+        toTerritoryId: "patagonia",
+        armies: 3,
+        units: unitCounts(3),
+      },
+      createSeededRng("hegem-121-rng")
+    );
+
+    expect(state.territories["sao_paulo"].armies).toBe(2);
+    expect(state.territories["patagonia"].armies).toBe(4);
+
+    state.territories["argentina"].ownerId = otherId;
+    expect(isConnectedByFriendlyPath(state, "sao_paulo", "patagonia", activeId, CLASSIC_MAP)).toBe(false);
   });
 });
 
