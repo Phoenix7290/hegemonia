@@ -24,6 +24,7 @@
   import {
     hasTerritoryBuilding,
     getTerritoryBuildingLevel,
+    getReachableManeuverTargets,
   } from "@hegemonia/engine";
   import Icon from "./Icon.svelte";
   import { t } from "../i18n/index.svelte";
@@ -361,6 +362,12 @@
     new Set(combatAnimations.map((a) => a.toTerritoryId))
   );
 
+  const reachableManeuverTargets = $derived(
+    game.phase === "maneuver" && selectedFromId && myPlayerId
+      ? getReachableManeuverTargets(game, selectedFromId, myPlayerId)
+      : new Set<string>()
+  );
+
   // --- Mouse Drag, Touch Pan (Tablet) & Wheel Camera Controls ---
   let isDragging = $state(false);
   let lastMouseX = $state(0);
@@ -663,20 +670,16 @@
               {@const activeFill = ownerColor}
               {@const isSelected = selectedFromId === t.id || selectedToId === t.id}
               {@const fromTerrState = selectedFromId ? game.territories[selectedFromId] : null}
-              {@const isAirliftDest =
-                Boolean(selectedFromId) &&
-                t.id !== selectedFromId &&
-                game.phase === "maneuver" &&
-                tState.ownerId === myPlayerId &&
-                Boolean(fromTerrState && hasTerritoryBuilding(fromTerrState, "airfield")) &&
-                hasTerritoryBuilding(tState, "airfield") &&
-                !fromTerrState?.airliftedThisTurn}
               {@const isManeuverDest =
                 game.phase === "maneuver" &&
                 Boolean(selectedFromId) &&
                 t.id !== selectedFromId &&
+                reachableManeuverTargets.has(t.id)}
+              {@const isEligibleManeuverOrigin =
+                game.phase === "maneuver" &&
+                !selectedFromId &&
                 tState.ownerId === myPlayerId &&
-                (Boolean(territoryById.get(selectedFromId)?.neighbors.includes(t.id)) || isAirliftDest)}
+                tState.armies > 1}
               {@const isValidTarget =
                 selectedFromId &&
                 ((game.phase === "attack" &&
@@ -721,28 +724,33 @@
                     ? "#ffffff"
                     : isManeuverDest
                       ? "#38bdf8"
-                      : isValidTarget
-                        ? "#facc15"
-                        : isObjPending
-                          ? "#ef4444"
-                          : isObjOwned
-                            ? "#10b981"
-                            : effectiveBaseMode === "cartographic"
-                              ? ownerColor
-                              : isBlackTerritory
-                                ? "#CBD5E1"
-                                : "rgba(9, 13, 22, 0.95)"}
+                      : isEligibleManeuverOrigin
+                        ? "#38bdf8"
+                        : isValidTarget
+                          ? "#facc15"
+                          : isObjPending
+                            ? "#ef4444"
+                            : isObjOwned
+                              ? "#10b981"
+                              : effectiveBaseMode === "cartographic"
+                                ? ownerColor
+                                : isBlackTerritory
+                                  ? "#CBD5E1"
+                                  : "rgba(9, 13, 22, 0.95)"}
                   stroke-width={isSelected
                     ? "2.6"
                     : isManeuverDest
                       ? "2.8"
-                      : isValidTarget || isObjPending
-                        ? "2.4"
-                        : isObjOwned
-                          ? "2.0"
-                          : effectiveBaseMode === "cartographic"
-                            ? "1.6"
-                            : "1.25"}
+                      : isEligibleManeuverOrigin
+                        ? "2.0"
+                        : isValidTarget || isObjPending
+                          ? "2.4"
+                          : isObjOwned
+                            ? "2.0"
+                            : effectiveBaseMode === "cartographic"
+                              ? "1.6"
+                              : "1.25"}
+                  stroke-dasharray={isEligibleManeuverOrigin ? "4,3" : "none"}
                   stroke-linejoin="round"
                   filter={isSelected || isValidTarget
                     ? "url(#glow-gold)"
@@ -931,14 +939,6 @@
               {@const isWhiteTerritory = owner?.color === "white"}
                 {@const isSelected = selectedFromId === t.id || selectedToId === t.id}
                 {@const fromTerrState = selectedFromId ? game.territories[selectedFromId] : null}
-                {@const isAirliftDest =
-                  Boolean(selectedFromId) &&
-                  t.id !== selectedFromId &&
-                  game.phase === "maneuver" &&
-                  tState.ownerId === myPlayerId &&
-                  Boolean(fromTerrState && hasTerritoryBuilding(fromTerrState, "airfield")) &&
-                  hasTerritoryBuilding(tState, "airfield") &&
-                  !fromTerrState?.airliftedThisTurn}
                 {@const isValidTarget =
                   selectedFromId &&
                   ((game.phase === "attack" &&
@@ -946,8 +946,7 @@
                     (fromTerrState?.armies ?? 0) >= 2 &&
                     territoryById.get(selectedFromId)?.neighbors.includes(t.id)) ||
                    (game.phase === "maneuver" &&
-                    tState.ownerId === myPlayerId &&
-                    (territoryById.get(selectedFromId)?.neighbors.includes(t.id) || isAirliftDest)))}
+                    reachableManeuverTargets.has(t.id)))}
                 {@const isObjTarget = highlightObjectiveTerritories && objectiveTargetTerritoryIds.has(t.id)}
                 {@const isObjOwned = isObjTarget && tState.ownerId === myPlayerId}
                 {@const isObjPending = isObjTarget && tState.ownerId !== myPlayerId}

@@ -536,6 +536,104 @@ export function updateSupplyAndEncirclement(
 }
 
 /**
+ * Verifica se dois territórios aliados estão conectados por uma rota contígua de províncias aliadas.
+ */
+export function isConnectedByFriendlyPath(
+  state: GameState,
+  fromTerritoryId: string,
+  toTerritoryId: string,
+  playerId: string,
+  map: GameMapDef = CLASSIC_MAP
+): boolean {
+  if (fromTerritoryId === toTerritoryId) return true;
+  const mapById = new Map(map.territories.map((t) => [t.id, t]));
+  const visited = new Set<string>([fromTerritoryId]);
+  const queue: string[] = [fromTerritoryId];
+
+  while (queue.length > 0) {
+    const currId = queue.shift()!;
+    const currDef = mapById.get(currId);
+    if (!currDef) continue;
+
+    for (const nbrId of currDef.neighbors) {
+      if (nbrId === toTerritoryId) {
+        if (isSeaLink(currId, nbrId)) {
+          const blockade = checkNavalBlockade(state, currId, nbrId, playerId);
+          if (blockade.isBlockaded) continue;
+        }
+        return true;
+      }
+      if (visited.has(nbrId)) continue;
+      const nbrTerr = state.territories[nbrId];
+      if (!nbrTerr || nbrTerr.ownerId !== playerId) continue;
+
+      if (isSeaLink(currId, nbrId)) {
+        const blockade = checkNavalBlockade(state, currId, nbrId, playerId);
+        if (blockade.isBlockaded) continue;
+      }
+
+      visited.add(nbrId);
+      queue.push(nbrId);
+    }
+  }
+  return false;
+}
+
+/**
+ * Retorna todos os territórios aliados alcançáveis para manobra a partir de uma origem aliada.
+ */
+export function getReachableManeuverTargets(
+  state: GameState,
+  fromTerritoryId: string,
+  playerId: string,
+  map: GameMapDef = CLASSIC_MAP
+): Set<string> {
+  const reachable = new Set<string>();
+  const fromTerr = state.territories[fromTerritoryId];
+  if (!fromTerr || fromTerr.ownerId !== playerId) return reachable;
+
+  const mapById = new Map(map.territories.map((t) => [t.id, t]));
+  const visited = new Set<string>([fromTerritoryId]);
+  const queue: string[] = [fromTerritoryId];
+
+  while (queue.length > 0) {
+    const currId = queue.shift()!;
+    const currDef = mapById.get(currId);
+    if (!currDef) continue;
+
+    for (const nbrId of currDef.neighbors) {
+      if (visited.has(nbrId)) continue;
+      const nbrTerr = state.territories[nbrId];
+      if (!nbrTerr || nbrTerr.ownerId !== playerId) continue;
+
+      if (isSeaLink(currId, nbrId)) {
+        const blockade = checkNavalBlockade(state, currId, nbrId, playerId);
+        if (blockade.isBlockaded) continue;
+      }
+
+      visited.add(nbrId);
+      reachable.add(nbrId);
+      queue.push(nbrId);
+    }
+  }
+
+  // Airlift destination targets (se tiver aeródromo na origem e não tiver sido usado nesta rodada)
+  if (hasTerritoryBuilding(fromTerr, "airfield") && !fromTerr.airliftedThisTurn) {
+    for (const t of Object.values(state.territories)) {
+      if (
+        t.id !== fromTerritoryId &&
+        t.ownerId === playerId &&
+        hasTerritoryBuilding(t, "airfield")
+      ) {
+        reachable.add(t.id);
+      }
+    }
+  }
+
+  return reachable;
+}
+
+/**
  * Finds all territories within an Airfield's operational range:
  * BFS distance <= 2, with at most 1 maritime sea link crossing (HEGEM-30).
  */
@@ -2480,8 +2578,10 @@ case "select_doctrine": {
         throw new Error("Ambos os territórios devem pertencer a você.");
       }
       const fromDef = mapById.get(fromTerr.id)!;
-      if (!fromDef.neighbors.includes(toTerr.id)) {
-        throw new Error("No War clássico, o remanejamento só é permitido entre territórios vizinhos.");
+      const isNeighbor = fromDef.neighbors.includes(toTerr.id);
+      const isConnected = isConnectedByFriendlyPath(state, fromTerr.id, toTerr.id, playerId, map);
+      if (!isNeighbor && !isConnected) {
+        throw new Error("O remanejamento só é permitido entre territórios conectados por rotas aliadas.");
       }
 
       const availableUnits = subtractUnits(getTerritoryUnits(fromTerr), getMovedInUnits(fromTerr));

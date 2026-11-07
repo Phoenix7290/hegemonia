@@ -9,6 +9,7 @@
     getMovedInUnits,
     getTerritoryUnits,
     hasTerritoryBuilding,
+    isConnectedByFriendlyPath,
     subtractUnits,
     totalUnits,
   } from "@hegemonia/engine";
@@ -121,6 +122,25 @@
     }
     selectedUnits = next;
   }
+
+  let isOccupyLocked = $state(false);
+  let lockoutTimer: ReturnType<typeof setTimeout> | null = null;
+
+  $effect(() => {
+    if (game.pendingConquest) {
+      isOccupyLocked = true;
+      if (lockoutTimer) clearTimeout(lockoutTimer);
+      lockoutTimer = setTimeout(() => {
+        isOccupyLocked = false;
+      }, 500);
+    } else {
+      isOccupyLocked = false;
+      if (lockoutTimer) clearTimeout(lockoutTimer);
+    }
+    return () => {
+      if (lockoutTimer) clearTimeout(lockoutTimer);
+    };
+  });
 </script>
 
 {#if !isImmersiveMode && hudVisible}
@@ -140,11 +160,17 @@
             maxTotal={game.pendingConquest.maxMove}
           />
           <button
-            class="btn primary-gold"
-            disabled={selectedUnitTotal < game.pendingConquest.minMove}
+            class="btn primary-gold conquest-btn"
+            class:locked={isOccupyLocked}
+            disabled={isOccupyLocked || selectedUnitTotal < game.pendingConquest.minMove}
             onclick={confirmOccupy}
+            title={isOccupyLocked ? "Trava de segurança antidisparo ativa (500ms)" : ""}
           >
-            {t("conquest_advance", { count: selectedUnitTotal })}
+            {#if isOccupyLocked}
+              <Icon name="clock" size={14} /> Aguarde...
+            {:else}
+              {t("conquest_advance", { count: selectedUnitTotal })}
+            {/if}
           </button>
         </div>
 
@@ -402,8 +428,10 @@
           {@const fromT = game.territories[selectedFromId]}
           {@const toT = game.territories[selectedToId]}
           {@const availableUnits = subtractUnits(getTerritoryUnits(fromT), getMovedInUnits(fromT))}
+          {@const isNeighbor = Boolean(territoryById.get(selectedFromId)?.neighbors.includes(selectedToId))}
+          {@const isConnected = isNeighbor || isConnectedByFriendlyPath(game, selectedFromId, selectedToId, myPlayerId ?? "")}
           {@const isAirlift =
-            !territoryById.get(selectedFromId)?.neighbors.includes(selectedToId) &&
+            !isConnected &&
             hasTerritoryBuilding(fromT, "airfield") &&
             hasTerritoryBuilding(toT, "airfield")}
           {@const maxM = isAirlift
@@ -548,6 +576,14 @@
                 CONFIRMAR REAGRUPAMENTO ({currentTransfer})
               </button>
               <button
+                type="button"
+                class="btn outline-button"
+                onclick={() => { selectedToId = null; }}
+                title="Escolher outro território de destino"
+              >
+                TROCAR DESTINO
+              </button>
+              <button
                 class="btn outline-button btn-skip-maneuver"
                 onclick={() => sendAction({ type: "end_turn" })}
               >
@@ -636,6 +672,12 @@
     display: flex;
     flex-direction: column;
     gap: 0.45rem;
+  }
+  .conquest-btn.locked {
+    opacity: 0.65;
+    cursor: not-allowed;
+    filter: grayscale(0.5);
+    pointer-events: none;
   }
   .popup-head {
     display: flex;

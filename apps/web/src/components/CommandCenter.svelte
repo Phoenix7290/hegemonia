@@ -30,6 +30,7 @@
     isHost: boolean;
     isBot: boolean;
     connected: boolean;
+    isReady?: boolean;
     userId?: string | null;
     username?: string | null;
     avatarUrl?: string | null;
@@ -58,6 +59,7 @@
     onChooseDoctrine,
     onAddBot,
     onRemoveBot,
+    onSetReady,
     onStartGame,
   }: {
     roomStatus: "disconnected" | "lobby";
@@ -82,6 +84,7 @@
     onChooseDoctrine?: (doctrineId: DoctrineId) => void;
     onAddBot: () => void;
     onRemoveBot: (token: string) => void;
+    onSetReady?: (ready: boolean) => void;
     onStartGame: () => void;
   } = $props();
 
@@ -129,6 +132,30 @@
   );
   let amIHost = $derived(Boolean(myLobbyEntry?.isHost));
   let emptySlotsCount = $derived(Math.max(0, 6 - lobbyPlayers.length));
+
+  let unreadyPlayers = $derived(
+    lobbyPlayers.filter((p) => !p.isBot && !p.isHost && !p.isReady),
+  );
+  let readyCount = $derived(
+    lobbyPlayers.filter((p) => p.isHost || p.isBot || p.isReady).length,
+  );
+  let totalPlayers = $derived(lobbyPlayers.length);
+
+  function toggleReady() {
+    const nextReady = !myLobbyEntry?.isReady;
+    if (onSetReady) {
+      onSetReady(nextReady);
+      return;
+    }
+    const anyComms = communications as any;
+    if (typeof anyComms?.sendMessage === "function") {
+      anyComms.sendMessage("set_ready", { ready: nextReady });
+    } else if (typeof anyComms?.room?.send === "function") {
+      anyComms.room.send("set_ready", { ready: nextReady });
+    } else if (typeof (window as any).__hegemoniaRoom?.send === "function") {
+      (window as any).__hegemoniaRoom.send("set_ready", { ready: nextReady });
+    }
+  }
 
   function selectDoctrine(docId: DoctrineId) {
     selectedDoctrineId = docId;
@@ -431,6 +458,15 @@
                         <span class="role-badge human"
                           >{t("lobby_role_human")}</span
                         >
+                        {#if p.isReady}
+                          <span class="ready-pill ready" title="General pronto para o combate">
+                            <Icon name="check" size={11} /> {t("lobby_ready_status")}
+                          </span>
+                        {:else}
+                          <span class="ready-pill preparing" title="Aguardando confirmação de prontidão">
+                            <Icon name="clock" size={11} /> {t("lobby_preparing_status")}
+                          </span>
+                        {/if}
                       {/if}
 
                       {#if p.isBot && amIHost}
@@ -590,23 +626,52 @@
                 {t("lobby_waiting_reserved")}
               </span>
             {:else if !amIHost}
-              <span class="waiting-host-note">
-                <span class="pulse-dot"></span>
-                {t("lobby_waiting_host")}
-              </span>
+              {#if myLobbyEntry?.isReady}
+                <span class="ready-note">
+                  <Icon name="check" size={15} />
+                  {t("lobby_you_are_ready")}
+                </span>
+              {:else}
+                <span class="waiting-host-note">
+                  <span class="pulse-dot"></span>
+                  {t("lobby_waiting_ready")}
+                </span>
+              {/if}
             {:else if lobbyPlayers.length < 2}
               <span class="waiting-host-note">
                 {t("lobby_need_more_players")}
               </span>
+            {:else if unreadyPlayers.length > 0}
+              <span class="waiting-host-note">
+                <span class="pulse-dot"></span>
+                Aguardando prontidão: {unreadyPlayers.map((p) => p.name).join(", ")} ({readyCount}/{totalPlayers})
+              </span>
             {:else}
               <span class="ready-note">
                 <Icon name="check" size={15} />
-                {t("lobby_systems_ready")}
+                {t("lobby_systems_ready")} ({readyCount}/{totalPlayers})
               </span>
             {/if}
           </div>
 
           <div class="footer-buttons">
+            {#if !amIHost && !myLobbyEntry?.isBot}
+              <button
+                type="button"
+                class="ready-toggle-btn"
+                class:is-ready={myLobbyEntry?.isReady}
+                onclick={toggleReady}
+              >
+                {#if myLobbyEntry?.isReady}
+                  <Icon name="check" size={16} />
+                  <span>{t("lobby_btn_cancel_ready")}</span>
+                {:else}
+                  <Icon name="swords" size={16} />
+                  <span>{t("lobby_btn_ready")}</span>
+                {/if}
+              </button>
+            {/if}
+
             {#if amIHost && competitionMode === "custom" && lobbyPlayers.length < 6}
               <button class="outline-button add-ai-btn" onclick={onAddBot}>
                 <Icon name="bot" size={16} />
@@ -618,12 +683,19 @@
               <button
                 class="launch-battle-btn"
                 disabled={lobbyPlayers.length < 2 ||
+                  unreadyPlayers.length > 0 ||
                   (matchOrigin === "matchmaking" &&
                     lobbyPlayers.some((player) => !player.connected))}
                 onclick={onStartGame}
+                title={unreadyPlayers.length > 0
+                  ? `Aguardando ${unreadyPlayers.length} general(is) confirmarem prontidão`
+                  : ""}
               >
                 <Icon name="swords" size={18} />
                 {t("lobby_btn_launch_campaign")}
+                {#if lobbyPlayers.length >= 2}
+                  <span class="ready-counter-pill">({readyCount}/{totalPlayers})</span>
+                {/if}
               </button>
             {/if}
           </div>
@@ -1191,6 +1263,28 @@
     background: rgba(30, 41, 59, 0.8);
     color: #cbd5e1;
   }
+  .ready-pill {
+    font-family: var(--font-tactical);
+    font-size: 0.6rem;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    padding: 3px 6px;
+    border-radius: 3px;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    text-transform: uppercase;
+  }
+  .ready-pill.ready {
+    background: rgba(16, 185, 129, 0.2);
+    color: #34d399;
+    border: 1px solid rgba(16, 185, 129, 0.5);
+  }
+  .ready-pill.preparing {
+    background: rgba(245, 158, 11, 0.15);
+    color: #fbbf24;
+    border: 1px solid rgba(245, 158, 11, 0.35);
+  }
   .remove-bot-btn {
     width: 26px;
     height: 26px;
@@ -1500,6 +1594,50 @@
   }
   .launch-battle-btn:active:not(:disabled) {
     transform: translateY(0);
+  }
+  .ready-toggle-btn {
+    height: 46px;
+    padding: 0 24px;
+    background: linear-gradient(135deg, #10b981 0%, #047857 100%);
+    border: 1px solid #6ee7b7;
+    border-radius: 6px;
+    color: #ffffff;
+    font-family: var(--font-display);
+    font-weight: 900;
+    font-size: 0.88rem;
+    letter-spacing: 0.08em;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    cursor: pointer;
+    box-shadow: 0 4px 18px rgba(16, 185, 129, 0.3);
+    transition: all 0.18s ease;
+  }
+  .ready-toggle-btn:hover {
+    background: linear-gradient(135deg, #34d399 0%, #059669 100%);
+    transform: translateY(-1px);
+    box-shadow: 0 6px 22px rgba(16, 185, 129, 0.45);
+  }
+  .ready-toggle-btn.is-ready {
+    background: rgba(15, 23, 42, 0.85);
+    border: 1px solid rgba(52, 211, 153, 0.6);
+    color: #34d399;
+    box-shadow: 0 0 14px rgba(16, 185, 129, 0.25);
+  }
+  .ready-toggle-btn.is-ready:hover {
+    background: rgba(239, 68, 68, 0.15);
+    border-color: rgba(239, 68, 68, 0.6);
+    color: #f87171;
+    box-shadow: 0 0 14px rgba(239, 68, 68, 0.3);
+  }
+  .ready-counter-pill {
+    font-family: var(--font-tactical);
+    font-size: 0.78rem;
+    padding: 2px 6px;
+    border-radius: 3px;
+    background: rgba(0, 0, 0, 0.25);
+    color: #fef08a;
   }
 
   @media (max-width: 1080px) {
