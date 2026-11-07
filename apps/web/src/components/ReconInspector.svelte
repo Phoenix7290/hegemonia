@@ -33,6 +33,7 @@
     isImmersiveMode?: boolean;
     hudVisible?: boolean;
     handleBuildStructure: (territoryId: string, type: BuildingType) => void;
+    handleDemolishStructure: (territoryId: string, type: BuildingType) => void;
     handleRecruitUnit: (territoryId: string, unitType: UnitType) => void;
     canRecruitUnit: (territoryId: string, unitType: UnitType) => boolean;
     getRecruitRequirement: (unitType: UnitType) => string;
@@ -48,6 +49,7 @@
     isImmersiveMode = false,
     hudVisible = true,
     handleBuildStructure,
+    handleDemolishStructure,
     handleRecruitUnit,
     canRecruitUnit,
     getRecruitRequirement,
@@ -155,6 +157,17 @@
                   {t("building_airfield")}
                 {:else if b.type === "port"}
                   {t("building_port")}
+                {/if}
+                {#if isOwnedByMe && isMyTurn && game.phase === "deploy" && !game.pendingConquest && !game.winnerId}
+                  <button
+                    type="button"
+                    class="btn-chip-demolish"
+                    onclick={() => handleDemolishStructure(inspectedTerritory!.def.id, b.type)}
+                    title="Demolir estrutura (+50% reembolso de Aço/Dinheiro)"
+                    aria-label="Demolir estrutura"
+                  >
+                    <Icon name="close" size={9} />
+                  </button>
                 {/if}
               </span>
             {/each}
@@ -483,6 +496,25 @@
     color: #5eead4;
     border-color: rgba(45, 212, 191, 0.4);
     background: rgba(45, 212, 191, 0.1);
+  }
+  .btn-chip-demolish {
+    background: transparent;
+    border: none;
+    color: #ef4444;
+    padding: 1px 3px;
+    margin-left: 3px;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 2px;
+    opacity: 0.75;
+    transition: all 0.15s ease;
+  }
+  .btn-chip-demolish:hover {
+    opacity: 1;
+    background: rgba(239, 68, 68, 0.25);
+    color: #fca5a5;
   }
   .recon-build-grid {
     display: grid;
