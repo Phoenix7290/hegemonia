@@ -15,7 +15,7 @@ export const enSocial: TranslationCatalog = {
   menu_leaderboard: "Global Leaderboard",
   menu_edit_profile: "Edit Credentials",
   menu_logout: "Sign Out",
-  menu_login_register: "Log In / Enlist",
+  menu_login_register: "Enlist",
 
   // Auth Dialog
   auth_eyebrow: "CENTRAL HIGH COMMAND",

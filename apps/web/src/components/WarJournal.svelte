@@ -306,7 +306,9 @@
     transition: width 0.2s ease, max-height 0.2s ease;
   }
   .war-journal-panel.collapsed {
-    max-height: 44px;
+    max-height: 46px;
+    padding: 0.35rem 0.55rem;
+    overflow: hidden;
   }
   .war-journal-panel.communications-open {
     max-height: calc(100vh - 96px);
@@ -332,26 +334,40 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
-    gap: 0.4rem;
+    gap: 0.35rem;
+    width: 100%;
+    min-width: 0;
+    overflow: hidden;
   }
   .journal-tabs {
     display: flex;
-    gap: 0.3rem;
+    gap: 0.25rem;
+    min-width: 0;
+    flex: 1;
+    overflow: hidden;
   }
   .j-tab {
     background: rgba(15, 23, 42, 0.65);
     border: 1px solid rgba(148, 163, 184, 0.2);
     color: #94a3b8;
     font-family: var(--font-tactical);
-    font-size: 0.75rem;
+    font-size: 0.72rem;
     font-weight: 700;
-    letter-spacing: 0.06em;
+    letter-spacing: 0.05em;
     text-transform: uppercase;
-    padding: 0.25rem 0.55rem;
+    padding: 0.22rem 0.45rem;
     border-radius: 4px;
     display: inline-flex;
     align-items: center;
-    gap: 0.32rem;
+    gap: 0.3rem;
+    min-width: 0;
+    flex-shrink: 1;
+    overflow: hidden;
+  }
+  .j-tab span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   .j-tab.active {
     background: linear-gradient(135deg, rgba(202, 138, 4, 0.24), rgba(161, 98, 7, 0.12));
@@ -365,6 +381,7 @@
     padding: 1px 5px;
     border-radius: 3px;
     color: #cbd5e1;
+    flex-shrink: 0;
   }
   .comms-count {
     color: #38bdf8;
@@ -380,6 +397,7 @@
     place-items: center;
     border-radius: 4px;
     font-size: 0.7rem;
+    flex-shrink: 0;
   }
 
   /* Telemetry Box */

@@ -2975,23 +2975,28 @@
   /* Economy Bar */
   .hq-economy-bar {
     display: grid;
-    grid-template-columns: repeat(4, 1fr);
+    grid-template-columns: repeat(4, minmax(0, 1fr));
     gap: 0.35rem;
     padding-top: 0.25rem;
     border-top: 1px solid rgba(148, 163, 184, 0.14);
+    width: 100%;
+    box-sizing: border-box;
   }
   .econ-pill {
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 0.28rem;
-    padding: 0.24rem 0.38rem;
+    gap: 0.25rem;
+    padding: 0.22rem 0.35rem;
     border-radius: 6px;
     background: rgba(15, 23, 42, 0.72);
     border: 1px solid rgba(148, 163, 184, 0.18);
-    font-size: 0.74rem;
+    font-size: 0.72rem;
     font-weight: 700;
     color: #e2e8f0;
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
   }
   .econ-pill.money {
     color: #34d399;
@@ -3930,6 +3935,10 @@
   }
 
   @media (max-width: 820px) {
+    .hq-economy-bar {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 0.25rem;
+    }
     .top-center-banner {
       max-width: 300px;
       padding: 0.35rem 0.55rem;
@@ -3939,6 +3948,17 @@
     }
     .tc-directive {
       font-size: 0.66rem;
+    }
+  }
+
+  @media (max-width: 600px) {
+    .hq-economy-bar {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 0.2rem;
+    }
+    .econ-pill {
+      font-size: 0.66rem;
+      padding: 0.18rem 0.25rem;
     }
   }
 </style>
