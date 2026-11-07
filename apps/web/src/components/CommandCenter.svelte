@@ -637,7 +637,7 @@
   .command-center-backdrop {
     position: fixed;
     inset: 0;
-    padding-top: 68px;
+    padding-top: var(--topbar-height, 68px);
     overflow-y: auto;
     overflow-x: hidden;
     z-index: 40;
@@ -1531,7 +1531,7 @@
 
   @media (max-width: 760px) {
     .command-center-backdrop {
-      padding-top: 62px;
+      padding-top: var(--topbar-height, 116px);
     }
     .slots-grid,
     .doctrine-cards-grid {
