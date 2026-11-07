@@ -427,6 +427,11 @@ export interface CombatRollResult {
   navalBlockade?: boolean;
   coastalBombardmentBonus?: boolean;
   unescortedArtilleryPenalty?: boolean;
+  heavyArmorBonus?: boolean;
+  tankSuperiorityBonus?: boolean;
+  artillerySuppressionBonus?: boolean;
+  artillerySiegeBonus?: boolean;
+  artillerySaturationBonus?: boolean;
 }
 
 export interface TacticalStrikeEvent {
