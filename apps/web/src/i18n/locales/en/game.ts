@@ -389,6 +389,21 @@ export const enGame: TranslationCatalog = {
   settings_tooltips_on: "Enabled (~350ms)",
   settings_tooltips_off: "Disabled",
   settings_tooltips_hint: "Displays contextual tactical tooltips on continuous hover over controls and resources.",
+
+  // Tactical Alerts & Camera Auto-Zoom (HEGEM-102)
+  tactical_alerts_artillery_ready: "Artillery Ready",
+  tactical_alerts_aircraft_ready: "Air Wings Ready",
+  tactical_alerts_encircled_warning: "Encircled Territory",
+  tactical_alerts_encircled_opportunity: "Besieged Enemy",
+  tactical_alerts_out_of_fuel: "Out of Fuel",
+  turn_start_title: "Supreme Command: Turn Start",
+  turn_start_reinforcements: "Mobilized Reinforcements",
+  turn_start_economic_report: "Commodities Production",
+  turn_start_dismiss: "Assume Command",
+  settings_auto_camera_label: "Tactical Camera Auto-Zoom",
+  settings_auto_camera_on: "Enabled",
+  settings_auto_camera_off: "Disabled",
+  settings_auto_camera_hint: "Smoothly centers and zooms the map when interacting with tactical alerts and frontlines.",
 };
 
 export const game = enGame;

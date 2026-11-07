@@ -1,6 +1,7 @@
 <script lang="ts">
   import FactionFlag from "./FactionFlag.svelte";
   import Icon from "./Icon.svelte";
+  import TacticalAlerts from "./TacticalAlerts.svelte";
   import { t } from "../i18n/index.svelte";
   import {
     getTerritoryName,
@@ -89,6 +90,9 @@
     resetZoom: () => void;
     leaveCurrentRoom: () => void;
     sendAction: (action: any) => void;
+    onFocusTerritory?: (territoryId: string) => void;
+    autoCameraFocus?: boolean;
+    onToggleAutoCameraFocus?: (val: boolean) => void;
   }
 
   let {
@@ -117,6 +121,9 @@
     resetZoom,
     leaveCurrentRoom,
     sendAction,
+    onFocusTerritory,
+    autoCameraFocus = true,
+    onToggleAutoCameraFocus,
   }: Props = $props();
 
   let activeDiplomacyTargetId = $state<string | null>(null);
@@ -878,6 +885,14 @@
         </div>
       </div>
     {/if}
+
+    <TacticalAlerts
+      {game}
+      {myPlayerId}
+      {myPlayerState}
+      {isMyTurn}
+      onFocusTerritory={(terrId) => onFocusTerritory?.(terrId)}
+    />
   </div>
 {/if}
 
@@ -1314,6 +1329,32 @@
             </div>
             <small class="combat-anim-hint"
               >{t("settings_tooltips_hint")}</small
+            >
+          </div>
+
+          <div class="combat-anim-settings" style="margin-top: 0.8rem;">
+            <span class="combat-anim-label"
+              ><Icon name="compass" size={12} />
+              {t("settings_auto_camera_label")}:</span
+            >
+            <div class="combat-anim-btn-group">
+              <button
+                class="combat-anim-opt"
+                class:selected={autoCameraFocus}
+                onclick={() => onToggleAutoCameraFocus?.(true)}
+              >
+                {t("settings_auto_camera_on")}
+              </button>
+              <button
+                class="combat-anim-opt"
+                class:selected={!autoCameraFocus}
+                onclick={() => onToggleAutoCameraFocus?.(false)}
+              >
+                {t("settings_auto_camera_off")}
+              </button>
+            </div>
+            <small class="combat-anim-hint"
+              >{t("settings_auto_camera_hint")}</small
             >
           </div>
         </div>
@@ -2747,6 +2788,10 @@
     grid-row: 1;
     justify-self: center;
     align-self: start;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.35rem;
     background: linear-gradient(
       180deg,
       rgba(11, 18, 33, 0.94) 0%,

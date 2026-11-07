@@ -38,11 +38,13 @@ describe("Map Preferences & Overlays (HEGEM-62)", () => {
     const json = JSON.stringify({
       base: "geopolitical",
       overlays: { regional: true, economic: false },
+      autoCameraFocus: true,
     });
     const parsed = parseMapPreferences(json);
     expect(parsed).toEqual({
       base: "geopolitical",
       overlays: { regional: true, economic: false },
+      autoCameraFocus: true,
     });
   });
 
@@ -57,21 +59,25 @@ describe("Map Preferences & Overlays (HEGEM-62)", () => {
     expect(migrateLegacyMapMode("geopolitical")).toEqual({
       base: "geopolitical",
       overlays: { regional: false, economic: false },
+      autoCameraFocus: true,
     });
 
     expect(migrateLegacyMapMode("regional")).toEqual({
       base: "cartographic",
       overlays: { regional: true, economic: false },
+      autoCameraFocus: true,
     });
 
     expect(migrateLegacyMapMode("economic")).toEqual({
       base: "cartographic",
       overlays: { regional: false, economic: true },
+      autoCameraFocus: true,
     });
 
     expect(migrateLegacyMapMode("cartographic")).toEqual({
       base: "cartographic",
       overlays: { regional: false, economic: false },
+      autoCameraFocus: true,
     });
 
     expect(migrateLegacyMapMode("unknown_mode")).toBeNull();
@@ -84,6 +90,7 @@ describe("Map Preferences & Overlays (HEGEM-62)", () => {
     expect(prefs).toEqual({
       base: "cartographic",
       overlays: { regional: false, economic: true },
+      autoCameraFocus: true,
     });
 
     // Verify it saved modern preferences to storage
@@ -92,6 +99,7 @@ describe("Map Preferences & Overlays (HEGEM-62)", () => {
     expect(JSON.parse(modernRaw!)).toEqual({
       base: "cartographic",
       overlays: { regional: false, economic: true },
+      autoCameraFocus: true,
     });
   });
 
@@ -99,10 +107,12 @@ describe("Map Preferences & Overlays (HEGEM-62)", () => {
     saveMapPreferences({
       base: "geopolitical",
       overlays: { regional: true, economic: true },
+      autoCameraFocus: false,
     });
 
     const loaded = loadMapPreferences();
     expect(loaded.base).toBe("geopolitical");
+    expect(loaded.autoCameraFocus).toBe(false);
     expect(loaded.overlays.regional).toBe(true);
     expect(loaded.overlays.economic).toBe(true);
   });
