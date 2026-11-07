@@ -3,18 +3,23 @@
    ========================================================================== */
 
 /* --- Global Supreme Command Header Bar --- */
+:root {
+  --topbar-height: 68px;
+}
+
 .command-topbar {
   position: fixed;
   top: 0;
   left: 0;
   right: 0;
-  height: 68px;
+  min-height: var(--topbar-height, 68px);
   z-index: 85;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 18px;
-  padding: 0 24px;
+  padding: 8px 24px;
+  box-sizing: border-box;
   background: linear-gradient(180deg, rgba(6, 11, 21, 0.96) 0%, rgba(9, 15, 28, 0.92) 100%);
   border-bottom: 1px solid rgba(212, 175, 55, 0.38);
   box-shadow: 0 10px 32px rgba(0, 0, 0, 0.75), inset 0 -1px 0 rgba(254, 240, 138, 0.08);
@@ -478,7 +483,7 @@
 /* --- Social & Dossier Shell --- */
 .social-shell {
   min-height: 100vh;
-  padding-top: 68px;
+  padding-top: var(--topbar-height, 68px);
   background:
     linear-gradient(180deg, rgba(5, 9, 18, 0.82) 0%, rgba(5, 9, 18, 0.94) 100%),
     url("/assets/war-room-bg.webp") center/cover fixed no-repeat;
@@ -1086,14 +1091,8 @@
 
 @media (max-width: 960px) {
   .command-topbar {
-    padding: 0 14px;
+    padding: 6px 14px;
     gap: 10px;
-  }
-  .topbar-brand-text {
-    display: none;
-  }
-  .topbar-link span {
-    display: none;
   }
   .profile-columns {
     grid-template-columns: 1fr;
@@ -1110,6 +1109,61 @@
   .leaderboard-row > :nth-child(3),
   .leaderboard-row > :nth-child(5) {
     display: none;
+  }
+}
+
+@media (max-width: 860px) {
+  :root {
+    --topbar-height: 116px;
+  }
+  .command-topbar {
+    padding: 8px 14px;
+    gap: 8px 12px;
+    flex-wrap: wrap;
+  }
+  .topbar-brand {
+    order: 1;
+  }
+  .topbar-right {
+    order: 2;
+  }
+  .topbar-nav {
+    order: 3;
+    width: 100%;
+    justify-content: space-around;
+    padding: 4px 6px;
+    background: rgba(5, 9, 18, 0.88);
+  }
+  .topbar-link {
+    padding: 6px 12px;
+    font-size: 0.8rem;
+    gap: 6px;
+    flex: 1 1 auto;
+    justify-content: center;
+  }
+}
+
+@media (max-width: 540px) {
+  :root {
+    --topbar-height: 110px;
+  }
+  .command-topbar {
+    padding: 6px 10px;
+    gap: 6px;
+  }
+  .topbar-brand-text small {
+    display: none;
+  }
+  .topbar-brand-text strong {
+    font-size: 0.98rem;
+  }
+  .topbar-logo-img {
+    height: 38px;
+  }
+  .topbar-link {
+    padding: 5px 6px;
+    font-size: 0.72rem;
+    gap: 4px;
   }
 }
 
