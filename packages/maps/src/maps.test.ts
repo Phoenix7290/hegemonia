@@ -476,10 +476,10 @@ describe("@hegemonia/maps — Validação Cartográfica, Soberania Admin-1, Graf
     }
   });
 
-  it("valida todos os cartões de objetivo (Clássicos e Roleplay) face à malha de 53 territórios", () => {
+  it("valida todos os cartões de objetivo (Clássicos, Roleplay e Assimétricos) face à malha de 53 territórios", () => {
     expect(CLASSIC_OBJECTIVES.length).toBe(14);
     expect(ROLEPLAY_OBJECTIVES.length).toBe(10);
-    expect(ALL_OBJECTIVES.length).toBe(24);
+    expect(ALL_OBJECTIVES.length).toBe(27);
 
     for (const obj of ROLEPLAY_OBJECTIVES) {
       expect(obj.rule.type).toBe("specific_territories");

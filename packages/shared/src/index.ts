@@ -41,78 +41,26 @@ export type TurnPhase = z.infer<typeof TurnPhaseSchema>;
 export const ResourceTypeSchema = z.enum(["steel", "oil", "gold"]);
 export type ResourceType = z.infer<typeof ResourceTypeSchema>;
 
-// ================= EPIC IX: DOUTRINAS MILITARES NACIONAIS =================
-export const DoctrineIdSchema = z.enum([
-  "blitzkrieg",
-  "defense_in_depth",
-  "fleet_in_being",
-  "guerrilla_warfare",
-]);
-export type DoctrineId = z.infer<typeof DoctrineIdSchema>;
+// ================= EPIC IX & HEGEM-116: DOUTRINAS MILITARES NACIONAIS =================
+import {
+  DoctrineIdSchema,
+  type DoctrineId,
+  type DoctrineDef,
+  DOCTRINES,
+  DOCTRINE_LIST,
+  CORE_DOCTRINE_LIST,
+  isDoctrineAvailableInLobby,
+} from "./doctrines.js";
 
-export interface DoctrineDef {
-  id: DoctrineId;
-  icon: "blitzkrieg" | "fortification" | "anchor" | "swords";
-  accentColor: string;
-  badgeCode: string;
-  namePt: string;
-  nameEn: string;
-  summaryPt: string;
-  summaryEn: string;
-}
-
-export const DOCTRINES: Record<DoctrineId, DoctrineDef> = {
-  blitzkrieg: {
-    id: "blitzkrieg",
-    icon: "blitzkrieg",
-    accentColor: "#f59e0b",
-    badgeCode: "BLZ",
-    namePt: "Blitzkrieg (Guerra-Relâmpago)",
-    nameEn: "Blitzkrieg (Lightning War)",
-    summaryPt:
-      "Blindados ganham +1 no maior dado de ataque no 1.º round de combate e avançam com custo de petróleo reduzido em 50% no 1.º blitz de cada turno.",
-    summaryEn:
-      "Armor gains +1 on the highest attack die in the 1st combat round and advances with 50% reduced oil cost on the 1st blitz each turn.",
-  },
-  defense_in_depth: {
-    id: "defense_in_depth",
-    icon: "fortification",
-    accentColor: "#10b981",
-    badgeCode: "DEF",
-    namePt: "Defesa em Profundidade (Fortaleza Patriótica)",
-    nameEn: "Defense in Depth (Patriotic Fortress)",
-    summaryPt:
-      "Infantarias ganham +1 no maior dado defensivo dentro do continente natal. Fortificações Nv. 1 degradam apenas se atacadas por artilharia ou tanques.",
-    summaryEn:
-      "Infantry gains +1 on the highest defense die inside your native continent. Lv. 1 Fortifications degrade only when attacked by artillery or tanks.",
-  },
-  fleet_in_being: {
-    id: "fleet_in_being",
-    icon: "anchor",
-    accentColor: "#38bdf8",
-    badgeCode: "NAV",
-    namePt: "Frota em Potência (Projeção Aeronaval)",
-    nameEn: "Fleet in Being (Aero-Naval Projection)",
-    summaryPt:
-      "Custo de construção de Portos e Aeródromos reduzido em $1. Permite realizar 1 Ponte Aérea (Airlift) adicional por turno.",
-    summaryEn:
-      "Port and Airfield construction cost reduced by $1. Allows 1 additional Airlift per turn.",
-  },
-  guerrilla_warfare: {
-    id: "guerrilla_warfare",
-    icon: "swords",
-    accentColor: "#ef4444",
-    badgeCode: "GRR",
-    namePt: "Guerra de Guerrilha (Resistência Insurgente)",
-    nameEn: "Guerrilla Warfare (Insurgent Resistance)",
-    summaryPt:
-      "Quando um adversário conquista um território seu e avança deixando apenas 1 divisão de guarnição, surge 1 divisão partisan para contestar a posse.",
-    summaryEn:
-      "When an enemy conquers your territory and advances leaving only 1 garrison division, 1 partisan division spawns to contest possession.",
-  },
+export {
+  DoctrineIdSchema,
+  type DoctrineId,
+  type DoctrineDef,
+  DOCTRINES,
+  DOCTRINE_LIST,
+  CORE_DOCTRINE_LIST,
+  isDoctrineAvailableInLobby,
 };
-
-export const DOCTRINE_LIST: DoctrineDef[] = Object.values(DOCTRINES);
 
 export interface MarketResourcePrice {
   buyPrice: number;
@@ -153,6 +101,11 @@ export const BuildingTypeSchema = z.enum([
   "fortification",
   "airfield",
   "port",
+  "military_factory",
+  "civilian_factory",
+  "steel_mine",
+  "oil_well",
+  "refinery",
 ]);
 export type BuildingType = z.infer<typeof BuildingTypeSchema>;
 
@@ -246,6 +199,24 @@ export type ObjectiveKind =
       type: "specific_territories";
       territoryIds: string[];
       extraAnyOf?: string[][];
+    }
+  | {
+      type: "economic_hegemony";
+      targetMoney: number;
+      targetGold: number;
+      activeInvestmentRoutes: number;
+      consecutiveRoundsRequired: number;
+    }
+  | {
+      type: "fortified_bastion";
+      bastionTerritoryCount: number;
+      roundsRequired: number;
+    }
+  | {
+      type: "diplomatic_pax";
+      requiredAlliances: number;
+      requireNapWithAllLiving: boolean;
+      fallbackRoundsSurvival: number;
     };
 
 export interface ObjectiveCard {
@@ -254,6 +225,38 @@ export interface ObjectiveCard {
   descriptionEn: string;
   rule: ObjectiveKind;
   coreTerritoryIds?: string[];
+  allowedDoctrines?: DoctrineId[];
+  disallowedDoctrines?: DoctrineId[];
+}
+
+/**
+ * Validates strict compatibility between a Military Doctrine and a Secret Objective (HEGEM-117).
+ */
+export function isObjectiveCompatibleWithDoctrine(
+  objective: ObjectiveCard,
+  doctrineId: DoctrineId | null | undefined
+): boolean {
+  if (!doctrineId) return true;
+  if (objective.allowedDoctrines && !objective.allowedDoctrines.includes(doctrineId)) {
+    return false;
+  }
+  if (objective.disallowedDoctrines && objective.disallowedDoctrines.includes(doctrineId)) {
+    return false;
+  }
+  // Tall Sovereign is incompatible with wide conquest (>18 territories)
+  if (
+    (doctrineId === "tall_sovereign" || doctrineId === "defense_in_depth") &&
+    objective.rule.type === "territories" &&
+    objective.rule.count > 18
+  ) {
+    return false;
+  }
+  // Extermination is forbidden from diplomatic pacification or purely economic non-combat objectives
+  if (doctrineId === "extermination") {
+    if (objective.rule.type === "diplomatic_pax") return false;
+    if (objective.rule.type === "economic_hegemony") return false;
+  }
+  return true;
 }
 
 export interface PlayerMatchAnalytics {
@@ -279,6 +282,11 @@ export function createInitialPlayerAnalytics(capitalContinentId?: ContinentId): 
       fortification: 0,
       airfield: 0,
       port: 0,
+      military_factory: 0,
+      civilian_factory: 0,
+      steel_mine: 0,
+      oil_well: 0,
+      refinery: 0,
     },
     unitsRecruited: {
       infantry: 0,
@@ -329,6 +337,8 @@ export interface PlayerState {
   moralePenalty?: number;
   /** Individual player infamy percentage (0 to 100%) */
   infamy: number;
+  /** Number of consecutive rounds a player has held their fortified bastion (HEGEM-117) */
+  bastionRoundsHeld?: number;
   /** National treasury ($) and strategic resource stockpiles (steel, oil, gold) */
   resources: PlayerResources;
   /** Whether this player has already purchased a supply card with gold on the current turn */
@@ -384,6 +394,8 @@ export interface TerritoryState {
   infantryAssaultFatigued?: boolean;
   /** Whether artillery barrage was already fired from this territory this turn */
   artilleryBarrageFiredThisTurn?: boolean;
+  /** Number of artillery barrages already fired from this territory this turn */
+  artilleryBarragesCountThisTurn?: number;
   /** Whether an air mission was already launched from this airfield this turn */
   airMissionFlownThisTurn?: boolean;
   /** Target territory has received Close Air Support (CAS) bonus for attacker */

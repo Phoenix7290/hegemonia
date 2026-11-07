@@ -223,12 +223,17 @@ function stepSimulation(
         const destId = borderNeighborId ?? mapById.get(from.id)!.neighbors[0];
         const movable = from.armies - from.movedInArmies - 1;
         if (movable > 0) {
-          return applyAction(
-            state,
-            player.id,
-            { type: "maneuver", fromTerritoryId: from.id, toTerritoryId: destId, armies: movable },
-            rng
-          );
+          try {
+            return applyAction(
+              state,
+              player.id,
+              { type: "maneuver", fromTerritoryId: from.id, toTerritoryId: destId, armies: movable },
+              rng
+            );
+          } catch {
+            // Se a rota estiver bloqueada ou sem combustível, continua ou finaliza turno
+            continue;
+          }
         }
       }
     }

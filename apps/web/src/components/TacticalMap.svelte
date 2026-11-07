@@ -1246,11 +1246,21 @@
                             ? (b.level === 2 ? "#38bdf8" : "#94a3b8")
                             : b.type === "market"
                               ? "#f59e0b"
-                              : b.type === "industry"
-                                ? "#fb923c"
-                                : b.type === "airfield"
-                                  ? "#60a5fa"
-                                  : "#2dd4bf"}
+                              : b.type === "civilian_factory"
+                                ? "#c084fc"
+                                : b.type === "military_factory"
+                                  ? "#f87171"
+                                  : b.type === "steel_mine"
+                                    ? "#cbd5e1"
+                                    : b.type === "oil_well"
+                                      ? "#eab308"
+                                      : b.type === "refinery"
+                                        ? "#06b6d4"
+                                        : b.type === "industry"
+                                          ? "#fb923c"
+                                          : b.type === "airfield"
+                                            ? "#60a5fa"
+                                            : "#2dd4bf"}
                           stroke="#090e1a"
                           stroke-width="0.6"
                         />

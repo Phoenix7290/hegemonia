@@ -157,6 +157,16 @@
                   {t("building_airfield")}
                 {:else if b.type === "port"}
                   {t("building_port")}
+                {:else if b.type === "military_factory"}
+                  {t("building_military_factory")}
+                {:else if b.type === "civilian_factory"}
+                  {t("building_civilian_factory")}
+                {:else if b.type === "steel_mine"}
+                  {t("building_steel_mine")}
+                {:else if b.type === "oil_well"}
+                  {t("building_oil_well")}
+                {:else if b.type === "refinery"}
+                  {t("building_refinery")}
                 {/if}
                 {#if isOwnedByMe && isMyTurn && game.phase === "deploy" && !game.pendingConquest && !game.winnerId}
                   <button
@@ -175,9 +185,10 @@
         {/if}
 
         {#if isOwnedByMe && isMyTurn && !game.pendingConquest && !game.winnerId}
+          {@const isExterm = myPlayerState?.doctrineId === "extermination"}
           <div class="recon-build-grid">
             <!-- Market ($5) -->
-            {#if !hasTerritoryBuilding(inspectedTerritory.state, "market")}
+            {#if !isExterm && !hasTerritoryBuilding(inspectedTerritory.state, "market")}
               <button
                 class="btn-build-option"
                 disabled={bldgs.length >= maxSlots || myRes.money < 5}
@@ -187,6 +198,20 @@
                 <Icon name="market" size={11} />
                 <span>{t("building_market")}</span>
                 <strong class="cost-tag">$5</strong>
+              </button>
+            {/if}
+
+            <!-- Civilian Factory ($5, 1 Steel) -->
+            {#if !isExterm && !hasTerritoryBuilding(inspectedTerritory.state, "civilian_factory")}
+              <button
+                class="btn-build-option"
+                disabled={bldgs.length >= maxSlots || myRes.money < 5 || myRes.steel < 1}
+                onclick={() => handleBuildStructure(inspectedTerritory!.def.id, "civilian_factory")}
+                title={t("building_civilian_factory_desc")}
+              >
+                <Icon name="civilian_factory" size={11} />
+                <span>{t("building_civilian_factory")}</span>
+                <strong class="cost-tag">$5+1A</strong>
               </button>
             {/if}
 
@@ -200,6 +225,62 @@
               >
                 <Icon name="industry" size={11} />
                 <span>{t("building_industry")}</span>
+                <strong class="cost-tag">$6+1A</strong>
+              </button>
+            {/if}
+
+            <!-- Military Factory ($6, 2 Steel) -->
+            {#if !hasTerritoryBuilding(inspectedTerritory.state, "military_factory")}
+              <button
+                class="btn-build-option"
+                disabled={bldgs.length >= maxSlots || myRes.money < 6 || myRes.steel < 2}
+                onclick={() => handleBuildStructure(inspectedTerritory!.def.id, "military_factory")}
+                title={t("building_military_factory_desc")}
+              >
+                <Icon name="military_factory" size={11} />
+                <span>{t("building_military_factory")}</span>
+                <strong class="cost-tag">$6+2A</strong>
+              </button>
+            {/if}
+
+            <!-- Steel Mine ($5, requires steel commodity) -->
+            {#if inspectedTerritory.def.commodity === "steel" && !hasTerritoryBuilding(inspectedTerritory.state, "steel_mine")}
+              <button
+                class="btn-build-option"
+                disabled={bldgs.length >= maxSlots || myRes.money < 5}
+                onclick={() => handleBuildStructure(inspectedTerritory!.def.id, "steel_mine")}
+                title={t("building_steel_mine_desc")}
+              >
+                <Icon name="steel_mine" size={11} />
+                <span>{t("building_steel_mine")}</span>
+                <strong class="cost-tag">$5</strong>
+              </button>
+            {/if}
+
+            <!-- Oil Well ($5, 1 Steel, requires oil commodity) -->
+            {#if inspectedTerritory.def.commodity === "oil" && !hasTerritoryBuilding(inspectedTerritory.state, "oil_well")}
+              <button
+                class="btn-build-option"
+                disabled={bldgs.length >= maxSlots || myRes.money < 5 || myRes.steel < 1}
+                onclick={() => handleBuildStructure(inspectedTerritory!.def.id, "oil_well")}
+                title={t("building_oil_well_desc")}
+              >
+                <Icon name="oil_well" size={11} />
+                <span>{t("building_oil_well")}</span>
+                <strong class="cost-tag">$5+1A</strong>
+              </button>
+            {/if}
+
+            <!-- Refinery ($6, 1 Steel) -->
+            {#if !hasTerritoryBuilding(inspectedTerritory.state, "refinery")}
+              <button
+                class="btn-build-option"
+                disabled={bldgs.length >= maxSlots || myRes.money < 6 || myRes.steel < 1}
+                onclick={() => handleBuildStructure(inspectedTerritory!.def.id, "refinery")}
+                title={t("building_refinery_desc")}
+              >
+                <Icon name="refinery" size={11} />
+                <span>{t("building_refinery")}</span>
                 <strong class="cost-tag">$6+1A</strong>
               </button>
             {/if}

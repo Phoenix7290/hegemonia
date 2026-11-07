@@ -52,7 +52,7 @@
           points="17,7 11,16 16,16 14,25 22,14 17,14"
           fill={def.accentColor}
         />
-      {:else if def.id === "defense_in_depth"}
+      {:else if def.id === "defense_in_depth" || def.id === "tall_sovereign"}
         <!-- Torre de Fortaleza / Baluarte Simétrico e Centralizado -->
         <path
           d="M9.5 9.5 H12.2 V11.8 H14.6 V9.5 H17.4 V11.8 H19.8 V9.5 H22.5 V13.2 H20.8 V20.5 H17.8 V17.2 C17.8 16.2 17 15.4 16 15.4 C15 15.4 14.2 16.2 14.2 17.2 V20.5 H11.2 V13.2 H9.5 Z"
@@ -77,8 +77,8 @@
           stroke-width="1.8"
           stroke-linecap="round"
         />
-      {:else if def.id === "fleet_in_being"}
-        <!-- Âncora Aeronaval & Asas -->
+      {:else if def.id === "fleet_in_being" || def.id === "naval_supremacy"}
+        <!-- Ancora Aeronaval & Asas -->
         <circle
           cx="16"
           cy="10"
@@ -101,7 +101,7 @@
           stroke-width="1.8"
           fill="none"
         />
-      {:else if def.id === "guerrilla_warfare"}
+      {:else if def.id === "guerrilla_warfare" || def.id === "guerrilla"}
         <!-- Estrela Partisan & Sabres Cruzados -->
         <path
           d="M11 22 L21 10 M21 22 L11 10"
@@ -113,6 +113,33 @@
           points="16,8 17.4,12.2 21.8,12.2 18.2,14.8 19.5,19 16,16.4 12.5,19 13.8,14.8 10.2,12.2 14.6,12.2"
           fill={def.accentColor}
         />
+      {:else if def.id === "mass_assault"}
+        <!-- Divisas Triplas de Infantaria / Onda Humana -->
+        <path
+          d="M10 11 L16 8 L22 11 M10 15 L16 12 L22 15 M10 19 L16 16 L22 19"
+          stroke={def.accentColor}
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          fill="none"
+        />
+      {:else if def.id === "superior_firepower"}
+        <!-- Obuseiro / Canhao de Artilharia Pesada -->
+        <circle cx="11" cy="19" r="3" stroke={def.accentColor} stroke-width="1.8" fill="none" />
+        <line x1="11" y1="19" x2="22" y2="10" stroke={def.accentColor} stroke-width="2.4" stroke-linecap="round" />
+        <line x1="8" y1="22" x2="16" y2="22" stroke={def.accentColor} stroke-width="1.6" />
+      {:else if def.id === "extermination"}
+        <!-- Caveira Tatica -->
+        <path
+          d="M11 11 C11 7.8 13.2 6 16 6 C18.8 6 21 7.8 21 11 C21 13.8 19.2 15.5 18.5 18 H13.5 C12.8 15.5 11 13.8 11 11 Z"
+          stroke={def.accentColor}
+          stroke-width="1.8"
+          fill="none"
+        />
+        <circle cx="13.8" cy="11.5" r="1.1" fill={def.accentColor} />
+        <circle cx="18.2" cy="11.5" r="1.1" fill={def.accentColor} />
+        <line x1="14.8" y1="18" x2="14.8" y2="21" stroke={def.accentColor} stroke-width="1.5" />
+        <line x1="17.2" y1="18" x2="17.2" y2="21" stroke={def.accentColor} stroke-width="1.5" />
       {/if}
     </svg>
 

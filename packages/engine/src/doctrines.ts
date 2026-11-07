@@ -1,5 +1,7 @@
 import {
   DOCTRINES,
+  isDoctrineAvailableInLobby,
+  isObjectiveCompatibleWithDoctrine,
   type BuildingType,
   type DoctrineId,
   type GameMapDef,
@@ -47,6 +49,7 @@ export function getPlayerNativeContinent(
 
 /**
  * Aplica a seleção de doutrina na Rodada 1 (Fase de Posicionamento)
+ * com verificação estrita de limite de escolhas por partida.
  */
 export function applySelectDoctrine(
   state: GameState,
@@ -59,14 +62,37 @@ export function applySelectDoctrine(
   if (player.doctrineId) {
     throw new Error("A sua Doutrina Militar Nacional já foi definida para esta partida.");
   }
+
+  // HEGEM-116: Limite de picks no lobby / partida (max 2 para comuns, max 1 para Extermínio)
+  const currentSelections = state.players.map((p) => p.doctrineId);
+  if (!isDoctrineAvailableInLobby(doctrineId, currentSelections)) {
+    throw new Error(
+      `O limite de generais com a doutrina "${DOCTRINES[doctrineId]?.namePt}" já foi atingido nesta partida.`
+    );
+  }
+
+  // HEGEM-117: Compatibilidade estrita entre Doutrina e Objetivo Secreto
+  if (player.objective && !isObjectiveCompatibleWithDoctrine(player.objective, doctrineId)) {
+    throw new Error(
+      `A doutrina militar "${DOCTRINES[doctrineId]?.namePt}" é incompatível com o seu Objetivo Secreto.`
+    );
+  }
+
   player.doctrineId = doctrineId;
   const def = DOCTRINES[doctrineId];
+
+  // Extermínio inicia com 50% de Tensão Global e Infâmia
+  if (doctrineId === "extermination") {
+    state.worldTension = Math.max(state.worldTension ?? 0, 50);
+    player.infamy = Math.max(player.infamy ?? 0, 50);
+  }
+
   state.log.push(`[DOUTRINA] ${player.name} adotou a doutrina "${def.namePt}".`);
 }
 
 /**
- * Doutrina 1 (Blitzkrieg) e Doutrina 2 (Defesa em Profundidade):
- * Ajusta os dados ordenados (decrescentes) de ataque e defesa de forma 100% determinística.
+ * Modificadores de Combate das 7 Doutrinas HoI4:
+ * Ajusta os dados ordenados de ataque e defesa de forma 100% determinística.
  */
 export function applyDoctrineCombatDiceModifiers(params: {
   state: GameState;
@@ -101,7 +127,15 @@ export function applyDoctrineCombatDiceModifiers(params: {
   assaulted.add(toTerritory.id);
   attacker.assaultedTargetsThisTurn = [...assaulted];
 
-  // 1. Blitzkrieg: +1 no maior dado de ataque no 1.º round de combate se tiver blindados com combustível
+  // 1. Extermínio (Total War): +1 em TODOS os dados de ataque ao invadir
+  if (attacker.doctrineId === "extermination" && attackerDice.length > 0) {
+    for (let i = 0; i < attackerDice.length; i++) {
+      attackerDice[i] = Math.min(6, attackerDice[i] + 1);
+    }
+    attackerBonusApplied = true;
+  }
+
+  // 2. Blitzkrieg: +1 no maior dado de ataque no 1.º round com blindados abastecidos
   if (
     attacker.doctrineId === "blitzkrieg" &&
     isFirstCombatRoundOnTarget &&
@@ -113,16 +147,31 @@ export function applyDoctrineCombatDiceModifiers(params: {
     attackerBonusApplied = true;
   }
 
-  // 2. Defesa em Profundidade: +1 no maior dado defensivo com infantaria dentro do continente natal
-  if (defender && defender.doctrineId === "defense_in_depth" && defenderDice.length > 0) {
-    const toDef = map.territories.find((t) => t.id === toTerritory.id);
-    const nativeContinent = getPlayerNativeContinent(state, defender, map);
-    if (
-      defenderUnits.infantry > 0 &&
-      toDef &&
-      nativeContinent &&
-      toDef.continent === nativeContinent
-    ) {
+  // 3. Grande Batalhão (Superior Firepower): Artilharia acoplada concede +1 no 2.º maior dado
+  if (
+    attacker.doctrineId === "superior_firepower" &&
+    committedAttackerUnits.artillery >= 1 &&
+    attackerDice.length >= 2
+  ) {
+    attackerDice[1] = Math.min(6, attackerDice[1] + 1);
+    attackerBonusApplied = true;
+  }
+
+  // 4. Fortaleza Soberana (Tall) & Defesa em Profundidade:
+  if (
+    defender &&
+    (defender.doctrineId === "tall_sovereign" || defender.doctrineId === "defense_in_depth") &&
+    defenderDice.length > 0
+  ) {
+    const defTerrCount = Object.values(state.territories).filter(
+      (t) => t.ownerId === defender.id
+    ).length;
+
+    // Se estiver em Overextension (> 5 territórios): penalidade de -1 DEF
+    if (defTerrCount > 5) {
+      defenderDice[0] = Math.max(1, defenderDice[0] - 1);
+    } else if (defenderUnits.infantry > 0) {
+      // Bastião concentrado (<= 5 territórios): +1 no maior dado de defesa
       defenderDice[0] = Math.min(6, defenderDice[0] + 1);
       defenderBonusApplied = true;
     }
@@ -132,21 +181,24 @@ export function applyDoctrineCombatDiceModifiers(params: {
 }
 
 /**
- * Doutrina 2 (Defesa em Profundidade):
+ * Fortaleza Soberana / Defesa em Profundidade:
  * Fortificações Nv. 1 só degradam em combate se o atacante empregar tanques ou artilharia.
  */
 export function canDegradeFortificationInCombat(
   defender: PlayerState | undefined,
   committedAttackerUnits: UnitCounts
 ): boolean {
-  if (defender?.doctrineId === "defense_in_depth") {
+  if (
+    defender?.doctrineId === "defense_in_depth" ||
+    defender?.doctrineId === "tall_sovereign"
+  ) {
     return committedAttackerUnits.tank > 0 || committedAttackerUnits.artillery > 0;
   }
   return true;
 }
 
 /**
- * Doutrina 1 (Blitzkrieg):
+ * Blitzkrieg:
  * Reduz em 50% o custo de petróleo no primeiro avanço/ataque Blitz de cada turno.
  */
 export function getEffectiveBlitzOilCost(
@@ -160,7 +212,7 @@ export function getEffectiveBlitzOilCost(
 }
 
 /**
- * Doutrina 3 (Frota em Potência / Projeção Aeronaval):
+ * Supremacia Aeronaval / Frota em Potência:
  * Reduz em $1 o custo de construção de Portos e Aeródromos.
  */
 export function getEffectiveBuildingMoneyCost(
@@ -169,7 +221,7 @@ export function getEffectiveBuildingMoneyCost(
   baseMoneyCost: number
 ): number {
   if (
-    player.doctrineId === "fleet_in_being" &&
+    (player.doctrineId === "fleet_in_being" || player.doctrineId === "naval_supremacy") &&
     (buildingType === "port" || buildingType === "airfield")
   ) {
     return Math.max(1, baseMoneyCost - 1);
@@ -178,15 +230,15 @@ export function getEffectiveBuildingMoneyCost(
 }
 
 /**
- * Doutrina 3 (Frota em Potência / Projeção Aeronaval):
- * Permite realizar 1 Ponte Aérea (Airlift) adicional por turno (total = 2).
+ * Supremacia Aeronaval:
+ * Permite realizar até 2 Pontes Aéreas (Airlifts) por turno.
  */
 export function getMaxAirliftsPerTurn(player: PlayerState): number {
-  return player.doctrineId === "fleet_in_being" ? 2 : 1;
+  return player.doctrineId === "fleet_in_being" || player.doctrineId === "naval_supremacy" ? 2 : 1;
 }
 
 /**
- * Doutrina 4 (Guerra de Guerrilha / Resistência Insurgente):
+ * Guerra de Guerrilha:
  * Quando um adversário conquista um território e avança deixando apenas 1 divisão de guarnição,
  * surge 1 divisão de partisan para contestar a posse imediatamente.
  */
@@ -200,7 +252,12 @@ export function resolveGuerrillaInsurgencyOnOccupy(params: {
 }): boolean {
   const { state, map, rng, occupier, previousOwner, conqueredTerritory } = params;
   if (!previousOwner || previousOwner.id === occupier.id) return false;
-  if (previousOwner.doctrineId !== "guerrilla_warfare") return false;
+  if (
+    previousOwner.doctrineId !== "guerrilla_warfare" &&
+    previousOwner.doctrineId !== "guerrilla"
+  ) {
+    return false;
+  }
   if (conqueredTerritory.armies !== 1) return false;
 
   const partisanRoll = rng.nextInt(1, 6);
@@ -219,8 +276,14 @@ export function resolveGuerrillaInsurgencyOnOccupy(params: {
       aircraft: 0,
       navy: 0,
     };
+    conqueredTerritory.conqueredTurnRound = undefined;
+    conqueredTerritory.blitzkriegAvailable = false;
+    conqueredTerritory.infantryAssaultFatigued = false;
     previousOwner.eliminated = false;
     previousOwner.eliminatedBy = undefined;
+    if (state.lastCombat && state.lastCombat.toTerritoryId === conqueredTerritory.id) {
+      state.lastCombat.guerrillaInsurgency = true;
+    }
     state.log.push(
       `[GUERRILHA] Insurgência Partisan em ${terrName}! Guerrilheiros de ${previousOwner.name} emboscaram a guarnição solitária de ${occupier.name} ([${partisanRoll}] vs [${garrisonRoll}]) e retomaram o território!`
     );

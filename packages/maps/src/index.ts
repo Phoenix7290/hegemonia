@@ -1359,9 +1359,55 @@ export const ROLEPLAY_OBJECTIVES: ObjectiveCard[] = [
   },
 ];
 
+export const V06_ASYMMETRIC_OBJECTIVES: ObjectiveCard[] = [
+  {
+    id: "obj_bretton_woods",
+    descriptionPt:
+      "Hegemonia Econômica (Bretton Woods): Acumular $300 no Tesouro, 50 de Ouro de Reserva e manter 2 rotas de investimento ativas.",
+    descriptionEn:
+      "Economic Hegemony (Bretton Woods): Accumulate $300 in Treasury, 50 Reserve Gold, and maintain 2 active investment routes.",
+    rule: {
+      type: "economic_hegemony",
+      targetMoney: 300,
+      targetGold: 50,
+      activeInvestmentRoutes: 2,
+      consecutiveRoundsRequired: 2,
+    },
+    disallowedDoctrines: ["mass_assault", "extermination"],
+  },
+  {
+    id: "obj_fortified_bastion",
+    descriptionPt:
+      "Bastião Inexpugnável (Soberania Fortificada): Manter pelo menos 4 territórios fortificados (com Fortaleza/Casamata) sem invasão durante 5 rodadas.",
+    descriptionEn:
+      "Impregnable Bastion (Sovereign Fortress): Maintain at least 4 fortified territories with Fortresses/Casemates unbreached for 5 rounds.",
+    rule: {
+      type: "fortified_bastion",
+      bastionTerritoryCount: 4,
+      roundsRequired: 5,
+    },
+    allowedDoctrines: ["tall_sovereign", "defense_in_depth"],
+  },
+  {
+    id: "obj_pax_hegemonica",
+    descriptionPt:
+      "Pax Hegemonica (Pacificação Diplomática): Manter 1 Aliança Militar ativa e Pactos de Não-Agressão (NAP) com todos os outros generais vivos (ou sobreviver até a Rodada 30).",
+    descriptionEn:
+      "Pax Hegemonica (Diplomatic Pacification): Maintain 1 active Military Alliance and NAPs with all other living generals (or survive to Round 30).",
+    rule: {
+      type: "diplomatic_pax",
+      requiredAlliances: 1,
+      requireNapWithAllLiving: true,
+      fallbackRoundsSurvival: 30,
+    },
+    disallowedDoctrines: ["extermination"],
+  },
+];
+
 export const ALL_OBJECTIVES: ObjectiveCard[] = [
   ...CLASSIC_OBJECTIVES,
   ...ROLEPLAY_OBJECTIVES,
+  ...V06_ASYMMETRIC_OBJECTIVES,
 ];
 
 /**

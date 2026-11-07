@@ -7,6 +7,7 @@ import {
   HEGEMONIA_VERSION,
   PlayerColorSchema,
   SESSION_REPLACED_CLOSE_CODE,
+  isDoctrineAvailableInLobby,
   type AuthUser,
   type CompetitionMode,
   type DoctrineId,
@@ -56,6 +57,7 @@ interface HegemoniaRoomOptions {
   seasonId?: string;
   expectedUserIds?: string[];
   rulesConfig?: Record<string, unknown>;
+  turnTimerSeconds?: number;
 }
 
 const ALL_COLORS: PlayerColor[] = ["blue", "red", "green", "yellow", "black", "white"];
@@ -89,6 +91,14 @@ export class HegemoniaRoom extends Room {
     this.seasonId = options.seasonId;
     this.expectedUserIds = new Set(options.expectedUserIds ?? []);
     this.rulesConfig = options.rulesConfig ?? {};
+    if (typeof options.turnTimerSeconds === "number" && options.turnTimerSeconds > 0) {
+      this.turnTimerSeconds = options.turnTimerSeconds;
+    } else if (
+      typeof this.rulesConfig.turnTimerSeconds === "number" &&
+      (this.rulesConfig.turnTimerSeconds as number) > 0
+    ) {
+      this.turnTimerSeconds = Number(this.rulesConfig.turnTimerSeconds);
+    }
     this.communications = new RoomCommunications({
       getPlayers: () => this.lobbyPlayers,
       getClients: () => [...this.clients],
@@ -127,7 +137,24 @@ export class HegemoniaRoom extends Room {
       if (!parsed.success) return;
       const player = this.lobbyPlayers.find((p) => p.sessionId === client.sessionId);
       if (player) {
+        const otherDoctrines = this.lobbyPlayers
+          .filter((p) => p.sessionId !== client.sessionId)
+          .map((p) => p.doctrineId);
+        if (!isDoctrineAvailableInLobby(parsed.data, otherDoctrines)) {
+          return;
+        }
         player.doctrineId = parsed.data;
+        this.broadcastRoomState();
+      }
+    });
+
+    this.onMessage("set_turn_timer", (client, payload: { seconds: number }) => {
+      if (this.gameState) return;
+      const caller = this.lobbyPlayers.find((p) => p.sessionId === client.sessionId);
+      if (!caller?.isHost) return;
+      const sec = Number(payload?.seconds);
+      if (sec >= 15 && sec <= 300) {
+        this.turnTimerSeconds = sec;
         this.broadcastRoomState();
       }
     });
@@ -746,6 +773,7 @@ export class HegemoniaRoom extends Room {
       competitionMode: this.competitionMode,
       matchOrigin: this.matchOrigin,
       turnDeadline: this.turnDeadline,
+      turnTimerSeconds: this.turnTimerSeconds,
       myPlayerId: viewerToken,
       lobbyPlayers: this.lobbyPlayers.map((p) => ({
         token: p.token,

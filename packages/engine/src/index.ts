@@ -1,5 +1,7 @@
 import {
   DOCTRINES,
+  isDoctrineAvailableInLobby,
+  isObjectiveCompatibleWithDoctrine,
   type BorderTradeDeal,
   type BuildingType,
   createInitialPlayerAnalytics,
@@ -33,6 +35,17 @@ import {
 } from "@hegemonia/maps";
 import { createSeededRng, hashSeed, type SeededRng } from "./rng.js";
 import {
+  applyDoctrineCombatDiceModifiers,
+  applySelectDoctrine,
+  canDegradeFortificationInCombat,
+  getEffectiveBlitzOilCost,
+  getEffectiveBuildingMoneyCost,
+  getMaxAirliftsPerTurn,
+  getPlayerNativeContinent,
+  resetDoctrineTurnCounters,
+  resolveGuerrillaInsurgencyOnOccupy,
+} from "./doctrines.js";
+import {
   addUnits,
   canSubtractUnits,
   emptyUnitCounts,
@@ -59,140 +72,7 @@ export interface CreateGameOptions {
   objectives?: ObjectiveCard[];
 }
 
-// ================= EPIC IX: HELPERS DETERMINÍSTICOS DE DOUTRINAS =================
-
-/**
- * Determina o continente natal do comandante:
- * 1. Continente registado em analytics.capitalContinentId
- * 2. Continente da Capital Nacional (capitalTerritoryId)
- * 3. Fallback: continente onde o jogador controla mais territórios
- */
-export function getPlayerNativeContinent(
-  state: GameState,
-  player: PlayerState,
-  map: GameMapDef = CLASSIC_MAP
-): string | null {
-  if (player.analytics?.capitalContinentId) {
-    return player.analytics.capitalContinentId;
-  }
-  if (player.capitalTerritoryId) {
-    const capDef = map.territories.find((t) => t.id === player.capitalTerritoryId);
-    if (capDef) return capDef.continent;
-  }
-  const counts = new Map<string, number>();
-  for (const tDef of map.territories) {
-    if (state.territories[tDef.id]?.ownerId === player.id) {
-      counts.set(tDef.continent, (counts.get(tDef.continent) ?? 0) + 1);
-    }
-  }
-  let bestContinent: string | null = null;
-  let bestCount = 0;
-  for (const [cont, count] of counts) {
-    if (count > bestCount) {
-      bestCount = count;
-      bestContinent = cont;
-    }
-  }
-  return bestContinent;
-}
-
-/**
- * Doutrina 3 (Frota em Potência): reduz em $1 o custo de construção de Portos e Aeródromos.
- */
-export function getEffectiveBuildingMoneyCost(
-  player: PlayerState | undefined,
-  buildingType: BuildingType,
-  baseMoneyCost: number
-): number {
-  if (
-    player?.doctrineId === "fleet_in_being" &&
-    (buildingType === "port" || buildingType === "airfield")
-  ) {
-    return Math.max(1, baseMoneyCost - 1);
-  }
-  return baseMoneyCost;
-}
-
-/**
- * Doutrina 1 (Blitzkrieg): reduz em 50% o custo de petróleo no primeiro avanço Blitz de cada turno.
- */
-export function getEffectiveBlitzOilCost(
-  player: PlayerState | undefined,
-  baseOilCost: number
-): number {
-  if (player?.doctrineId === "blitzkrieg" && (player.blitzCountThisTurn ?? 0) === 0) {
-    return Math.floor(baseOilCost * 0.5);
-  }
-  return baseOilCost;
-}
-
-/**
- * Doutrina 3 (Frota em Potência): permite 1 Ponte Aérea (Airlift) adicional por turno (total = 2).
- */
-export function getMaxAirliftsPerTurn(player: PlayerState | undefined): number {
-  return player?.doctrineId === "fleet_in_being" ? 2 : 1;
-}
-
-/**
- * Doutrina 2 (Defesa em Profundidade): Fortificações Nv. 1 degradam apenas se atacadas por artilharia ou tanques.
- */
-export function canDegradeFortificationInCombat(
-  defender: PlayerState | undefined,
-  committedAttackerUnits: UnitCounts
-): boolean {
-  if (defender?.doctrineId === "defense_in_depth") {
-    return committedAttackerUnits.tank > 0 || committedAttackerUnits.artillery > 0;
-  }
-  return true;
-}
-
-/**
- * Doutrina 4 (Guerra de Guerrilha): quando um adversário conquista um território seu
- * e avança deixando apenas 1 divisão de guarnição, surge 1 divisão partisan para contestar a posse.
- */
-export function resolveGuerrillaInsurgencyOnOccupy(params: {
-  state: GameState;
-  map: GameMapDef;
-  rng: SeededRng;
-  occupier: PlayerState;
-  previousOwner: PlayerState | undefined;
-  conqueredTerritory: TerritoryState;
-}): boolean {
-  const { state, map, rng, occupier, previousOwner, conqueredTerritory } = params;
-  if (!previousOwner || previousOwner.id === occupier.id) return false;
-  if (previousOwner.doctrineId !== "guerrilla_warfare") return false;
-  if (conqueredTerritory.armies !== 1) return false;
-
-  const partisanRoll = rng.rollD6();
-  const garrisonRoll = rng.rollD6();
-  const terrName =
-    map.territories.find((t) => t.id === conqueredTerritory.id)?.namePt ??
-    conqueredTerritory.id;
-
-  if (partisanRoll >= garrisonRoll) {
-    setTerritoryUnits(conqueredTerritory, singleUnitCount("infantry", 1));
-    conqueredTerritory.ownerId = previousOwner.id;
-    conqueredTerritory.conqueredTurnRound = undefined;
-    conqueredTerritory.blitzkriegAvailable = false;
-    conqueredTerritory.infantryAssaultFatigued = false;
-    previousOwner.eliminated = false;
-    previousOwner.eliminatedBy = undefined;
-
-    if (state.lastCombat && state.lastCombat.toTerritoryId === conqueredTerritory.id) {
-      state.lastCombat.guerrillaInsurgency = true;
-    }
-
-    state.log.push(
-      `[GUERRILHA] Insurgência Partisan em ${terrName}! Guerrilheiros de ${previousOwner.name} emboscaram a guarnição solitária de ${occupier.name} ([${partisanRoll}] vs [${garrisonRoll}]) e retomaram o território com 1 divisão partisan!`
-    );
-    return true;
-  }
-
-  state.log.push(
-    `[GUERRILHA] Insurgência Partisan em ${terrName}! A guarnição de ${occupier.name} conteve por pouco o levante partisan de ${previousOwner.name} ([${garrisonRoll}] vs [${partisanRoll}]).`
-  );
-  return false;
-}
+export * from "./doctrines.js";
 
 /**
  * Classic Grow War trade progression: 4, 6, 8, 10, 12, 15, then +5 per subsequent exchange
@@ -304,6 +184,11 @@ export const BUILDING_COSTS: Record<BuildingType, BuildingCost> = {
   fortification: { money: 6, steel: 0 }, // Level 1 Casamata
   airfield: { money: 5, steel: 1 },
   port: { money: 5, steel: 0 },
+  military_factory: { money: 6, steel: 2 },
+  civilian_factory: { money: 5, steel: 1 },
+  steel_mine: { money: 5, steel: 0 },
+  oil_well: { money: 5, steel: 1 },
+  refinery: { money: 6, steel: 1 },
 };
 
 export const FORTIFICATION_LEVEL_2_COST: BuildingCost = {
@@ -366,10 +251,15 @@ export function getTerritoryMaxBuildingSlots(
   const terr = state.territories[territoryId];
   if (!terr) return 2;
   const owner = state.players.find((p) => p.id === terr.ownerId);
+  let slots = 2;
   if (owner && owner.capitalTerritoryId === territoryId && !owner.isCapitalLost) {
-    return 3;
+    slots = 3;
   }
-  return 2;
+  // HEGEM-107: Fábrica Civil expande capacidade de obras em +1 slot
+  if (hasTerritoryBuilding(terr, "civilian_factory")) {
+    slots += 1;
+  }
+  return slots;
 }
 
 export function getTerritoryBuildingLevel(
@@ -620,6 +510,10 @@ export function calculateTurnEconomy(
     if (!def) continue;
     const hasMarket = hasTerritoryBuilding(terr, "market");
     const hasIndustry = hasTerritoryBuilding(terr, "industry");
+    const hasCivilianFactory = hasTerritoryBuilding(terr, "civilian_factory");
+    const hasSteelMine = hasTerritoryBuilding(terr, "steel_mine");
+    const hasOilWell = hasTerritoryBuilding(terr, "oil_well");
+    const hasRefinery = hasTerritoryBuilding(terr, "refinery");
     const hasPort = hasTerritoryBuilding(terr, "port");
 
     if (def.tradeBonus && def.tradeBonus > 0) {
@@ -631,18 +525,28 @@ export function calculateTurnEconomy(
     if (hasMarket) {
       buildingMoney += 2;
     }
+    if (hasCivilianFactory) {
+      buildingMoney += 3;
+    }
     if (hasIndustry && !def.resource) {
       buildingMoney += 2;
     }
 
     const resourceYield = hasIndustry ? 2 : 1;
     if (def.resource === "steel") {
-      steel += resourceYield;
+      steel += resourceYield + (hasSteelMine ? 2 : 0);
     } else if (def.resource === "oil") {
-      oil += resourceYield;
+      oil += resourceYield + (hasOilWell ? 2 : 0);
     } else if (def.resource === "gold") {
       gold += resourceYield;
       goldPassiveMoney += 2;
+    } else {
+      if (hasSteelMine) steel += 1;
+      if (hasOilWell) oil += 1;
+    }
+
+    if (hasRefinery) {
+      oil += 1;
     }
   }
 
@@ -667,8 +571,25 @@ export function calculateTurnEconomy(
   }
   const artilleryUpkeep = totalArtillery * 1;
 
-  const grossMoney =
+  let grossMoney =
     capitalMoney + tradeHubMoney + goldPassiveMoney + buildingMoney + investmentMoney;
+
+  // HEGEM-116: Modificadores Econômicos de Doutrina
+  if (player?.doctrineId === "mass_assault") {
+    grossMoney = Math.floor(grossMoney * 0.60);
+  } else if (player?.doctrineId === "tall_sovereign" || player?.doctrineId === "defense_in_depth") {
+    if (occupiedTerritories.length <= 5) {
+      for (const terr of occupiedTerritories) {
+        const def = mapById.get(terr.id);
+        if (def?.resource === "steel") steel += 1;
+        if (def?.resource === "oil") oil += 1;
+        if (def?.resource === "gold") gold += 1;
+      }
+    } else {
+      const overextPenalty = Math.min(0.75, (occupiedTerritories.length - 5) * 0.15);
+      grossMoney = Math.floor(grossMoney * (1 - overextPenalty));
+    }
+  }
   const economicPenaltyMultiplier = player?.isCapitalLost
     ? (player.economicPenaltyMultiplier ?? 0.5)
     : 1.0;
@@ -769,10 +690,23 @@ export function createGame(opts: CreateGameOptions): GameState {
     let chosenObjective: ObjectiveCard | undefined;
     const startingTerrs = playerOwnedTerritoryIds[p.id] ?? [];
 
+    const isObjEligible = (obj: ObjectiveCard): boolean => {
+      if (assignedObjectiveIds.has(obj.id)) return false;
+      if (!isObjectiveCompatibleWithDoctrine(obj, p.doctrineId)) return false;
+      const rule = obj.rule;
+      if (rule.type === "destroy_color") {
+        const hasOpponent = shuffledPlayers.some(
+          (other) => other.id !== p.id && other.color === rule.targetColor
+        );
+        if (!hasOpponent) return false;
+      }
+      return true;
+    };
+
     if (!opts.objectives) {
       const matchingRoleplay = ROLEPLAY_OBJECTIVES.filter(
         (obj) =>
-          !assignedObjectiveIds.has(obj.id) &&
+          isObjEligible(obj) &&
           obj.coreTerritoryIds?.some((coreId) => startingTerrs.includes(coreId))
       );
 
@@ -783,7 +717,7 @@ export function createGame(opts: CreateGameOptions): GameState {
 
     if (!chosenObjective) {
       chosenObjective = shuffledObjectives.find((obj) => {
-        if (assignedObjectiveIds.has(obj.id)) return false;
+        if (!isObjEligible(obj)) return false;
         if (!obj.coreTerritoryIds || obj.coreTerritoryIds.length === 0) {
           return true;
         }
@@ -793,7 +727,8 @@ export function createGame(opts: CreateGameOptions): GameState {
 
     if (!chosenObjective) {
       chosenObjective =
-        rng.shuffle([...CLASSIC_OBJECTIVES]).find((obj) => !assignedObjectiveIds.has(obj.id)) ??
+        rng.shuffle([...CLASSIC_OBJECTIVES]).find((obj) => isObjEligible(obj)) ??
+        shuffledObjectives.find((obj) => isObjEligible(obj)) ??
         shuffledObjectives[0];
     }
     assignedObjectiveIds.add(chosenObjective.id);
@@ -936,6 +871,51 @@ export function checkPlayerVictory(
     return targetPlayer.eliminated && targetPlayer.eliminatedBy === player.id;
   }
 
+  // HEGEM-117: Novas Condições de Vitória Assimétricas
+  if (rule.type === "economic_hegemony") {
+    const moneyOk = (player.resources?.money ?? 0) >= rule.targetMoney;
+    const goldOk = (player.resources?.gold ?? 0) >= rule.targetGold;
+    const activeRoutes = (state.investmentRoutes ?? []).filter(
+      (r) =>
+        r.status === "active" &&
+        (r.playerAId === playerId || r.playerBId === playerId)
+    ).length;
+    return moneyOk && goldOk && activeRoutes >= rule.activeInvestmentRoutes;
+  }
+
+  if (rule.type === "fortified_bastion") {
+    const fortifiedCount = ownedTerritories.filter((t) =>
+      (t.buildings ?? []).some((b) => b.type === "fortification")
+    ).length;
+    return (
+      fortifiedCount >= rule.bastionTerritoryCount &&
+      (player.bastionRoundsHeld ?? 0) >= rule.roundsRequired
+    );
+  }
+
+  if (rule.type === "diplomatic_pax") {
+    if (state.round >= rule.fallbackRoundsSurvival) {
+      return true;
+    }
+    const otherLiving = state.players.filter((p) => !p.eliminated && p.id !== playerId);
+    if (otherLiving.length === 0) return true;
+
+    const activeTreaties = (state.treaties ?? []).filter((t) => t.status === "active");
+    const hasAlliance = activeTreaties.some(
+      (t) =>
+        t.type === "alliance" &&
+        (t.fromPlayerId === playerId || t.toPlayerId === playerId)
+    );
+    const hasNapWithAll = otherLiving.every((other) =>
+      activeTreaties.some(
+        (t) =>
+          (t.fromPlayerId === playerId && t.toPlayerId === other.id) ||
+          (t.fromPlayerId === other.id && t.toPlayerId === playerId)
+      )
+    );
+    return hasAlliance && hasNapWithAll;
+  }
+
   return false;
 }
 
@@ -1049,6 +1029,58 @@ export function calculateObjectiveProgress(
     };
   }
 
+  if (rule.type === "economic_hegemony") {
+    const moneyProgress = Math.min(100, Math.round(((player.resources?.money ?? 0) / rule.targetMoney) * 100));
+    const goldProgress = Math.min(100, Math.round(((player.resources?.gold ?? 0) / rule.targetGold) * 100));
+    const activeRoutes = (state.investmentRoutes ?? []).filter(
+      (r) => r.status === "active" && (r.playerAId === playerId || r.playerBId === playerId)
+    ).length;
+    const routeProgress = Math.min(100, Math.round((activeRoutes / rule.activeInvestmentRoutes) * 100));
+    const completionPct = Math.round(moneyProgress * 0.4 + goldProgress * 0.4 + routeProgress * 0.2);
+    return {
+      completionPct,
+      held: player.resources?.money ?? 0,
+      total: rule.targetMoney,
+      description: player.objective.descriptionPt,
+    };
+  }
+
+  if (rule.type === "fortified_bastion") {
+    const fortifiedCount = ownedTerritories.filter((t) =>
+      (t.buildings ?? []).some((b) => b.type === "fortification")
+    ).length;
+    const fortProgress = Math.min(100, Math.round((fortifiedCount / rule.bastionTerritoryCount) * 100));
+    const roundProgress = Math.min(100, Math.round(((player.bastionRoundsHeld ?? 0) / rule.roundsRequired) * 100));
+    const completionPct = Math.round(fortProgress * 0.5 + roundProgress * 0.5);
+    return {
+      completionPct,
+      held: player.bastionRoundsHeld ?? 0,
+      total: rule.roundsRequired,
+      description: player.objective.descriptionPt,
+    };
+  }
+
+  if (rule.type === "diplomatic_pax") {
+    const otherLiving = state.players.filter((p) => !p.eliminated && p.id !== playerId);
+    const activeTreaties = (state.treaties ?? []).filter((t) => t.status === "active");
+    const treatiedCount = otherLiving.filter((other) =>
+      activeTreaties.some(
+        (t) =>
+          (t.fromPlayerId === playerId && t.toPlayerId === other.id) ||
+          (t.fromPlayerId === other.id && t.toPlayerId === playerId)
+      )
+    ).length;
+    const treatyProgress = otherLiving.length > 0 ? Math.round((treatiedCount / otherLiving.length) * 100) : 100;
+    const roundProgress = Math.min(100, Math.round((state.round / rule.fallbackRoundsSurvival) * 100));
+    const completionPct = Math.max(treatyProgress, roundProgress);
+    return {
+      completionPct,
+      held: treatiedCount,
+      total: Math.max(1, otherLiving.length),
+      description: player.objective.descriptionPt,
+    };
+  }
+
   return { completionPct: 0, held: 0, total: 1, description: player.objective.descriptionPt };
 }
 
@@ -1104,7 +1136,7 @@ export function applyAction(
   const mapById = new Map(map.territories.map((t) => [t.id, t]));
 
   switch (action.type) {
-case "select_doctrine": {
+    case "select_doctrine": {
       if (state.round > 1) {
         throw new Error(
           "A Doutrina Militar Nacional só pode ser definida no início da partida (Rodada 1)."
@@ -1113,8 +1145,30 @@ case "select_doctrine": {
       if (actingPlayer.doctrineId === action.doctrineId) {
         throw new Error("Sua Doutrina Militar Nacional já foi estabelecida para esta campanha.");
       }
+
+      // HEGEM-116: Validação de limites no lobby / partida
+      const currentSelections = state.players.map((p) => p.doctrineId);
+      if (!isDoctrineAvailableInLobby(action.doctrineId, currentSelections)) {
+        throw new Error(
+          `O limite de generais com a doutrina "${DOCTRINES[action.doctrineId]?.namePt}" já foi atingido nesta partida.`
+        );
+      }
+
+      // HEGEM-117: Compatibilidade estrita entre Doutrina e Objetivo Secreto
+      if (actingPlayer.objective && !isObjectiveCompatibleWithDoctrine(actingPlayer.objective, action.doctrineId)) {
+        throw new Error(
+          `A doutrina militar "${DOCTRINES[action.doctrineId]?.namePt}" é incompatível com o seu Objetivo Secreto.`
+        );
+      }
+
       actingPlayer.doctrineId = action.doctrineId;
       const docDef = DOCTRINES[action.doctrineId];
+
+      if (action.doctrineId === "extermination") {
+        state.worldTension = Math.max(state.worldTension ?? 0, 50);
+        actingPlayer.infamy = Math.max(actingPlayer.infamy ?? 0, 50);
+      }
+
       state.log.push(
         `🎖️ DOUTRINA MILITAR: ${actingPlayer.name} adotou a doutrina "${docDef.namePt}"!`
       );
@@ -1138,7 +1192,11 @@ case "select_doctrine": {
         throw new Error("Combinação de cartas inválida (precisa de 3 iguais ou 3 diferentes).");
       }
 
-      const bonus = getTradeBonusArmies(state.tradeCount);
+      let bonus = getTradeBonusArmies(state.tradeCount);
+      // HEGEM-116: Ataque em Massa recebe +2 infantarias adicionais na troca
+      if (currentPlayer.doctrineId === "mass_assault") {
+        bonus += 2;
+      }
       state.tradeCount += 1;
       currentPlayer.unplacedArmies += bonus;
 
@@ -1226,6 +1284,16 @@ case "select_doctrine": {
         throw new Error("Território inválido.");
       }
 
+      // HEGEM-116: Doutrina de Extermínio é proibida de construir melhorias civis
+      if (
+        currentPlayer.doctrineId === "extermination" &&
+        (action.buildingType === "market" || action.buildingType === "civilian_factory")
+      ) {
+        throw new Error(
+          "A Doutrina de Extermínio proíbe a construção de melhorias civis (Mercados e Fábricas Civis)."
+        );
+      }
+
       terr.buildings = terr.buildings ?? [];
       const existing = terr.buildings.find((b) => b.type === action.buildingType);
 
@@ -1308,6 +1376,11 @@ case "select_doctrine": {
         fortification: "Casamata (Fortificação Nv. 1)",
         airfield: "Aeródromo",
         port: "Porto Naval",
+        military_factory: "Arsenal Bélico",
+        civilian_factory: "Fábrica Civil",
+        steel_mine: "Mina de Aço",
+        oil_well: "Poço Petrolífero",
+        refinery: "Refinaria",
       };
       const costSummary =
         baseCost.steel > 0
@@ -1333,6 +1406,16 @@ case "select_doctrine": {
       const def = mapById.get(terr.id);
       if (!def) {
         throw new Error("Território inválido.");
+      }
+
+      // HEGEM-116: Doutrina de Extermínio é proibida de construir melhorias civis
+      if (
+        currentPlayer.doctrineId === "extermination" &&
+        (action.buildingType === "market" || action.buildingType === "civilian_factory")
+      ) {
+        throw new Error(
+          "A Doutrina de Extermínio proíbe a construção de melhorias civis (Mercados e Fábricas Civis)."
+        );
       }
 
       terr.buildings = terr.buildings ?? [];
@@ -1364,6 +1447,11 @@ case "select_doctrine": {
         fortification: targetBldg.level >= 2 ? "Fortaleza Nv. 2" : "Casamata Nv. 1",
         airfield: "Aeródromo Militar",
         port: "Porto Naval",
+        military_factory: "Arsenal Bélico",
+        civilian_factory: "Fábrica Civil",
+        steel_mine: "Mina de Aço",
+        oil_well: "Poço Petrolífero",
+        refinery: "Refinaria Petroquímica",
       };
       const bName = buildingNamesPt[action.buildingType] ?? action.buildingType;
       const refundSummary =
@@ -1392,6 +1480,15 @@ case "select_doctrine": {
       const def = mapById.get(terr.id);
       if (!def) throw new Error("Território inválido.");
 
+      // HEGEM-116: Doutrina de Assalto em Massa proíbe unidades mecanizadas e aéreas
+      if (currentPlayer.doctrineId === "mass_assault") {
+        if (action.unitType === "tank" || action.unitType === "artillery" || action.unitType === "aircraft") {
+          throw new Error(
+            "A Doutrina de Assalto em Massa proíbe o recrutamento de Blindados, Artilharia e Aviação."
+          );
+        }
+      }
+
       const requiredBuilding: Partial<Record<UnitType, BuildingType>> = {
         tank: "industry",
         artillery: "industry",
@@ -1399,23 +1496,60 @@ case "select_doctrine": {
         navy: "port",
       };
       const requirement = requiredBuilding[action.unitType];
-      if (requirement && !hasTerritoryBuilding(terr, requirement)) {
-        const requirementNames: Record<BuildingType, string> = {
-          market: "Mercado",
-          industry: "Indústria",
-          fortification: "Fortificação",
-          airfield: "Aeródromo",
-          port: "Porto Naval",
-        };
-        throw new Error(
-          `O recrutamento desta unidade exige ${requirementNames[requirement]} no território.`
-        );
+      if (requirement) {
+        let hasReq = hasTerritoryBuilding(terr, requirement);
+        if (action.unitType === "tank" || action.unitType === "artillery") {
+          hasReq = hasReq || hasTerritoryBuilding(terr, "military_factory");
+        }
+        if (!hasReq) {
+          const requirementNames: Record<BuildingType, string> = {
+            market: "Mercado",
+            industry: "Indústria ou Arsenal Bélico",
+            fortification: "Fortificação",
+            airfield: "Aeródromo",
+            port: "Porto Naval",
+            military_factory: "Arsenal Bélico",
+            civilian_factory: "Fábrica Civil",
+            steel_mine: "Mina de Aço",
+            oil_well: "Poço Petrolífero",
+            refinery: "Refinaria",
+          };
+          throw new Error(
+            `O recrutamento desta unidade exige ${requirementNames[requirement]} no território.`
+          );
+        }
       }
       if (action.unitType === "navy" && def.isCoastal === false) {
         throw new Error("A Marinha só pode ser recrutada em territórios costeiros ou insulares.");
       }
 
-      const unitCost = UNIT_COSTS[action.unitType];
+      const unitCost = { ...UNIT_COSTS[action.unitType] };
+
+      // HEGEM-116: Modificadores das Doutrinas HoI4
+      if (currentPlayer.doctrineId === "mass_assault" && action.unitType === "infantry") {
+        unitCost.money = 2;
+      }
+      if (currentPlayer.doctrineId === "blitzkrieg" && action.unitType === "tank") {
+        unitCost.steel = Math.max(1, unitCost.steel - 1);
+      }
+      if (currentPlayer.doctrineId === "superior_firepower" && action.unitType === "tank") {
+        unitCost.steel += 1;
+      }
+
+      // HEGEM-107: Arsenal Bélico (military_factory) reduz o custo de recrutamento em aço/ouro
+      const hasMilitaryFactory =
+        hasTerritoryBuilding(terr, "military_factory") ||
+        Object.values(state.territories).some(
+          (t) => t.ownerId === playerId && hasTerritoryBuilding(t, "military_factory")
+        );
+      if (hasMilitaryFactory) {
+        if (action.unitType === "tank" || action.unitType === "artillery") {
+          unitCost.steel = Math.max(1, unitCost.steel - 1);
+        } else if (action.unitType === "aircraft") {
+          unitCost.money = Math.max(3, unitCost.money - 1);
+        }
+      }
+
       const totalCost = {
         money: unitCost.money * action.quantity,
         steel: unitCost.steel * action.quantity,
@@ -1636,6 +1770,7 @@ case "select_doctrine": {
       if (toTerr.ownerId === playerId) throw new Error("Você não pode bombardear seu próprio território.");
 
       const fromDef = mapById.get(fromTerr.id)!;
+      const toDef = mapById.get(toTerr.id)!;
       const isNeighbor = fromDef.neighbors.includes(toTerr.id);
       const isDirectSea = isSeaLink(fromTerr.id, toTerr.id);
       if (!isNeighbor && !isDirectSea) {
@@ -1649,8 +1784,16 @@ case "select_doctrine": {
         }
       }
 
-      if (fromTerr.artilleryBarrageFiredThisTurn) {
-        throw new Error("A artilharia desta base já realizou uma barragem de saturação neste turno.");
+      const maxBarrages = currentPlayer.doctrineId === "superior_firepower" ? 2 : 1;
+      const currentBarrages =
+        fromTerr.artilleryBarragesCountThisTurn ??
+        (fromTerr.artilleryBarrageFiredThisTurn ? 1 : 0);
+      if (currentBarrages >= maxBarrages) {
+        throw new Error(
+          maxBarrages > 1
+            ? "A artilharia desta base já realizou suas 2 barragens de saturação neste turno."
+            : "A artilharia desta base já realizou uma barragem de saturação neste turno."
+        );
       }
 
       const fromUnits = getTerritoryUnits(fromTerr);
@@ -1668,7 +1811,9 @@ case "select_doctrine": {
         throw new Error("Você possui um tratado ativo com este general.");
       }
 
-      fromTerr.artilleryBarrageFiredThisTurn = true;
+      fromTerr.artilleryBarragesCountThisTurn = currentBarrages + 1;
+      fromTerr.artilleryBarrageFiredThisTurn =
+        fromTerr.artilleryBarragesCountThisTurn >= maxBarrages;
       state.worldTension = Math.min(100, Number(((state.worldTension ?? 0) + 0.3).toFixed(1)));
       const rolls = Array.from({ length: fromUnits.artillery }, () => rng.rollD6());
       const hits = rolls.filter((r) => r >= 4).length;
@@ -1831,6 +1976,11 @@ case "select_doctrine": {
             fortification: "Fortificação",
             airfield: "Aeródromo",
             port: "Porto Naval",
+            military_factory: "Arsenal Bélico",
+            civilian_factory: "Fábrica Civil",
+            steel_mine: "Mina de Aço",
+            oil_well: "Poço Petrolífero",
+            refinery: "Refinaria",
           };
           if (targetBuilding.level > 1) {
             targetBuilding.level -= 1;
@@ -1882,6 +2032,7 @@ case "select_doctrine": {
       if (fromTerr.armies < 2) throw new Error("É necessário pelo menos 2 exércitos para atacar.");
 
       const fromDef = mapById.get(fromTerr.id)!;
+      const toDef = mapById.get(toTerr.id)!;
       if (!fromDef.neighbors.includes(toTerr.id)) {
         throw new Error("Os territórios não fazem fronteira.");
       }
@@ -2046,38 +2197,22 @@ case "select_doctrine": {
       const artillerySiegeBonus = (attackingUnits.artillery ?? 0) >= 4;
       const artillerySaturationBonus = (attackingUnits.artillery ?? 0) >= 6;
 
-      // Epic IX — Doutrina 1 (Blitzkrieg): +1 no maior dado de ataque no 1.º round de combate contra o alvo com blindados
-      const assaultedTargets = new Set(currentPlayer.assaultedTargetsThisTurn ?? []);
-      const isFirstCombatRoundOnTarget = !assaultedTargets.has(toTerr.id);
-      assaultedTargets.add(toTerr.id);
-      currentPlayer.assaultedTargetsThisTurn = [...assaultedTargets];
-
-      let doctrineAttackerBonus = false;
-      if (
-        currentPlayer.doctrineId === "blitzkrieg" &&
-        isFirstCombatRoundOnTarget &&
-        attackingUnits.tank > 0 &&
-        !fromTerr.outOfFuel &&
-        attackerDice.length > 0
-      ) {
-        attackerDice[0] += 1;
-        doctrineAttackerBonus = true;
-      }
-
-      // Epic IX — Doutrina 2 (Defesa em Profundidade): +1 no maior dado defensivo com infantaria no continente natal
-      let doctrineDefenderBonus = false;
-      const toDef = mapById.get(toTerr.id)!;
-      if (
-        defenderPlayer?.doctrineId === "defense_in_depth" &&
-        toUnits.infantry > 0 &&
-        defenderDice.length > 0
-      ) {
-        const defenderNativeContinent = getPlayerNativeContinent(state, defenderPlayer, map);
-        if (defenderNativeContinent && toDef.continent === defenderNativeContinent) {
-          defenderDice[0] += 1;
-          doctrineDefenderBonus = true;
-        }
-      }
+      // HEGEM-116: Modificadores de Combate das Doutrinas HoI4
+      const {
+        attackerBonusApplied: doctrineAttackerBonus,
+        defenderBonusApplied: doctrineDefenderBonus,
+      } = applyDoctrineCombatDiceModifiers({
+        state,
+        map,
+        attacker: currentPlayer,
+        defender: defenderPlayer,
+        fromTerritory: fromTerr,
+        toTerritory: toTerr,
+        committedAttackerUnits: attackingUnits,
+        defenderUnits: toUnits,
+        attackerDice,
+        defenderDice,
+      });
 
       if (attackerModifier > 0 && attackerDice.length > 0) {
         attackerDice[0] += attackerModifier;
@@ -2210,8 +2345,12 @@ case "select_doctrine": {
       const heavyArmorCombatTag = heavyArmorBonus ? " [Ponta de Lança Pesada]" : "";
       const tankSupCombatTag = tankSuperiorityBonus ? " [Superioridade Blindada +1]" : "";
       const artSaturationCombatTag = artillerySaturationBonus ? " [Chuva de Aço +1 ATQ]" : "";
-      const docAttTag = doctrineAttackerBonus ? " [Blitzkrieg +1 ATQ]" : "";
-      const docDefTag = doctrineDefenderBonus ? " [Fortaleza Patriótica +1 DEF]" : "";
+      const docAttTag = doctrineAttackerBonus
+        ? ` [${currentPlayer.doctrineId ? DOCTRINES[currentPlayer.doctrineId]?.namePt ?? "Doutrina" : "Doutrina"} +1 ATQ]`
+        : "";
+      const docDefTag = doctrineDefenderBonus
+        ? ` [${defenderPlayer?.doctrineId ? DOCTRINES[defenderPlayer.doctrineId]?.namePt ?? "Doutrina" : "Doutrina"} +1 DEF]`
+        : "";
       const lastStandTag = lastStandBonus
         ? ` [Mobilização Total +${attackerModifier || defenderModifier}]`
         : "";
@@ -2257,6 +2396,11 @@ case "select_doctrine": {
             fortification: "Casamata",
             airfield: "Aeródromo Militar",
             port: "Porto Naval",
+            military_factory: "Arsenal Bélico",
+            civilian_factory: "Fábrica Civil",
+            steel_mine: "Mina de Aço",
+            oil_well: "Poço Petrolífero",
+            refinery: "Refinaria",
           };
 
           const survivingBuildings: typeof toTerr.buildings = [];
@@ -2317,6 +2461,15 @@ case "select_doctrine": {
         setTerritoryUnits(toTerr, occupyingUnits);
 
         state.log.push(`${currentPlayer.name} conquistou ${toName}!`);
+
+        // HEGEM-116: Saque Total de Extermínio (+ $2, +1 Aço) na conquista
+        if (currentPlayer.doctrineId === "extermination") {
+          currentPlayer.resources.money += 2;
+          currentPlayer.resources.steel += 1;
+          state.log.push(
+            `☠️ SAQUE TOTAL (Extermínio): ${currentPlayer.name} pilhou recursos da província de ${toName} (+ $2, +1 Aço)!`
+          );
+        }
 
         if (maxMove <= 1) {
           state.pendingConquest = null;
@@ -2522,6 +2675,7 @@ case "select_doctrine": {
         throw new Error("Ambos os territórios devem pertencer a você.");
       }
       const fromDef = mapById.get(fromTerr.id)!;
+      const toDef = mapById.get(toTerr.id)!;
       if (!fromDef.neighbors.includes(toTerr.id)) {
         throw new Error("No War clássico, o remanejamento só é permitido entre territórios vizinhos.");
       }
@@ -2539,13 +2693,22 @@ case "select_doctrine": {
         throw new Error("A composição inclui unidades indisponíveis ou que já se moveram neste turno.");
       }
 
+      let navalFuelSurcharge = 0;
       if (isSeaLink(fromTerr.id, toTerr.id)) {
         const blockade = checkNavalBlockade(state, fromTerr.id, toTerr.id, playerId);
         if (blockade.isBlockaded) {
           throw new Error("A rota marítima está bloqueada por frotas inimigas.");
         }
-        if (movedUnits.navy > 0 && !hasTerritoryBuilding(toTerr, "port")) {
-          throw new Error("Unidades navais só podem ser manobradas para portos costeiros aliados.");
+        // HEGEM-112: Projeção marítima permitida sem porto de destino mediante sobretaxa de petróleo
+        const hasDestPort = hasTerritoryBuilding(toTerr, "port");
+        if (movedUnits.navy > 0 || !hasDestPort) {
+          navalFuelSurcharge = 1;
+          if ((currentPlayer.resources?.oil ?? 0) < navalFuelSurcharge) {
+            throw new Error(
+              `Petróleo insuficiente para a sobretaxa logística de projeção naval sem porto de destino. Necessário: ${navalFuelSurcharge} Petróleo.`
+            );
+          }
+          currentPlayer.resources.oil -= navalFuelSurcharge;
         }
       }
 
@@ -2554,10 +2717,12 @@ case "select_doctrine": {
       setMovedInUnits(toTerr, addUnits(getMovedInUnits(toTerr), movedUnits));
       updateSupplyAndEncirclement(state, map);
 
+      const surchargeText =
+        navalFuelSurcharge > 0 ? ` (Sobretaxa Logística: -${navalFuelSurcharge} Petróleo)` : "";
       state.log.push(
         `${currentPlayer.name} moveu ${action.armies} de ${fromDef.namePt} para ${
           mapById.get(toTerr.id)!.namePt
-        }.`
+        }${surchargeText}.`
       );
       break;
     }
@@ -3034,6 +3199,7 @@ function advanceTurn(state: GameState, rng: SeededRng, map: GameMapDef): void {
     t.airliftedThisTurn = false;
     t.airliftsCountThisTurn = 0;
     t.artilleryBarrageFiredThisTurn = false;
+    t.artilleryBarragesCountThisTurn = 0;
     t.airMissionFlownThisTurn = false;
     t.casBonusAttackerId = undefined;
     t.conqueredTurnRound = undefined;
@@ -3076,6 +3242,32 @@ function advanceTurn(state: GameState, rng: SeededRng, map: GameMapDef): void {
                 `⚠️ HEGEMONIA AMEAÇADORA: ${p.name} controla ${heldCount}/${totalTerritories} territórios (${Math.round((heldCount / totalTerritories) * 100)}%) e gera alarme global! (+5% Infâmia)`
               );
             }
+          }
+        }
+      }
+
+      // HEGEM-117: Verificação e Alerta Global de Bastião Fortificado
+      for (const p of state.players) {
+        if (!p.eliminated && p.objective?.rule.type === "fortified_bastion") {
+          const rule = p.objective.rule;
+          const fortifiedCount = Object.values(state.territories).filter(
+            (t) =>
+              t.ownerId === p.id &&
+              (t.buildings ?? []).some((b) => b.type === "fortification")
+          ).length;
+
+          if (fortifiedCount >= rule.bastionTerritoryCount) {
+            p.bastionRoundsHeld = (p.bastionRoundsHeld ?? 0) + 1;
+            state.log.push(
+              `🏰 ALERTA GLOBAL — BASTIÃO SOBERANO: ${p.name} mantém ${fortifiedCount} fortalezas ativas (${p.bastionRoundsHeld}/${rule.roundsRequired} rodadas)! As nações rivais devem romper as defesas para impedir a vitória por soberania!`
+            );
+          } else {
+            if ((p.bastionRoundsHeld ?? 0) > 0) {
+              state.log.push(
+                `💥 BASTIÃO ROMPIDO: As fortalezas de ${p.name} foram reduzidas para ${fortifiedCount}. A contagem defensiva foi reiniciada!`
+              );
+            }
+            p.bastionRoundsHeld = 0;
           }
         }
       }
@@ -3124,7 +3316,8 @@ function advanceTurn(state: GameState, rng: SeededRng, map: GameMapDef): void {
             const u = getTerritoryUnits(t);
             return u.tank > 0 || u.aircraft > 0 || u.navy > 0;
           });
-          if (ownsMechanized && (p.resources?.oil ?? 0) <= 0) {
+          const hasRefinery = pTerrs.some((t) => hasTerritoryBuilding(t, "refinery"));
+          if (ownsMechanized && (p.resources?.oil ?? 0) <= 0 && !hasRefinery) {
             p.analytics.fuelStarvationTurns += 1;
           }
           for (const continent of map.continents) {

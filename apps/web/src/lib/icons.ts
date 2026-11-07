@@ -55,6 +55,11 @@ export const ICON_NAMES = [
   "fortification",
   "fortress",
   "fortification-l2",
+  "military_factory",
+  "civilian_factory",
+  "steel_mine",
+  "oil_well",
+  "refinery",
 
   // Logistics, Tactical Status & Combat Missions (Replacing System Emojis)
   "supply-cut",
@@ -328,6 +333,33 @@ export const ICON_CATALOG: Record<IconName, readonly IconShape[]> = {
   "fortification-l2": [
     { tag: "path", attrs: { d: "M3 20h18v-8l-3-2V5h-3v3h-2V5h-2v3H9V5H6v5l-3 2z" } },
     { tag: "path", attrs: { d: "M9 14l3-2.5 3 2.5v6H9z" } },
+  ],
+  military_factory: [
+    { tag: "path", attrs: { d: "M2 20h20" } },
+    { tag: "path", attrs: { d: "M4 20V10l5 3V10l5 3V6h5v14" } },
+    { tag: "line", attrs: { x1: 14.5, y1: 10, x2: 17.5, y2: 10 } },
+    { tag: "line", attrs: { x1: 16, y1: 8.5, x2: 16, y2: 11.5 } },
+  ],
+  civilian_factory: [
+    { tag: "path", attrs: { d: "M2 20h20" } },
+    { tag: "path", attrs: { d: "M4 20V11l4 2.5V11l4 2.5V8h8v12" } },
+    { tag: "circle", attrs: { cx: 16, cy: 13, r: 2 } },
+  ],
+  steel_mine: [
+    { tag: "path", attrs: { d: "M3 21h18L12 4 3 21z" } },
+    { tag: "path", attrs: { d: "M9 21v-4a3 3 0 0 1 6 0v4" } },
+    { tag: "line", attrs: { x1: 12, y1: 8, x2: 12, y2: 13 } },
+  ],
+  oil_well: [
+    { tag: "path", attrs: { d: "M6 21l6-17 6 17" } },
+    { tag: "line", attrs: { x1: 8, y1: 15, x2: 16, y2: 15 } },
+    { tag: "line", attrs: { x1: 9.5, y1: 10, x2: 14.5, y2: 10 } },
+    { tag: "circle", attrs: { cx: 12, cy: 3, r: 1.5 } },
+  ],
+  refinery: [
+    { tag: "rect", attrs: { x: 5, y: 7, width: 6, height: 14, rx: 1 } },
+    { tag: "rect", attrs: { x: 13, y: 11, width: 6, height: 10, rx: 1 } },
+    { tag: "path", attrs: { d: "M8 7V3h8v8" } },
   ],
 
   // --- Logistics, Tactical Status & Combat Missions ---

@@ -2,6 +2,7 @@
   import {
     DOCTRINE_LIST,
     DoctrineIdSchema,
+    isDoctrineAvailableInLobby,
     type CompetitionMode,
     type DoctrineId,
     type LeaderboardRow,
@@ -537,10 +538,13 @@
               <div class="doctrine-cards-grid">
                 {#each DOCTRINE_LIST as doc}
                   {@const isSelected = selectedDoctrineId === doc.id}
+                  {@const otherDoctrines = lobbyPlayers.filter((p) => p.token !== myPlayerId).map((p) => p.doctrineId)}
+                  {@const isAvailable = isSelected || isDoctrineAvailableInLobby(doc.id, otherDoctrines)}
                   <button
                     type="button"
                     class="doctrine-choice-card"
                     class:selected={isSelected}
+                    disabled={!isAvailable}
                     aria-pressed={isSelected}
                     style="--doc-accent: {doc.accentColor};"
                     onclick={() => selectDoctrine(doc.id)}
@@ -555,6 +559,8 @@
                         >
                         {#if isSelected}
                           <span class="doc-active-pill">ATIVA</span>
+                        {:else if !isAvailable}
+                          <span class="doc-active-pill limit-pill">LIMITE</span>
                         {/if}
                       </div>
                       <small
@@ -1363,6 +1369,11 @@
     font-size: 0.84rem;
     color: #f8fafc;
   }
+  .doctrine-choice-card:disabled {
+    opacity: 0.38;
+    cursor: not-allowed;
+    filter: grayscale(0.6);
+  }
   .doc-active-pill {
     font-family: var(--font-mono);
     font-size: 0.56rem;
@@ -1373,6 +1384,10 @@
     background: var(--doc-accent, #eab308);
     color: #050911;
     flex-shrink: 0;
+  }
+  .doc-active-pill.limit-pill {
+    background: #334155;
+    color: #94a3b8;
   }
   .doc-choice-meta small {
     font-size: 0.68rem;
