@@ -301,14 +301,14 @@ export interface BuildingCost {
 export const BUILDING_COSTS: Record<BuildingType, BuildingCost> = {
   market: { money: 5, steel: 0 },
   industry: { money: 6, steel: 1 },
-  fortification: { money: 4, steel: 0 }, // Level 1 Casamata
+  fortification: { money: 6, steel: 0 }, // Level 1 Casamata
   airfield: { money: 5, steel: 1 },
   port: { money: 5, steel: 0 },
 };
 
 export const FORTIFICATION_LEVEL_2_COST: BuildingCost = {
-  money: 4,
-  steel: 1,
+  money: 6,
+  steel: 2,
 };
 
 export interface UnitCost {
@@ -2010,12 +2010,16 @@ case "select_doctrine": {
         (a, b) => b - a
       );
 
-      // Tank re-roll 1s (Ponta de Lança Couraçada) if attacker has oil (HEGEM-25)
+      // Tank re-roll 1s (Ponta de Lança Couraçada) if attacker has oil (HEGEM-25 & HEGEM-109)
       let blitzkriegBonus = false;
+      let heavyArmorBonus = false;
+      let tankSuperiorityBonus = false;
       if (attackingUnits.tank > 0 && (currentPlayer.resources?.oil ?? 0) > 0) {
+        // 1-2 Tanques: re-rola 1s; 3+ Tanques: re-rola 1s e 2s (Ponta de Lança Pesada)
+        const minRoll = attackingUnits.tank >= 3 ? 3 : 2;
         let reRolledAny = false;
         for (let i = 0; i < attackerDice.length; i++) {
-          if (attackerDice[i] === 1) {
+          if (attackerDice[i] < minRoll) {
             attackerDice[i] = rng.rollD6();
             reRolledAny = true;
           }
@@ -2023,8 +2027,24 @@ case "select_doctrine": {
         if (reRolledAny) {
           attackerDice.sort((a, b) => b - a);
           blitzkriegBonus = true;
+          if (attackingUnits.tank >= 3) heavyArmorBonus = true;
+        }
+
+        // 5+ Tanques com Superioridade Blindada: +1 no 2º maior dado de ataque
+        if (
+          attackingUnits.tank >= 5 &&
+          attackingUnits.tank > (toUnits.tank ?? 0) &&
+          attackerDice.length >= 2
+        ) {
+          attackerDice[1] += 1;
+          tankSuperiorityBonus = true;
         }
       }
+
+      // HEGEM-109: Escala de Artilharia de Apoio no Assalto
+      const artillerySuppressionBonus = (attackingUnits.artillery ?? 0) >= 2;
+      const artillerySiegeBonus = (attackingUnits.artillery ?? 0) >= 4;
+      const artillerySaturationBonus = (attackingUnits.artillery ?? 0) >= 6;
 
       // Epic IX — Doutrina 1 (Blitzkrieg): +1 no maior dado de ataque no 1.º round de combate contra o alvo com blindados
       const assaultedTargets = new Set(currentPlayer.assaultedTargetsThisTurn ?? []);
@@ -2087,11 +2107,21 @@ case "select_doctrine": {
       }
 
       const fortLevel = getTerritoryBuildingLevel(toTerr, "fortification");
+      // Casamata Nv. 1: +1 ao maior dado de defesa (suprimida se atacante tiver 2+ artilharias)
       if (fortLevel >= 1 && defenderDice.length > 0) {
-        defenderDice[0] += 1;
+        if (!artillerySuppressionBonus) {
+          defenderDice[0] += 1;
+        }
       }
+      // Fortaleza Nv. 2: -1 ao maior dado de ataque (neutralizada se atacante tiver 4+ artilharias)
       if (fortLevel >= 2 && attackerDice.length > 0) {
-        attackerDice[0] = Math.max(1, attackerDice[0] - 1);
+        if (!artillerySiegeBonus) {
+          attackerDice[0] = Math.max(1, attackerDice[0] - 1);
+        }
+      }
+      // 6+ Artilharias: Saturação maciça (+1 ao maior dado de ataque)
+      if (artillerySaturationBonus && attackerDice.length > 0) {
+        attackerDice[0] += 1;
       }
 
       let attackerLosses = 0;
@@ -2150,6 +2180,11 @@ case "select_doctrine": {
         fortificationLevel: fortLevel > 0 ? fortLevel : undefined,
         casBonus: hasCasBonus ? true : undefined,
         blitzkriegBonus: blitzkriegBonus ? true : undefined,
+        heavyArmorBonus: heavyArmorBonus ? true : undefined,
+        tankSuperiorityBonus: tankSuperiorityBonus ? true : undefined,
+        artillerySuppressionBonus: artillerySuppressionBonus && fortLevel >= 1 ? true : undefined,
+        artillerySiegeBonus: artillerySiegeBonus && fortLevel >= 2 ? true : undefined,
+        artillerySaturationBonus: artillerySaturationBonus ? true : undefined,
         doctrineAttackerBonus: doctrineAttackerBonus ? true : undefined,
         doctrineDefenderBonus: doctrineDefenderBonus ? true : undefined,
         encircledDefenderPenalty,
@@ -2164,23 +2199,30 @@ case "select_doctrine": {
         : "";
       const fortCombatTag =
         fortLevel >= 2
-          ? " [🏰 Fortaleza Nv.2 (+1 DEF, -1 ATQ)]"
+          ? (artillerySiegeBonus
+              ? " [Fortaleza Nv.2 (Neutralizada por Artilharia)]"
+              : " [Fortaleza Nv.2 (+1 DEF, -1 ATQ)]")
           : fortLevel === 1
-            ? " [🛡️ Casamata Nv.1 (+1 DEF)]"
+            ? (artillerySuppressionBonus
+                ? " [Casamata Nv.1 (Suprimida por Artilharia)]"
+                : " [Casamata Nv.1 (+1 DEF)]")
             : "";
-      const docAttTag = doctrineAttackerBonus ? " [⚡ Blitzkrieg +1 ATQ]" : "";
-      const docDefTag = doctrineDefenderBonus ? " [🏰 Fortaleza Patriótica +1 DEF]" : "";
+      const heavyArmorCombatTag = heavyArmorBonus ? " [Ponta de Lança Pesada]" : "";
+      const tankSupCombatTag = tankSuperiorityBonus ? " [Superioridade Blindada +1]" : "";
+      const artSaturationCombatTag = artillerySaturationBonus ? " [Chuva de Aço +1 ATQ]" : "";
+      const docAttTag = doctrineAttackerBonus ? " [Blitzkrieg +1 ATQ]" : "";
+      const docDefTag = doctrineDefenderBonus ? " [Fortaleza Patriótica +1 DEF]" : "";
       const lastStandTag = lastStandBonus
-        ? ` [⭐ Mobilização Total +${attackerModifier || defenderModifier}]`
+        ? ` [Mobilização Total +${attackerModifier || defenderModifier}]`
         : "";
-      const casTag = hasCasBonus ? " [✈️ CAS +1 Dado]" : "";
-      const coastalTag = coastalBombardment ? " [⚓ Bombardeio Costeiro +1]" : "";
-      const encircledTag = encircledDefenderPenalty ? ` [📦 Cerco -${encircledDefenderPenalty} DEF]` : "";
+      const casTag = hasCasBonus ? " [CAS +1 Dado]" : "";
+      const coastalTag = coastalBombardment ? " [Bombardeio Costeiro +1]" : "";
+      const encircledTag = encircledDefenderPenalty ? ` [Cerco -${encircledDefenderPenalty} DEF]` : "";
       const unescortedArtilleryTag = unescortedArtilleryPenalty
-        ? " [💥 Artilharia Desprotegida -1 DEF]"
+        ? " [Artilharia Desprotegida -1 DEF]"
         : "";
       state.log.push(
-        `Combate ${fromName}${docAttTag} [${attackerDice.join(",")}] vs ${toName}${capitalCombatTag}${fortCombatTag}${docDefTag}${lastStandTag}${casTag}${coastalTag}${encircledTag}${unescortedArtilleryTag} [${defenderDice.join(",")}] → baixas ATQ:${attackerLosses} DEF:${defenderLosses}`
+        `Combate ${fromName}${docAttTag}${heavyArmorCombatTag}${tankSupCombatTag}${artSaturationCombatTag} [${attackerDice.join(",")}] vs ${toName}${capitalCombatTag}${fortCombatTag}${docDefTag}${lastStandTag}${casTag}${coastalTag}${encircledTag}${unescortedArtilleryTag} [${defenderDice.join(",")}] → baixas ATQ:${attackerLosses} DEF:${defenderLosses}`
       );
 
       if (conquered) {

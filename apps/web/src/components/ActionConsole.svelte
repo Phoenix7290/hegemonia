@@ -2,6 +2,7 @@
   import FactionFlag from "./FactionFlag.svelte";
   import Icon from "./Icon.svelte";
   import UnitSelector from "./UnitSelector.svelte";
+  import { tooltip } from "../lib/tooltip";
   import { i18n, t } from "../i18n/index.svelte";
   import { isSeaLink } from "@hegemonia/maps";
   import {
@@ -562,17 +563,29 @@
     <!-- 1 - 2 - 3 Step Phase Navigator -->
     <div class="phase-stepper-row">
       <div class="phase-steps-group" role="group" aria-label="Turn Phases">
-        <div class="phase-step" class:active-phase={game.phase === "deploy"} title={t("phase_deploy_desc")}>
+        <div
+          class="phase-step"
+          class:active-phase={game.phase === "deploy"}
+          use:tooltip={{ title: t("phase_deploy"), content: t("phase_deploy_desc") }}
+        >
           <span class="num">1</span>
           <span class="step-icon"><Icon name="phase-deploy" size={12} /></span>
           <span class="label">{t("phase_deploy")}</span>
         </div>
-        <div class="phase-step" class:active-phase={game.phase === "attack"} title={t("phase_attack_desc")}>
+        <div
+          class="phase-step"
+          class:active-phase={game.phase === "attack"}
+          use:tooltip={{ title: t("phase_attack"), content: t("phase_attack_desc") }}
+        >
           <span class="num">2</span>
           <span class="step-icon"><Icon name="phase-attack" size={12} /></span>
           <span class="label">{t("phase_attack")}</span>
         </div>
-        <div class="phase-step" class:active-phase={game.phase === "maneuver"} title={t("phase_maneuver_desc")}>
+        <div
+          class="phase-step"
+          class:active-phase={game.phase === "maneuver"}
+          use:tooltip={{ title: t("phase_maneuver"), content: t("phase_maneuver_desc") }}
+        >
           <span class="num">3</span>
           <span class="step-icon"><Icon name="phase-maneuver" size={12} /></span>
           <span class="label">{t("phase_maneuver")}</span>

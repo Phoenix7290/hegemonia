@@ -383,6 +383,35 @@ export const enGame: TranslationCatalog = {
   exit_confirm_desc: "Are you sure you want to leave the active match? Your territories and divisions will remain on the map under defensive AI control.",
   exit_confirm_cancel: "Stay in Match",
   exit_confirm_leave: "Abandon Match",
+
+  // Tactical Tooltips System (HEGEM-103)
+  settings_tooltips_label: "HUD Tactical Tooltips",
+  settings_tooltips_on: "Enabled (~350ms)",
+  settings_tooltips_off: "Disabled",
+  settings_tooltips_hint: "Displays contextual tactical tooltips on continuous hover over controls and resources.",
+
+  // Tactical Alerts & Camera Auto-Zoom (HEGEM-102)
+  tactical_alerts_artillery_ready: "Artillery Ready",
+  tactical_alerts_aircraft_ready: "Air Wings Ready",
+  tactical_alerts_encircled_warning: "Encircled Territory",
+  tactical_alerts_encircled_opportunity: "Besieged Enemy",
+  tactical_alerts_out_of_fuel: "Out of Fuel",
+  turn_start_title: "Supreme Command: Turn Start",
+  turn_start_reinforcements: "Mobilized Reinforcements",
+  turn_start_economic_report: "Commodities Production",
+  turn_start_dismiss: "Assume Command",
+  settings_auto_camera_label: "Tactical Camera Auto-Zoom",
+  settings_auto_camera_on: "Enabled",
+  settings_auto_camera_off: "Disabled",
+  settings_auto_camera_hint: "Smoothly centers and zooms the map when interacting with tactical alerts and frontlines.",
+
+  // Version Guard & Client Update Notification (HEGEM-114)
+  version_update_available_title: "Tactical Server Update Available",
+  version_update_available_desc: "A new theater version ({serverVersion}) has been deployed. Reload to synchronize mechanics and fixes.",
+  version_update_in_battle_desc: "A new version ({serverVersion}) is available. Finish your turn or reload when tactical situation is safe.",
+  version_update_lobby_autoreload: "New version ({serverVersion}) detected. Updating theater in {seconds}s...",
+  version_update_reload_now: "Reload Operations Theater",
+  version_update_dismiss: "Dismiss",
 };
 
 export const game = enGame;

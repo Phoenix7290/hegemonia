@@ -55,6 +55,7 @@
     zoom = $bindable(1.05),
     camX = $bindable(0),
     camY = $bindable(0),
+    isCameraTransitioning = false,
     onTerritoryClick,
   }: {
     game: GameState;
@@ -72,6 +73,7 @@
     zoom?: number;
     camX?: number;
     camY?: number;
+    isCameraTransitioning?: boolean;
     onTerritoryClick: (terrId: string) => void;
   } = $props();
 
@@ -560,6 +562,7 @@
     <!-- CAMERA RIG: Pans & Zooms in Pure SVG Space with Seamless Horizontal Wraparound -->
     <g
       class="camera-rig"
+      class:smooth-transition={isCameraTransitioning}
       transform="translate({MAP_WIDTH / 2}, {MAP_HEIGHT / 2}) scale({zoom}) translate({-MAP_WIDTH / 2 + camX}, {-MAP_HEIGHT / 2 + camY})"
     >
       <!-- Deep Bathymetry Ocean Backdrop spanning all 3 wrapped world copies -->
@@ -2180,5 +2183,9 @@
     to {
       stroke-dashoffset: 0;
     }
+  }
+  /* --- HEGEM-102: HOI4-Style Smooth Auto-Zoom & Camera Pan Rig --- */
+  .camera-rig.smooth-transition {
+    transition: transform 450ms cubic-bezier(0.2, 0.8, 0.25, 1);
   }
 </style>

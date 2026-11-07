@@ -39,6 +39,7 @@
   import { api, ApiError } from "./lib/api";
   import { auth } from "./lib/auth.svelte";
   import { ui } from "./lib/ui.svelte";
+  import { versionGuard } from "./lib/version.svelte";
   import CommandCenter, {
     type LobbyPlayerView,
   } from "./components/CommandCenter.svelte";
@@ -49,6 +50,7 @@
   import ActionConsole from "./components/ActionConsole.svelte";
   import TopBar from "./components/TopBar.svelte";
   import TacticalMap, { wrapCamX, clampCamY } from "./components/TacticalMap.svelte";
+  import TurnStartBanner from "./components/TurnStartBanner.svelte";
   import {
     loadMapPreferences,
     saveMapPreferences,
@@ -145,6 +147,7 @@
   const initialMapPrefs = loadMapPreferences();
   let baseMapMode = $state<BaseMapMode>(initialMapPrefs.base);
   let mapOverlays = $state<MapOverlays>(initialMapPrefs.overlays);
+  let autoCameraFocus = $state<boolean>(initialMapPrefs.autoCameraFocus);
   let cleanMapMode = $state(false);
 
   $effect(() => {
@@ -154,6 +157,7 @@
         regional: mapOverlays.regional,
         economic: mapOverlays.economic,
       },
+      autoCameraFocus,
     });
   });
 
@@ -161,6 +165,27 @@
   let camX = $state(0);
   let camY = $state(0);
   let zoom = $state(1.05);
+  let isCameraTransitioning = $state(false);
+
+  function focusTerritory(territoryId: string, targetZoom = 1.35) {
+    const terr = CLASSIC_MAP.territories.find((t) => t.id === territoryId);
+    if (!terr) return;
+    selectedFromId = territoryId;
+    selectedToId = null;
+
+    if (autoCameraFocus) {
+      const [cx, cy] = terr.center;
+      isCameraTransitioning = true;
+      camX = wrapCamX(600 - cx); // 600 = MAP_WIDTH / 2
+      camY = clampCamY(310 - cy); // 310 = MAP_HEIGHT / 2
+      if (targetZoom) {
+        zoom = Math.max(0.75, Math.min(4.5, targetZoom));
+      }
+      setTimeout(() => {
+        isCameraTransitioning = false;
+      }, 460);
+    }
+  }
 
   // Keyboard WASD + Arrow Smooth Panning State
   const pressedKeys = new Set<string>();
@@ -422,6 +447,7 @@
   }
 
   interface RoomStateMessage {
+    version?: string;
     roomCode: string;
     status: "lobby" | "playing";
     turnDeadline: number;
@@ -664,6 +690,9 @@
 
       room.onMessage("room_state", (payload: RoomStateMessage) => {
         if (generation !== connectionGeneration) return;
+        if (payload.version) {
+          versionGuard.checkServerVersion(payload.version, ui.inActiveBattle);
+        }
         const hadPrevGame = game !== null;
         const prevLogLen = game?.log?.length ?? 0;
         roomCode = payload.roomCode;
@@ -1132,6 +1161,7 @@
       {highlightObjectiveTerritories}
       {objectiveTargetTerritoryIds}
       combatAnimations={activeCombatAnimations}
+      {isCameraTransitioning}
       bind:selectedFromId
       bind:selectedToId
       bind:hoveredTerritoryId
@@ -1139,6 +1169,14 @@
       bind:camX
       bind:camY
       {onTerritoryClick}
+    />
+
+    <!-- TURN START SUPREME COMMAND BRIEFING (HEGEM-102) -->
+    <TurnStartBanner
+      {game}
+      {myPlayerId}
+      {myPlayerState}
+      {isMyTurn}
     />
 
     <!-- POST-VICTORY DOSSIER MODAL (HEGEM-9) -->
@@ -1168,6 +1206,9 @@
         {playerMetrics}
         {isImmersiveMode}
         {hudVisibility}
+        onFocusTerritory={focusTerritory}
+        {autoCameraFocus}
+        onToggleAutoCameraFocus={(val) => (autoCameraFocus = val)}
         bind:baseMapMode
         bind:overlays={mapOverlays}
         bind:cleanMapMode

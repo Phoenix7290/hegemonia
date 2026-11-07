@@ -2661,7 +2661,7 @@ describe("HEGEM-96: Manual Deploy Phase Transition (end_deploy)", () => {
     expect(state.players[0].resources.money).toBe(10 + 3);
     expect(state.players[0].resources.steel).toBe(5 + 1);
 
-    // Demolish fortification lvl 2 (base $4 + lvl2 $4 = $8; steel base 0 + lvl2 1 = 1 steel -> refund $4, 1 steel)
+    // Demolish fortification lvl 2 (base $6 + lvl2 $6 = $12; steel base 0 + lvl2 2 = 2 steel -> refund $6, 1 steel)
     const prevMoney = state.players[0].resources.money;
     const prevSteel = state.players[0].resources.steel;
     state = applyAction(
@@ -2676,7 +2676,7 @@ describe("HEGEM-96: Manual Deploy Phase Transition (end_deploy)", () => {
     );
 
     expect(state.territories[owned.id].buildings?.find((b) => b.type === "fortification")).toBeUndefined();
-    expect(state.players[0].resources.money).toBe(prevMoney + 4);
+    expect(state.players[0].resources.money).toBe(prevMoney + 6);
     expect(state.players[0].resources.steel).toBe(prevSteel + 1);
     expect(state.log.some((msg) => msg.includes("ENGENHARIA"))).toBe(true);
   });
@@ -2740,6 +2740,142 @@ describe("HEGEM-96: Manual Deploy Phase Transition (end_deploy)", () => {
     expect(
       state.log.some((msg) => msg.includes("conquistou") || msg.includes("destruída") || msg.includes("degradou"))
     ).toBe(true);
+  });
+
+  describe("HEGEM-109: Military Balance - Fortification Costs & Unit Scaling", () => {
+    it("enforces calibrated costs for Casamata ($6) and Fortaleza upgrade ($6 + 2 Steel)", () => {
+      const rng = createSeededRng("hegem-109-costs");
+      let state = createGame({
+        id: "g_costs",
+        seed: "hegem-109-costs",
+        players: [
+          { id: "p1", name: "Alice", color: "blue" },
+          { id: "p2", name: "Bob", color: "red" },
+        ],
+      });
+
+      const p1 = state.players[0];
+      state.turnIndex = 0;
+      state.phase = "deploy";
+      p1.resources = { money: 12, steel: 2, oil: 0, gold: 0 };
+
+      const owned = Object.values(state.territories).find((t) => t.ownerId === p1.id)!;
+      owned.buildings = [];
+
+      // Build Casamata L1: costs $6
+      state = applyAction(
+        state,
+        p1.id,
+        { type: "build_structure", territoryId: owned.id, buildingType: "fortification" },
+        rng
+      );
+
+      expect(state.players[0].resources.money).toBe(12 - 6);
+      expect(state.players[0].resources.steel).toBe(2);
+      expect(state.territories[owned.id].buildings?.[0].level).toBe(1);
+
+      // Upgrade to Fortaleza L2: costs $6 and 2 steel
+      state = applyAction(
+        state,
+        p1.id,
+        { type: "build_structure", territoryId: owned.id, buildingType: "fortification" },
+        rng
+      );
+
+      expect(state.players[0].resources.money).toBe(0);
+      expect(state.players[0].resources.steel).toBe(0);
+      expect(state.territories[owned.id].buildings?.[0].level).toBe(2);
+    });
+
+    it("applies enhanced scaling to tanks (re-roll 1s and 2s with 3+ tanks, superiority die bonus with 5+ tanks)", () => {
+      const rng = createSeededRng("hegem-109-tanks");
+      let state = createGame({
+        id: "g_tanks",
+        seed: "hegem-109-tanks",
+        players: [
+          { id: "p1", name: "Alice", color: "blue" },
+          { id: "p2", name: "Bob", color: "red" },
+        ],
+      });
+
+      const p1 = state.players[0];
+      const p2 = state.players[1];
+      p1.resources = { money: 10, steel: 0, oil: 10, gold: 0 };
+
+      const fromTerr = Object.values(state.territories).find((t) => t.ownerId === p1.id)!;
+      const toTerr = Object.values(state.territories).find(
+        (t) => t.ownerId === p2.id && CLASSIC_MAP.territories.find((m) => m.id === fromTerr.id)?.neighbors.includes(t.id)
+      )!;
+
+      fromTerr.armies = 10;
+      fromTerr.units = { infantry: 2, tank: 6, artillery: 0, aircraft: 0, navy: 0 };
+      toTerr.armies = 3;
+      toTerr.units = { infantry: 3, tank: 0, artillery: 0, aircraft: 0, navy: 0 };
+
+      state.round = 2;
+      state.phase = "attack";
+
+      state = applyAction(
+        state,
+        p1.id,
+        {
+          type: "attack",
+          fromTerritoryId: fromTerr.id,
+          toTerritoryId: toTerr.id,
+          units: { infantry: 1, tank: 5, artillery: 0, aircraft: 0, navy: 0 },
+          diceCount: 3,
+        },
+        rng
+      );
+
+      expect(state.lastCombat?.heavyArmorBonus).toBe(true);
+      expect(state.lastCombat?.tankSuperiorityBonus).toBe(true);
+    });
+
+    it("suppresses enemy Casamata with 2+ artillery and Fortaleza with 4+ artillery in direct assault", () => {
+      const rng = createSeededRng("hegem-109-arty");
+      let state = createGame({
+        id: "g_arty",
+        seed: "hegem-109-arty",
+        players: [
+          { id: "p1", name: "Alice", color: "blue" },
+          { id: "p2", name: "Bob", color: "red" },
+        ],
+      });
+
+      const p1 = state.players[0];
+      const p2 = state.players[1];
+
+      const fromTerr = Object.values(state.territories).find((t) => t.ownerId === p1.id)!;
+      const toTerr = Object.values(state.territories).find(
+        (t) => t.ownerId === p2.id && CLASSIC_MAP.territories.find((m) => m.id === fromTerr.id)?.neighbors.includes(t.id)
+      )!;
+
+      fromTerr.armies = 10;
+      fromTerr.units = { infantry: 4, tank: 0, artillery: 4, aircraft: 0, navy: 0 };
+      toTerr.armies = 2;
+      toTerr.units = { infantry: 2, tank: 0, artillery: 0, aircraft: 0, navy: 0 };
+      toTerr.buildings = [{ type: "fortification", level: 2 }];
+
+      state.round = 2;
+      state.phase = "attack";
+
+      state = applyAction(
+        state,
+        p1.id,
+        {
+          type: "attack",
+          fromTerritoryId: fromTerr.id,
+          toTerritoryId: toTerr.id,
+          units: { infantry: 1, tank: 0, artillery: 4, aircraft: 0, navy: 0 },
+          diceCount: 3,
+        },
+        rng
+      );
+
+      expect(state.lastCombat?.artillerySuppressionBonus).toBe(true);
+      expect(state.lastCombat?.artillerySiegeBonus).toBe(true);
+    });
   });
 });
 

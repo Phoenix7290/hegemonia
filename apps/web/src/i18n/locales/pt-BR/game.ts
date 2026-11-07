@@ -383,6 +383,35 @@ export const ptBRGame: TranslationCatalog = {
   exit_confirm_desc: "Deseja realmente sair da partida? Seus territórios e exércitos permanecerão em campo sob controle defensivo da IA e você perderá a conexão com esta campanha.",
   exit_confirm_cancel: "Permanecer na Partida",
   exit_confirm_leave: "Abandonar Partida",
+
+  // Tactical Tooltips System (HEGEM-103)
+  settings_tooltips_label: "Dicas da HUD (Tooltips)",
+  settings_tooltips_on: "Ativadas (~350ms)",
+  settings_tooltips_off: "Desativadas",
+  settings_tooltips_hint: "Exibe explicações táticas contextuais com hover contínuo sobre botões e recursos.",
+
+  // Tactical Alerts & Camera Auto-Zoom (HEGEM-102)
+  tactical_alerts_artillery_ready: "Artilharia Pronta",
+  tactical_alerts_aircraft_ready: "Aviação Pronta",
+  tactical_alerts_encircled_warning: "Cerco Militar",
+  tactical_alerts_encircled_opportunity: "Inimigo Sitiado",
+  tactical_alerts_out_of_fuel: "Sem Petróleo",
+  turn_start_title: "Alto Comando: Início de Turno",
+  turn_start_reinforcements: "Reforços Mobilizados",
+  turn_start_economic_report: "Balanço de Commodities",
+  turn_start_dismiss: "Assumir Comando",
+  settings_auto_camera_label: "Auto-Zoom Tático da Câmera",
+  settings_auto_camera_on: "Ativado",
+  settings_auto_camera_off: "Desativado",
+  settings_auto_camera_hint: "Centraliza e aproxima suavemente o mapa ao interagir com alertas táticos e setores operacionais.",
+
+  // Version Guard & Client Update Notification (HEGEM-114)
+  version_update_available_title: "Atualização Tática do Servidor Disponível",
+  version_update_available_desc: "Uma nova versão do teatro de operações ({serverVersion}) foi implantada. Recarregue para sincronizar mecânicas e correções.",
+  version_update_in_battle_desc: "Uma nova versão ({serverVersion}) está disponível. Conclua seu turno ou recarregue quando a situação tática estiver segura.",
+  version_update_lobby_autoreload: "Nova versão ({serverVersion}) detectada. Atualizando teatro em {seconds}s...",
+  version_update_reload_now: "Recarregar Teatro de Operações",
+  version_update_dismiss: "Dispensar",
 };
 
 export const game = ptBRGame;

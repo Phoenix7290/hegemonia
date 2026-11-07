@@ -63,6 +63,42 @@ export interface LevelProgress {
   progressPct: number;
 }
 
+export interface MilitaryRank {
+  titlePt: string;
+  titleEn: string;
+  minLevel: number;
+}
+
+export const MILITARY_RANKS: MilitaryRank[] = [
+  { minLevel: 1, titlePt: "Recruta", titleEn: "Recruit" },
+  { minLevel: 2, titlePt: "Soldado", titleEn: "Private" },
+  { minLevel: 3, titlePt: "Cabo", titleEn: "Corporal" },
+  { minLevel: 4, titlePt: "Sargento", titleEn: "Sergeant" },
+  { minLevel: 5, titlePt: "Subtenente", titleEn: "Warrant Officer" },
+  { minLevel: 6, titlePt: "Tenente", titleEn: "Lieutenant" },
+  { minLevel: 7, titlePt: "Capitão", titleEn: "Captain" },
+  { minLevel: 8, titlePt: "Major", titleEn: "Major" },
+  { minLevel: 9, titlePt: "Tenente-Coronel", titleEn: "Lt. Colonel" },
+  { minLevel: 10, titlePt: "Coronel", titleEn: "Colonel" },
+  { minLevel: 12, titlePt: "General de Brigada", titleEn: "Brigadier General" },
+  { minLevel: 15, titlePt: "General de Divisão", titleEn: "Major General" },
+  { minLevel: 20, titlePt: "General de Exército", titleEn: "Army General" },
+  { minLevel: 25, titlePt: "Marechal de Campo", titleEn: "Field Marshal" },
+];
+
+export function getMilitaryRank(level: number): MilitaryRank {
+  const safeLevel = Math.max(1, Math.floor(level || 1));
+  let rank = MILITARY_RANKS[0];
+  for (const r of MILITARY_RANKS) {
+    if (safeLevel >= r.minLevel) {
+      rank = r;
+    } else {
+      break;
+    }
+  }
+  return rank;
+}
+
 /**
  * Detailed progress metrics for UI display (bars, percentages, counters).
  */

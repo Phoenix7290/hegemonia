@@ -204,28 +204,28 @@
               </button>
             {/if}
 
-            <!-- Fortification (Casamata $4 / Fortaleza $4+1A) -->
+            <!-- Fortification (Casamata $6 / Fortaleza $6+2A) -->
             {#if inspectedFortLevel === 0}
               <button
                 class="btn-build-option"
-                disabled={bldgs.length >= maxSlots || myRes.money < 4}
+                disabled={bldgs.length >= maxSlots || myRes.money < 6}
                 onclick={() => handleBuildStructure(inspectedTerritory!.def.id, "fortification")}
                 title={t("building_fortification_l1_desc")}
               >
                 <Icon name="fortification" size={11} />
                 <span>{t("building_fortification_l1")}</span>
-                <strong class="cost-tag">$4</strong>
+                <strong class="cost-tag">$6</strong>
               </button>
             {:else if inspectedFortLevel === 1}
               <button
                 class="btn-build-option upgrade"
-                disabled={myRes.money < 4 || myRes.steel < 1}
+                disabled={myRes.money < 6 || myRes.steel < 2}
                 onclick={() => handleBuildStructure(inspectedTerritory!.def.id, "fortification")}
                 title={t("building_fortification_l2_desc")}
               >
                 <Icon name="fortification" size={11} />
                 <span>{t("building_btn_upgrade_l2")}</span>
-                <strong class="cost-tag">$4+1A</strong>
+                <strong class="cost-tag">$6+2A</strong>
               </button>
             {/if}
 
