@@ -2184,7 +2184,6 @@
       stroke-dashoffset: 0;
     }
   }
-
   /* --- HEGEM-102: HOI4-Style Smooth Auto-Zoom & Camera Pan Rig --- */
   .camera-rig.smooth-transition {
     transition: transform 450ms cubic-bezier(0.2, 0.8, 0.25, 1);
