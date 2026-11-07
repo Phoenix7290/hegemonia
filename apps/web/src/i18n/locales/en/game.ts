@@ -383,6 +383,12 @@ export const enGame: TranslationCatalog = {
   exit_confirm_desc: "Are you sure you want to leave the active match? Your territories and divisions will remain on the map under defensive AI control.",
   exit_confirm_cancel: "Stay in Match",
   exit_confirm_leave: "Abandon Match",
+
+  // Tactical Tooltips System (HEGEM-103)
+  settings_tooltips_label: "HUD Tactical Tooltips",
+  settings_tooltips_on: "Enabled (~350ms)",
+  settings_tooltips_off: "Disabled",
+  settings_tooltips_hint: "Displays contextual tactical tooltips on continuous hover over controls and resources.",
 };
 
 export const game = enGame;

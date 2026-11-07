@@ -3,6 +3,7 @@ import {
   calculateLevel,
   calculateLevelProgress,
   calculateMatchXp,
+  getMilitaryRank,
   xpForLevel,
 } from "./xp.js";
 
@@ -198,6 +199,15 @@ describe("XP & Level Progression Engine (HEGEM-66)", () => {
       expect(progress.xpInCurrentLevel).toBe(100);
       expect(progress.xpNeededForNextLevel).toBe(203);
       expect(progress.progressPct).toBe(49); // 100 / 203 ≈ 49%
+    });
+
+    it("maps player level to prestigious military ranks (HEGEM-103)", () => {
+      expect(getMilitaryRank(1).titlePt).toBe("Recruta");
+      expect(getMilitaryRank(2).titlePt).toBe("Soldado");
+      expect(getMilitaryRank(4).titlePt).toBe("Sargento");
+      expect(getMilitaryRank(7).titlePt).toBe("Capitão");
+      expect(getMilitaryRank(10).titlePt).toBe("Coronel");
+      expect(getMilitaryRank(25).titlePt).toBe("Marechal de Campo");
     });
   });
 });

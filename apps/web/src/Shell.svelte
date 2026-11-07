@@ -7,6 +7,7 @@
   import ProfilePage from "./components/ProfilePage.svelte";
   import Icon from "./components/Icon.svelte";
   import LanguageSelector from "./components/LanguageSelector.svelte";
+  import TacticalTooltip from "./components/TacticalTooltip.svelte";
   import { auth } from "./lib/auth.svelte";
   import { ui } from "./lib/ui.svelte";
   import { navigate } from "./lib/api";
@@ -198,6 +199,31 @@
               </button>
             </div>
           </div>
+
+          <div class="audio-eq-row">
+            <div class="audio-eq-label">
+              <span>{t("settings_tooltips_label")}</span>
+            </div>
+            <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 0.3rem;">
+              <button
+                class={ui.tooltipsEnabled ? "gold-button" : "outline-button"}
+                style="padding: 0.28rem 0.35rem; font-size: 0.7rem;"
+                onclick={() => { if (!ui.tooltipsEnabled) ui.toggleTooltips(); }}
+              >
+                {t("settings_tooltips_on")}
+              </button>
+              <button
+                class={!ui.tooltipsEnabled ? "gold-button" : "outline-button"}
+                style="padding: 0.28rem 0.35rem; font-size: 0.7rem;"
+                onclick={() => { if (ui.tooltipsEnabled) ui.toggleTooltips(); }}
+              >
+                {t("settings_tooltips_off")}
+              </button>
+            </div>
+            <small style="color: #94A3B8; font-size: 0.65rem; margin-top: 0.2rem; display: block;">
+              {t("settings_tooltips_hint")}
+            </small>
+          </div>
         </div>
       {/if}
 
@@ -207,6 +233,7 @@
 {/if}
 
 <AuthDialog />
+<TacticalTooltip />
 
 {#if path === "/"}
   <App />

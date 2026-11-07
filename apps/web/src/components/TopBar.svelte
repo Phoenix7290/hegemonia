@@ -18,12 +18,15 @@
     getTradeBonusArmies,
     playerHasMarket,
   } from "@hegemonia/engine";
-  import type {
-    GameState,
-    PlayerColor,
-    PlayerState,
-    ResourceType,
+  import {
+    getMilitaryRank,
+    type GameState,
+    type PlayerColor,
+    type PlayerState,
+    type ResourceType,
   } from "@hegemonia/shared";
+  import { auth } from "../lib/auth.svelte";
+  import { tooltip } from "../lib/tooltip";
   import type { BaseMapMode, MapOverlays } from "../lib/map-preferences";
 
   const COLOR_HEX: Record<PlayerColor, string> = {
@@ -883,9 +886,20 @@
   <aside class="hud-panel top-right-panel">
     <div class="my-hq-row">
       {#if myPlayerState}
-        <div class="hq-general">
+        {@const userLevel = auth.user?.level ?? 1}
+        {@const rank = getMilitaryRank(userLevel)}
+        <div
+          class="hq-general"
+          use:tooltip={{
+            title: `${rank.titlePt} • Nível ${userLevel}`,
+            content: auth.user
+              ? `Comandante Supremo (${myPlayerState.name}) • ${auth.user.xp ?? 0} XP acumulado.`
+              : `Comandante da facção em campo tático.`
+          }}
+        >
           <FactionFlag color={myPlayerState.color} width={24} height={15} />
           <span class="hq-name">{myPlayerState.name}</span>
+          <span class="hq-rank-badge">{rank.titlePt}</span>
         </div>
 
         {#if isMyTurn && myPlayerState.unplacedArmies > 0}
@@ -992,7 +1006,10 @@
         <div
           class="econ-pill money"
           data-testid="res-money"
-          title={t("res_money")}
+          use:tooltip={{
+            title: "Tesouro & Fundos Operacionais ($)",
+            content: "Utilizado para aquisição de recursos no Mercado Global, edificação de defesas territoriais e custeio de manobras táticas."
+          }}
         >
           <Icon name="coins" size={13} />
           <span class="econ-val">${res.money}</span>
@@ -1003,7 +1020,10 @@
         <div
           class="econ-pill steel"
           data-testid="res-steel"
-          title={t("res_steel")}
+          use:tooltip={{
+            title: "Aço Estratégico",
+            content: "Matéria-prima pesada para produção de tanques blindados, peças de artilharia pesada e modernização de fortalezas nível 2."
+          }}
         >
           <Icon name="steel" size={13} />
           <span class="econ-val">{res.steel}</span>
@@ -1011,7 +1031,14 @@
             <span class="econ-delta">+{myEconomyIncome.steel}</span>
           {/if}
         </div>
-        <div class="econ-pill oil" data-testid="res-oil" title={t("res_oil")}>
+        <div
+          class="econ-pill oil"
+          data-testid="res-oil"
+          use:tooltip={{
+            title: "Petróleo & Combustível",
+            content: "Recurso tático consumido no abastecimento de divisões blindadas e manobras territoriais de alcance estratégico."
+          }}
+        >
           <Icon name="oil" size={13} />
           <span class="econ-val">{res.oil}</span>
           {#if myEconomyIncome && myEconomyIncome.oil > 0}
@@ -1021,7 +1048,10 @@
         <div
           class="econ-pill gold"
           data-testid="res-gold"
-          title={t("res_gold")}
+          use:tooltip={{
+            title: "Ouro Monetário de Reserva",
+            content: "Ativo de reserva internacional de alta liquidez. Pode ser liquidado a taxas premium de conversão cambial."
+          }}
         >
           <Icon name="gold" size={13} />
           <span class="econ-val">{res.gold}</span>
@@ -1258,6 +1288,32 @@
             </div>
             <small class="combat-anim-hint"
               >{t("settings_combat_anim_hint")}</small
+            >
+          </div>
+
+          <div class="combat-anim-settings" style="margin-top: 0.8rem;">
+            <span class="combat-anim-label"
+              ><Icon name="shield" size={12} />
+              {t("settings_tooltips_label")}:</span
+            >
+            <div class="combat-anim-btn-group">
+              <button
+                class="combat-anim-opt"
+                class:selected={ui.tooltipsEnabled}
+                onclick={() => { if (!ui.tooltipsEnabled) ui.toggleTooltips(); }}
+              >
+                {t("settings_tooltips_on")}
+              </button>
+              <button
+                class="combat-anim-opt"
+                class:selected={!ui.tooltipsEnabled}
+                onclick={() => { if (ui.tooltipsEnabled) ui.toggleTooltips(); }}
+              >
+                {t("settings_tooltips_off")}
+              </button>
+            </div>
+            <small class="combat-anim-hint"
+              >{t("settings_tooltips_hint")}</small
             >
           </div>
         </div>
@@ -2775,6 +2831,17 @@
     font-weight: 800;
     font-size: 0.84rem;
     color: #f8fafc;
+  }
+  .hq-rank-badge {
+    font-size: 0.62rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    background: rgba(212, 160, 23, 0.15);
+    color: #FBBF24;
+    border: 1px solid rgba(212, 160, 23, 0.35);
+    padding: 0.1rem 0.35rem;
+    border-radius: 3px;
   }
   .reserve-badge {
     background: rgba(234, 179, 8, 0.16);
