@@ -2,6 +2,8 @@
   import { auth } from "../lib/auth.svelte";
   import { navigate } from "../lib/api";
   import { t } from "../i18n/index.svelte";
+  import { getMilitaryRank } from "@hegemonia/shared";
+  import { tooltip } from "../lib/tooltip";
   import Avatar from "./Avatar.svelte";
   import Icon from "./Icon.svelte";
   let open = $state(false);
@@ -19,12 +21,21 @@
 
 {#if auth.ready}
   {#if auth.user}
+    {@const rank = getMilitaryRank(auth.user.level)}
     <div class="account-menu">
-      <button class="account-trigger" aria-expanded={open} onclick={() => (open = !open)}>
+      <button
+        class="account-trigger"
+        aria-expanded={open}
+        onclick={() => (open = !open)}
+        use:tooltip={{
+          title: `${rank.titlePt} • Nível ${auth.user.level}`,
+          content: `Patente das Forças de Coalizão (${auth.user.xp ?? 0} XP acumulado). Evolua sua patente vencendo operações estratégicas.`
+        }}
+      >
         <Avatar name={auth.user.displayName} avatarUrl={auth.user.avatarUrl} size="small" />
         <span>
           <strong>{auth.user.displayName}</strong>
-          <small>@{auth.user.username}</small>
+          <small>{rank.titlePt} • Nv. {auth.user.level}</small>
         </span>
         <Icon name="chevrons" size={13} />
       </button>

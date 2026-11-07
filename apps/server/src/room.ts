@@ -43,6 +43,7 @@ interface LobbyPlayer {
   userId?: string;
   username?: string;
   avatarUrl?: string | null;
+  level?: number | null;
 }
 
 interface HegemoniaRoomOptions {
@@ -359,6 +360,7 @@ export class HegemoniaRoom extends Room {
         existing.userId = authUser.id;
         existing.username = authUser.username;
         existing.avatarUrl = authUser.avatarUrl;
+        existing.level = authUser.level;
       }
       if (this.gameState) {
         const gp = this.gameState.players.find((p) => p.id === token);
@@ -399,6 +401,7 @@ export class HegemoniaRoom extends Room {
       userId: authUser?.id,
       username: authUser?.username,
       avatarUrl: authUser?.avatarUrl,
+      level: authUser?.level ?? 1,
     });
 
     synchronizeHumanHost(this.lobbyPlayers);
@@ -753,6 +756,7 @@ export class HegemoniaRoom extends Room {
         userId: p.userId ?? null,
         username: p.username ?? null,
         avatarUrl: p.avatarUrl ?? null,
+        level: p.level ?? 1,
       })),
       game: this.gameState ? createPlayerView(this.gameState, viewerToken) : null,
     });

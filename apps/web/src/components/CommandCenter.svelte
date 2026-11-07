@@ -13,6 +13,8 @@
   import { api, navigate } from "../lib/api";
   import { auth } from "../lib/auth.svelte";
   import type { CommunicationsController } from "../lib/communications.svelte";
+  import { tooltip } from "../lib/tooltip";
+  import { getMilitaryRank } from "@hegemonia/shared";
   import { i18n, t } from "../i18n/index.svelte";
   import { getFactionName, getFactionDoctrine } from "../i18n/content.svelte";
   import Avatar from "./Avatar.svelte";
@@ -33,6 +35,7 @@
     userId?: string | null;
     username?: string | null;
     avatarUrl?: string | null;
+    level?: number | null;
   }
 
   let {
@@ -389,6 +392,7 @@
                     p.token === myPlayerId
                       ? selectedDoctrineId
                       : (p.doctrineId ?? "blitzkrieg")}
+                  {@const rank = getMilitaryRank(p.level ?? 1)}
                   <div
                     class="slot-card occupied"
                     class:is-me={p.token === myPlayerId}
@@ -403,13 +407,27 @@
 
                     <div class="slot-info">
                       <div class="slot-name-row">
-                        <strong>{p.name}</strong>
+                        <strong
+                          use:tooltip={{
+                            title: p.isBot
+                              ? `Autômato Tático (${p.name})`
+                              : `${rank.titlePt} • Nível ${p.level ?? 1}`,
+                            content: p.isBot
+                              ? "Comandante de inteligência artificial automatizado."
+                              : `Oficial das forças armadas da coalizão (${getFactionName(p.color)}).`
+                          }}
+                        >
+                          {p.name}
+                        </strong>
                         {#if p.token === myPlayerId}
                           <span class="me-tag">{t("you")}</span>
                         {/if}
                       </div>
                       <small>
                         {getFactionName(p.color)}
+                        {#if !p.isBot}
+                          • {rank.titlePt}
+                        {/if}
                         {#if p.username}
                           • @{p.username}{/if}
                       </small>

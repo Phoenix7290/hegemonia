@@ -383,6 +383,12 @@ export const ptBRGame: TranslationCatalog = {
   exit_confirm_desc: "Deseja realmente sair da partida? Seus territórios e exércitos permanecerão em campo sob controle defensivo da IA e você perderá a conexão com esta campanha.",
   exit_confirm_cancel: "Permanecer na Partida",
   exit_confirm_leave: "Abandonar Partida",
+
+  // Tactical Tooltips System (HEGEM-103)
+  settings_tooltips_label: "Dicas da HUD (Tooltips)",
+  settings_tooltips_on: "Ativadas (~350ms)",
+  settings_tooltips_off: "Desativadas",
+  settings_tooltips_hint: "Exibe explicações táticas contextuais com hover contínuo sobre botões e recursos.",
 };
 
 export const game = ptBRGame;
