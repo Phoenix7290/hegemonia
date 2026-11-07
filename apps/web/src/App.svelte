@@ -812,6 +812,14 @@
     });
   }
 
+  function handleDemolishStructure(territoryId: string, buildingType: BuildingType) {
+    sendAction({
+      type: "demolish_structure",
+      territoryId,
+      buildingType,
+    });
+  }
+
   const UNIT_BUILDING_REQUIREMENTS: Partial<Record<UnitType, BuildingType>> = {
     tank: "industry",
     artillery: "industry",
@@ -1186,6 +1194,7 @@
         {isImmersiveMode}
         hudVisible={hudVisibility.recon}
         {handleBuildStructure}
+        {handleDemolishStructure}
         {handleRecruitUnit}
         {canRecruitUnit}
         {getRecruitRequirement}

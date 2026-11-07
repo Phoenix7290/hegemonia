@@ -926,7 +926,7 @@
         <button
           class="hud-btn"
           data-testid="btn-open-market"
-          class:highlight={Boolean(myHasMarket && isMyTurn)}
+          class:highlight={Boolean(myHasMarket)}
           class:active={activeRightDrawer === "market"}
           onclick={() => toggleRightDrawer("market")}
           title={t("market_btn_open")}
@@ -1650,8 +1650,8 @@
               {@const currentPrice = game.marketPrices[res]}
               {@const lacksFunds = treasuryMoney < buyCost}
               {@const lacksStock = stock < marketBatchQty}
-              {@const canAffordBuy = isMyTurn && !lacksFunds}
-              {@const canSell = isMyTurn && !lacksStock}
+              {@const canAffordBuy = !lacksFunds}
+              {@const canSell = !lacksStock}
               <div
                 class="commodity-card"
                 class:cannot-afford-buy={lacksFunds}
@@ -1689,11 +1689,7 @@
                     data-testid="market-buy-{res}"
                     disabled={!canAffordBuy}
                     onclick={() => handleMarketTrade(res, "buy")}
-                    title={!isMyTurn
-                      ? t("market_only_your_turn")
-                      : lacksFunds
-                        ? t("market_insufficient_funds")
-                        : ""}
+                    title={lacksFunds ? t("market_insufficient_funds") : ""}
                   >
                     {t("market_btn_buy")}
                     {marketBatchQty}x (-${buyCost})
@@ -1704,11 +1700,7 @@
                     data-testid="market-sell-{res}"
                     disabled={!canSell}
                     onclick={() => handleMarketTrade(res, "sell")}
-                    title={!isMyTurn
-                      ? t("market_only_your_turn")
-                      : lacksStock
-                        ? t("market_insufficient_stock")
-                        : ""}
+                    title={lacksStock ? t("market_insufficient_stock") : ""}
                   >
                     {t("market_btn_sell")}
                     {marketBatchQty}x (+${sellRev})

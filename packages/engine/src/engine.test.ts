@@ -1176,6 +1176,80 @@ describe("Territorial Infrastructure & Building System (HEGEM-32)", () => {
     expect(state.marketPrices.gold.sellPrice).toBe(8);
   });
 
+  it("permits asynchronous market operations for out-of-turn players who control a Market (HEGEM-94)", () => {
+    const rng = createSeededRng("hegem-94-async-market");
+    let state = createGame({
+      id: "g_async_market",
+      seed: "hegem-94-async-market",
+      players: [
+        { id: "p1", name: "Alice", color: "blue" },
+        { id: "p2", name: "Bob", color: "red" },
+      ],
+    });
+
+    const activeId = state.players[state.turnIndex].id;
+    const inactiveId = state.players.find((p) => p.id !== activeId)!.id;
+
+    for (const p of state.players) {
+      p.resources = { money: 50, steel: 5, oil: 5, gold: 5 };
+    }
+
+    // Out-of-turn player p2 without a market cannot trade
+    expect(() =>
+      applyAction(
+        state,
+        inactiveId,
+        { type: "market_trade", resource: "oil", operation: "buy", quantity: 1 },
+        rng
+      )
+    ).toThrow(/Mercado construído/i);
+
+    // Give inactive player p2 a territory with a Market
+    const p2Terr = Object.values(state.territories).find((t) => t.ownerId === inactiveId)!;
+    p2Terr.buildings = [{ type: "market", level: 1 }];
+
+    const p1Before = state.players.find((p) => p.id === activeId)!;
+    const p2Before = state.players.find((p) => p.id === inactiveId)!;
+    const p1MoneyBefore = p1Before.resources.money;
+    const p2MoneyBefore = p2Before.resources.money;
+    const p2OilBefore = p2Before.resources.oil;
+
+    // Out-of-turn player buys 2 Oil
+    const oilBuy1 = state.marketPrices.oil.buyPrice; // 4
+    state = applyAction(
+      state,
+      inactiveId,
+      { type: "market_trade", resource: "oil", operation: "buy", quantity: 2 },
+      rng
+    );
+
+    const p1After = state.players.find((p) => p.id === activeId)!;
+    const p2After = state.players.find((p) => p.id === inactiveId)!;
+
+    // p1 (active player) resources were NOT touched
+    expect(p1After.resources.money).toBe(p1MoneyBefore);
+
+    // p2 (inactive player) paid for 2 Oil and received 2 Oil
+    expect(p2After.resources.oil).toBe(p2OilBefore + 2);
+    expect(p2After.resources.money).toBeLessThan(p2MoneyBefore);
+
+    // Global market prices updated for all players
+    expect(state.marketPrices.oil.buyPrice).toBeGreaterThan(oilBuy1);
+
+    // Out-of-turn player sells 1 Oil back
+    const p2MoneyBeforeSell = p2After.resources.money;
+    state = applyAction(
+      state,
+      inactiveId,
+      { type: "market_trade", resource: "oil", operation: "sell", quantity: 1 },
+      rng
+    );
+
+    const p2AfterSell = state.players.find((p) => p.id === inactiveId)!;
+    expect(p2AfterSell.resources.oil).toBe(p2OilBefore + 1);
+    expect(p2AfterSell.resources.money).toBeGreaterThan(p2MoneyBeforeSell);
+  });
+
   it("establishes Allied Investment Routes between treatied nations with Markets, generates escalating income, and dissolves upon treaty breach (HEGEM-22)", () => {
     const rng = createSeededRng("hegem-22-investment");
     let state = createGame({
@@ -2547,6 +2621,125 @@ describe("HEGEM-96: Manual Deploy Phase Transition (end_deploy)", () => {
     // Player explicitly concludes deploy phase and advances to attack
     state = applyAction(state, p1.id, { type: "end_deploy" }, rng);
     expect(state.phase).toBe("attack");
+  });
+
+  it("allows voluntary demolition of structures during deploy phase with 50% refund (HEGEM-98)", () => {
+    const rng = createSeededRng("hegem-98-demolish");
+    let state = createGame({
+      id: "g_demo",
+      seed: "hegem-98-demolish",
+      players: [
+        { id: "p1", name: "Alice", color: "blue" },
+        { id: "p2", name: "Bob", color: "red" },
+      ],
+    });
+
+    const p1 = state.players[0];
+    state.turnIndex = 0;
+    state.phase = "deploy";
+    p1.resources = { money: 10, steel: 5, oil: 5, gold: 0 };
+
+    const owned = Object.values(state.territories).find((t) => t.ownerId === p1.id)!;
+    owned.buildings = [
+      { type: "industry", level: 1 },
+      { type: "fortification", level: 2 },
+    ];
+
+    // Demolish industry (costs $6, 1 steel -> refund $3, 1 steel)
+    state = applyAction(
+      state,
+      p1.id,
+      {
+        type: "demolish_structure",
+        territoryId: owned.id,
+        buildingType: "industry",
+      },
+      rng
+    );
+
+    expect(state.territories[owned.id].buildings?.find((b) => b.type === "industry")).toBeUndefined();
+    expect(state.players[0].resources.money).toBe(10 + 3);
+    expect(state.players[0].resources.steel).toBe(5 + 1);
+
+    // Demolish fortification lvl 2 (base $4 + lvl2 $4 = $8; steel base 0 + lvl2 1 = 1 steel -> refund $4, 1 steel)
+    const prevMoney = state.players[0].resources.money;
+    const prevSteel = state.players[0].resources.steel;
+    state = applyAction(
+      state,
+      p1.id,
+      {
+        type: "demolish_structure",
+        territoryId: owned.id,
+        buildingType: "fortification",
+      },
+      rng
+    );
+
+    expect(state.territories[owned.id].buildings?.find((b) => b.type === "fortification")).toBeUndefined();
+    expect(state.players[0].resources.money).toBe(prevMoney + 4);
+    expect(state.players[0].resources.steel).toBe(prevSteel + 1);
+    expect(state.log.some((msg) => msg.includes("ENGENHARIA"))).toBe(true);
+  });
+
+  it("applies dynamic collateral destruction to enemy buildings upon conquest with tanks/artillery bonuses (HEGEM-98)", () => {
+    const rng = createSeededRng("hegem-98-conquest");
+    let state = createGame({
+      id: "g_collateral",
+      seed: "hegem-98-conquest",
+      players: [
+        { id: "p1", name: "Alice", color: "blue" },
+        { id: "p2", name: "Bob", color: "red" },
+      ],
+    });
+
+    const activeId = state.players[state.turnIndex].id;
+    const defenderId = state.players.find((p) => p.id !== activeId)!.id;
+
+    const fromTerr = Object.values(state.territories).find((t) => t.ownerId === activeId)!;
+    const toTerr = Object.values(state.territories).find(
+      (t) => t.ownerId === defenderId && CLASSIC_MAP.territories.find((m) => m.id === fromTerr.id)?.neighbors.includes(t.id)
+    )!;
+
+    // Attacker has overwhelming force with tanks and artillery
+    fromTerr.armies = 10;
+    fromTerr.units = { infantry: 4, tank: 4, artillery: 2, aircraft: 0, navy: 0 };
+
+    // Defender has 1 army, a fortification level 2, and an Industry
+    toTerr.armies = 1;
+    toTerr.units = { infantry: 1, tank: 0, artillery: 0, aircraft: 0, navy: 0 };
+    toTerr.buildings = [
+      { type: "fortification", level: 2 },
+      { type: "industry", level: 1 },
+    ];
+
+    state.round = 2;
+    state.phase = "attack";
+
+    // Attack with tank and artillery
+    state = applyAction(
+      state,
+      activeId,
+      {
+        type: "attack",
+        fromTerritoryId: fromTerr.id,
+        toTerritoryId: toTerr.id,
+        attackingUnits: { infantry: 1, tank: 2, artillery: 0, aircraft: 0, navy: 0 },
+        attackDice: 3,
+      },
+      rng
+    );
+
+    // Territory was conquered
+    expect(state.territories[toTerr.id].ownerId).toBe(activeId);
+    // Fortification lvl 2 degraded or collapsed
+    const conqueredFort = state.territories[toTerr.id].buildings?.find((b) => b.type === "fortification");
+    if (conqueredFort) {
+      expect(conqueredFort.level).toBe(1);
+    }
+    // Collateral check was evaluated and logged
+    expect(
+      state.log.some((msg) => msg.includes("conquistou") || msg.includes("destruída") || msg.includes("degradou"))
+    ).toBe(true);
   });
 });
 

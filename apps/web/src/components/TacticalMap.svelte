@@ -542,6 +542,19 @@
       <filter id="glow-red" x="-25%" y="-25%" width="150%" height="150%">
         <feDropShadow dx="0" dy="0" stdDeviation="4.5" flood-color="#ef4444" flood-opacity="1" />
       </filter>
+
+      <!-- Directional Maneuver Vector Arrowhead (HEGEM-97) -->
+      <marker
+        id="maneuver-arrow"
+        viewBox="0 0 10 10"
+        refX="7"
+        refY="5"
+        markerWidth="6"
+        markerHeight="6"
+        orient="auto-start-reverse"
+      >
+        <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#38bdf8" />
+      </marker>
     </defs>
 
     <!-- CAMERA RIG: Pans & Zooms in Pure SVG Space with Seamless Horizontal Wraparound -->
@@ -658,15 +671,19 @@
                 Boolean(fromTerrState && hasTerritoryBuilding(fromTerrState, "airfield")) &&
                 hasTerritoryBuilding(tState, "airfield") &&
                 !fromTerrState?.airliftedThisTurn}
+              {@const isManeuverDest =
+                game.phase === "maneuver" &&
+                Boolean(selectedFromId) &&
+                t.id !== selectedFromId &&
+                tState.ownerId === myPlayerId &&
+                (Boolean(territoryById.get(selectedFromId)?.neighbors.includes(t.id)) || isAirliftDest)}
               {@const isValidTarget =
                 selectedFromId &&
                 ((game.phase === "attack" &&
                   tState.ownerId !== myPlayerId &&
                   (fromTerrState?.armies ?? 0) >= 2 &&
                   territoryById.get(selectedFromId)?.neighbors.includes(t.id)) ||
-                 (game.phase === "maneuver" &&
-                  tState.ownerId === myPlayerId &&
-                  (territoryById.get(selectedFromId)?.neighbors.includes(t.id) || isAirliftDest)))}
+                 isManeuverDest)}
               {@const isObjTarget = highlightObjectiveTerritories && objectiveTargetTerritoryIds.has(t.id)}
               {@const isObjOwned = isObjTarget && tState.ownerId === myPlayerId}
               {@const isObjPending = isObjTarget && tState.ownerId !== myPlayerId}
@@ -688,6 +705,7 @@
                 <title>{getTerritoryName(t.id)}: {tState.armies} divisões</title>
                 <!-- Base Political Fill + Frontier Border -->
                 <path
+                  class:maneuver-dest-pulse={isManeuverDest}
                   d={t.svgPath}
                   fill={isObjOwned ? "#059669" : isObjPending ? "#dc2626" : activeFill}
                   fill-opacity={isObjTarget
@@ -701,26 +719,30 @@
                           : "0.88"}
                   stroke={isSelected
                     ? "#ffffff"
-                    : isValidTarget
-                      ? "#facc15"
-                      : isObjPending
-                        ? "#ef4444"
-                        : isObjOwned
-                          ? "#10b981"
-                          : effectiveBaseMode === "cartographic"
-                            ? ownerColor
-                            : isBlackTerritory
-                              ? "#CBD5E1"
-                              : "rgba(9, 13, 22, 0.95)"}
+                    : isManeuverDest
+                      ? "#38bdf8"
+                      : isValidTarget
+                        ? "#facc15"
+                        : isObjPending
+                          ? "#ef4444"
+                          : isObjOwned
+                            ? "#10b981"
+                            : effectiveBaseMode === "cartographic"
+                              ? ownerColor
+                              : isBlackTerritory
+                                ? "#CBD5E1"
+                                : "rgba(9, 13, 22, 0.95)"}
                   stroke-width={isSelected
                     ? "2.6"
-                    : isValidTarget || isObjPending
-                      ? "2.4"
-                      : isObjOwned
-                        ? "2.0"
-                        : effectiveBaseMode === "cartographic"
-                          ? "1.6"
-                          : "1.25"}
+                    : isManeuverDest
+                      ? "2.8"
+                      : isValidTarget || isObjPending
+                        ? "2.4"
+                        : isObjOwned
+                          ? "2.0"
+                          : effectiveBaseMode === "cartographic"
+                            ? "1.6"
+                            : "1.25"}
                   stroke-linejoin="round"
                   filter={isSelected || isValidTarget
                     ? "url(#glow-gold)"
@@ -1588,6 +1610,39 @@
               {/each}
             </g>
           {/if}
+
+          <!-- PASS E (Layer 7 - Directional Maneuver Vector Route — HEGEM-97) -->
+          {#if game.phase === "maneuver" && selectedFromId && selectedToId}
+            {@const fromBadge = getTerritoryBadgeCoords(selectedFromId)}
+            {@const toBadge = getTerritoryBadgeCoords(selectedToId)}
+            {@const mVec = resolveShortestMapVector(fromBadge, toBadge, MAP_WIDTH)}
+            <g class="layer-maneuver-route" pointer-events="none">
+              <!-- Outer Ambient Glow -->
+              <line
+                x1={mVec.x1}
+                y1={mVec.y1}
+                x2={mVec.x2}
+                y2={mVec.y2}
+                stroke="#38bdf8"
+                stroke-width="5"
+                stroke-opacity="0.32"
+                stroke-linecap="round"
+              />
+              <!-- Animated Directional Tactical Maneuver Vector -->
+              <line
+                x1={mVec.x1}
+                y1={mVec.y1}
+                x2={mVec.x2}
+                y2={mVec.y2}
+                stroke="#38bdf8"
+                stroke-width="2.6"
+                stroke-dasharray="6,4"
+                stroke-linecap="round"
+                marker-end="url(#maneuver-arrow)"
+                class="fx-maneuver-vector"
+              />
+            </g>
+          {/if}
         </g>
       {/each}
     </g>
@@ -2095,6 +2150,35 @@
     100% {
       transform: scale(3.2);
       opacity: 0;
+    }
+  }
+
+  /* --- HEGEM-97: Directional Maneuver Vector & Valid Destination Pulse --- */
+  .maneuver-dest-pulse {
+    animation: pulse-maneuver-dest 1.6s ease-in-out infinite;
+  }
+  @keyframes pulse-maneuver-dest {
+    0%, 100% {
+      stroke: #38bdf8;
+      stroke-width: 2.2;
+      stroke-opacity: 0.72;
+    }
+    50% {
+      stroke: #7dd3fc;
+      stroke-width: 3.2;
+      stroke-opacity: 1;
+      filter: drop-shadow(0 0 5px rgba(56, 189, 248, 0.9));
+    }
+  }
+  .fx-maneuver-vector {
+    animation: maneuver-vector-flow 0.85s linear infinite;
+  }
+  @keyframes maneuver-vector-flow {
+    from {
+      stroke-dashoffset: 20;
+    }
+    to {
+      stroke-dashoffset: 0;
     }
   }
 </style>
