@@ -224,3 +224,48 @@ describe("HEGEM-84: Tactical Confrontation Header with Faction Flags", () => {
     expect(code).toContain('class="preset-chip"');
   });
 });
+
+describe("HEGEM-97: Maneuver Redesign with Visual Route & Agile Fast Actions", () => {
+  it("verifies ActionConsole implements dual contrasting cards and quick division selectors", () => {
+    const actionConsolePath = resolve(__dirname, "../components/ActionConsole.svelte");
+    const code = readFileSync(actionConsolePath, "utf-8");
+
+    // Must have dual contrasting cards for origin and destination
+    expect(code).toContain('class="maneuver-dual-cards"');
+    expect(code).toContain('class="maneuver-card from-card"');
+    expect(code).toContain('class="maneuver-card to-card"');
+    expect(code).toContain('class="card-tag from">ORIGEM</div>');
+    expect(code).toContain('class="card-tag to">DESTINO</div>');
+
+    // Must retain minimum garrison of 1
+    expect(code).toContain("1 retida");
+
+    // Must implement quick selection bar (+1, 50%, MÁXIMO, LIMPAR)
+    expect(code).toContain('class="maneuver-quick-bar"');
+    expect(code).toContain("+1");
+    expect(code).toContain("50%");
+    expect(code).toContain("MÁXIMO");
+    expect(code).toContain("LIMPAR");
+
+    // Must have action buttons
+    expect(code).toContain("CONFIRMAR REAGRUPAMENTO");
+    expect(code).toContain("ENCERRAR TURNO SEM MANOBRA");
+  });
+
+  it("verifies TacticalMap contains directional maneuver vector marker and destination pulse", () => {
+    const mapPath = resolve(__dirname, "../components/TacticalMap.svelte");
+    const code = readFileSync(mapPath, "utf-8");
+
+    // Directional Arrowhead marker in SVG defs
+    expect(code).toContain('id="maneuver-arrow"');
+
+    // Directional Maneuver Vector layer
+    expect(code).toContain('class="layer-maneuver-route"');
+    expect(code).toContain('marker-end="url(#maneuver-arrow)"');
+    expect(code).toContain('class="fx-maneuver-vector"');
+
+    // Maneuver valid destination pulse class
+    expect(code).toContain("class:maneuver-dest-pulse={isManeuverDest}");
+    expect(code).toContain(".maneuver-dest-pulse");
+  });
+});
