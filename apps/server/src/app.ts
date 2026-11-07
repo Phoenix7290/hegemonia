@@ -9,6 +9,7 @@ import { getLeaderboard, type LeaderboardCursor } from "./stats-repository.js";
 import { createAuthRouter, socialErrorStatus } from "./auth-routes.js";
 import { createMatchmakingRouter } from "./matchmaking-routes.js";
 import { MatchmakingError } from "./matchmaking.js";
+import { HEGEMONIA_VERSION, MATCHMAKING_RULESET_VERSION } from "@hegemonia/shared";
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -42,6 +43,16 @@ export async function createApp(): Promise<express.Express> {
     } catch (error) { next(error); }
   });
 
+  app.get("/api/version", (_req, res) => {
+    res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+    res.setHeader("Pragma", "no-cache");
+    res.setHeader("Expires", "0");
+    res.json({
+      version: HEGEMONIA_VERSION,
+      rulesetVersion: MATCHMAKING_RULESET_VERSION,
+    });
+  });
+
   app.use("/api/matchmaking", createMatchmakingRouter());
   app.use("/api", await createAuthRouter());
   app.use("/avatars", express.static(resolve(process.env.AVATAR_DIR ?? "data/avatars"), {
@@ -52,9 +63,22 @@ export async function createApp(): Promise<express.Express> {
 
   const staticDir = resolve(process.env.PUBLIC_DIR ?? "../web/dist");
   if (existsSync(staticDir)) {
-    app.use(express.static(staticDir));
+    app.use(
+      express.static(staticDir, {
+        setHeaders: (res, path) => {
+          if (path.endsWith(".html")) {
+            res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+            res.setHeader("Pragma", "no-cache");
+            res.setHeader("Expires", "0");
+          }
+        },
+      })
+    );
     app.get("*", (req, res, next) => {
-      if (req.path.startsWith("/api") || req.path.startsWith("/matchmake")) return next();
+      if (req.path.startsWith("/api") || req.path.startsWith("/matchmake") || req.path.startsWith("/health")) return next();
+      res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+      res.setHeader("Pragma", "no-cache");
+      res.setHeader("Expires", "0");
       res.sendFile(join(staticDir, "index.html"));
     });
   }

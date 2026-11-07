@@ -39,6 +39,7 @@
   import { api, ApiError } from "./lib/api";
   import { auth } from "./lib/auth.svelte";
   import { ui } from "./lib/ui.svelte";
+  import { versionGuard } from "./lib/version.svelte";
   import CommandCenter, {
     type LobbyPlayerView,
   } from "./components/CommandCenter.svelte";
@@ -446,6 +447,7 @@
   }
 
   interface RoomStateMessage {
+    version?: string;
     roomCode: string;
     status: "lobby" | "playing";
     turnDeadline: number;
@@ -688,6 +690,9 @@
 
       room.onMessage("room_state", (payload: RoomStateMessage) => {
         if (generation !== connectionGeneration) return;
+        if (payload.version) {
+          versionGuard.checkServerVersion(payload.version, ui.inActiveBattle);
+        }
         const hadPrevGame = game !== null;
         const prevLogLen = game?.log?.length ?? 0;
         roomCode = payload.roomCode;

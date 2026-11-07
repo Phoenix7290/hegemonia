@@ -4,6 +4,7 @@ import {
   DOCTRINE_LIST,
   DoctrineIdSchema,
   GameActionSchema,
+  HEGEMONIA_VERSION,
   PlayerColorSchema,
   SESSION_REPLACED_CLOSE_CODE,
   type AuthUser,
@@ -739,6 +740,7 @@ export class HegemoniaRoom extends Room {
 
   private sendStateToClient(client: Client, viewerToken: string | null) {
     client.send("room_state", {
+      version: HEGEMONIA_VERSION,
       roomCode: this.roomCode,
       status: this.gameState ? "playing" : "lobby",
       competitionMode: this.competitionMode,

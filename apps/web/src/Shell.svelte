@@ -8,7 +8,9 @@
   import Icon from "./components/Icon.svelte";
   import LanguageSelector from "./components/LanguageSelector.svelte";
   import TacticalTooltip from "./components/TacticalTooltip.svelte";
+  import VersionUpdateBanner from "./components/VersionUpdateBanner.svelte";
   import { auth } from "./lib/auth.svelte";
+  import { versionGuard } from "./lib/version.svelte";
   import { ui } from "./lib/ui.svelte";
   import { navigate } from "./lib/api";
   import { t } from "./i18n/index.svelte";
@@ -19,6 +21,7 @@
 
   $effect(() => {
     void auth.init();
+    void versionGuard.checkViaApi(ui.inActiveBattle);
     const update = () => {
       path = window.location.pathname;
       showTopAudio = false;
@@ -234,6 +237,7 @@
 
 <AuthDialog />
 <TacticalTooltip />
+<VersionUpdateBanner />
 
 {#if path === "/"}
   <App />

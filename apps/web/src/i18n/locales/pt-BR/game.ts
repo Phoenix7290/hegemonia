@@ -404,6 +404,14 @@ export const ptBRGame: TranslationCatalog = {
   settings_auto_camera_on: "Ativado",
   settings_auto_camera_off: "Desativado",
   settings_auto_camera_hint: "Centraliza e aproxima suavemente o mapa ao interagir com alertas táticos e setores operacionais.",
+
+  // Version Guard & Client Update Notification (HEGEM-114)
+  version_update_available_title: "Atualização Tática do Servidor Disponível",
+  version_update_available_desc: "Uma nova versão do teatro de operações ({serverVersion}) foi implantada. Recarregue para sincronizar mecânicas e correções.",
+  version_update_in_battle_desc: "Uma nova versão ({serverVersion}) está disponível. Conclua seu turno ou recarregue quando a situação tática estiver segura.",
+  version_update_lobby_autoreload: "Nova versão ({serverVersion}) detectada. Atualizando teatro em {seconds}s...",
+  version_update_reload_now: "Recarregar Teatro de Operações",
+  version_update_dismiss: "Dispensar",
 };
 
 export const game = ptBRGame;

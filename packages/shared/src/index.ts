@@ -715,3 +715,4 @@ export * from "./identity.js";
 export * from "./comms.js";
 export * from "./multiplayer.js";
 export * from "./xp.js";
+export * from "./version.js";
