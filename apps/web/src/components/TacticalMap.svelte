@@ -89,8 +89,8 @@
     red: "#ef4444",
     green: "#10b981",
     yellow: "#f59e0b",
-    black: "#475569",
-    white: "#94a3b8",
+    black: "#21262B",
+    white: "#F0F0F5",
   };
 
   const REGION_COLOR_HEX: Record<string, string> = {
@@ -644,6 +644,8 @@
               {@const tState = game.territories[t.id]}
               {@const owner = game.players.find((p) => p.id === tState.ownerId)}
               {@const ownerColor = owner ? COLOR_HEX[owner.color] : "#334155"}
+              {@const isBlackTerritory = owner?.color === "black"}
+              {@const isWhiteTerritory = owner?.color === "white"}
               {@const regionColor = getTerritoryRegionColor(t as any)}
               {@const activeFill = ownerColor}
               {@const isSelected = selectedFromId === t.id || selectedToId === t.id}
@@ -694,7 +696,9 @@
                       ? "0.88"
                       : effectiveBaseMode === "cartographic"
                         ? "0.42"
-                        : "0.84"}
+                        : isBlackTerritory
+                          ? "0.96"
+                          : "0.88"}
                   stroke={isSelected
                     ? "#ffffff"
                     : isValidTarget
@@ -705,7 +709,9 @@
                           ? "#10b981"
                           : effectiveBaseMode === "cartographic"
                             ? ownerColor
-                            : "rgba(9, 13, 22, 0.9)"}
+                            : isBlackTerritory
+                              ? "#CBD5E1"
+                              : "rgba(9, 13, 22, 0.95)"}
                   stroke-width={isSelected
                     ? "2.6"
                     : isValidTarget || isObjPending
@@ -714,7 +720,7 @@
                         ? "2.0"
                         : effectiveBaseMode === "cartographic"
                           ? "1.6"
-                          : "1.0"}
+                          : "1.25"}
                   stroke-linejoin="round"
                   filter={isSelected || isValidTarget
                     ? "url(#glow-gold)"
@@ -899,6 +905,8 @@
                 {@const tState = game.territories[t.id]}
                 {@const owner = game.players.find((p) => p.id === tState.ownerId)}
                 {@const ownerColor = owner ? COLOR_HEX[owner.color] : "#334155"}
+              {@const isBlackTerritory = owner?.color === "black"}
+              {@const isWhiteTerritory = owner?.color === "white"}
                 {@const isSelected = selectedFromId === t.id || selectedToId === t.id}
                 {@const fromTerrState = selectedFromId ? game.territories[selectedFromId] : null}
                 {@const isAirliftDest =
@@ -933,6 +941,8 @@
                 {@const badgeY = t.center[1] + anchorOffset[1]}
                 {@const isUnderArmorShock = armorShockTerritoryIds.has(t.id)}
                 {@const isUnderFire = underFireTerritoryIds.has(t.id)}
+                {@const isBlack = owner?.color === "black"}
+                {@const isWhite = owner?.color === "white"}
 
                 <!-- HOI4-STYLE MILITARY DIVISION COUNTER WITH OPTIONAL COMPACT ECONOMIC SUB-BADGE -->
                 <g
@@ -957,28 +967,27 @@
                       <Icon name="capital-fallen" size={6.4} x={-3.2} y={-3.2} color="#fca5a5" strokeWidth={2.1} />
                     </g>
                   {/if}
-
                   <rect
                     x="-13"
                     y="-6.5"
                     width="26"
                     height="13"
                     rx="2.2"
-                    fill="#090e1a"
+                    fill={isBlack ? "#F0F0F5" : "#090e1a"}
                     stroke={isCapital
                       ? "#f59e0b"
                       : isFallenCapital
                         ? "#ef4444"
                         : isSelected
-                           ? "#ffffff"
+                           ? (isBlack ? "#21262B" : "#ffffff")
                            : isValidTarget
                              ? "#facc15"
                              : isObjPending
                                ? "#ef4444"
                                : isObjOwned
                                  ? "#10b981"
-                                 : ownerColor}
-                    stroke-width={isCapital || isFallenCapital || isSelected || isValidTarget || isObjTarget ? "1.6" : "1.1"}
+                                 : isBlack ? "#21262B" : isWhite ? "#F0F0F5" : ownerColor}
+                    stroke-width={isCapital || isFallenCapital || isSelected || isValidTarget || isObjTarget || isBlack ? "1.6" : "1.1"}
                     filter="drop-shadow(0 1.5px 3px rgba(0,0,0,0.85))"
                   />
                   <!-- Mini Faction Flag inside Left Half of Counter -->
@@ -986,7 +995,7 @@
                     <g transform="translate(-11.2, -4.5) scale(0.75)">
                       {#if owner.color === "blue"}
                         <rect width="13" height="12" fill="#1d4ed8" />
-                        <polygon points="6.5,2 8,5 11,6 8,7 6.5,10 5,7 2,6 5,5" fill="#f8fafc" />
+                        <polygon points="6.5,2 8,5 11,6 8,7 6.5,10 5,7 2,6 5,5" fill="#F0F0F5" />
                       {:else if owner.color === "red"}
                         <rect width="13" height="12" fill="#b91c1c" />
                         <polygon points="6.5,2.5 9.5,6 6.5,9.5 3.5,6" fill="#facc15" />
@@ -997,23 +1006,30 @@
                         <rect width="13" height="12" fill="#d97706" />
                         <circle cx="6.5" cy="6" r="2.8" fill="#fef08a" />
                       {:else if owner.color === "black"}
-                        <rect width="13" height="12" fill="#1e293b" />
+                        <rect width="13" height="12" fill="#21262B" />
                         <path d="M0,6 H13 M6.5,0 V12" stroke="#e2e8f0" stroke-width="2" />
                       {:else}
-                        <rect width="13" height="12" fill="#e2e8f0" />
-                        <path d="M0,6 H13 M5,0 V12" stroke="#1e293b" stroke-width="2.2" />
+                        <rect width="13" height="12" fill="#F0F0F5" />
+                        <path d="M0,6 H13 M5,0 V12" stroke="#21262B" stroke-width="2.2" />
                       {/if}
                     </g>
                   {/if}
                   <!-- Divider Line -->
-                  <line x1="-0.8" y1="-5.8" x2="-0.8" y2="5.8" stroke="rgba(148, 163, 184, 0.35)" stroke-width="0.7" />
+                  <line
+                    x1="-0.8"
+                    y1="-5.8"
+                    x2="-0.8"
+                    y2="5.8"
+                    stroke={isBlack ? "rgba(33, 38, 43, 0.35)" : "rgba(148, 163, 184, 0.35)"}
+                    stroke-width="0.7"
+                  />
                   <!-- Crisp Troop Count -->
                   <text
                     x="6"
                     y="0.4"
                     text-anchor="middle"
                     dominant-baseline="central"
-                    fill="#ffffff"
+                    fill={isBlack ? "#21262B" : "#ffffff"}
                     font-size={troopFontSize}
                     font-weight="800"
                     font-family="system-ui, -apple-system, sans-serif"
