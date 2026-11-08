@@ -1026,7 +1026,7 @@
             content: "Utilizado para aquisição de recursos no Mercado Global, edificação de defesas territoriais e custeio de manobras táticas."
           }}
         >
-          <Icon name="coins" size={13} />
+          <Icon name="coins" size={14} />
           <span class="econ-val">${res.money}</span>
           {#if myEconomyIncome && myEconomyIncome.netMoney > 0}
             <span class="econ-delta">+{myEconomyIncome.netMoney}</span>
@@ -3087,27 +3087,36 @@
   /* Economy Bar */
   .hq-economy-bar {
     display: grid;
-    grid-template-columns: repeat(4, 1fr);
+    grid-template-columns: minmax(105px, 1.35fr) repeat(3, minmax(54px, 1fr));
     gap: 0.35rem;
     padding-top: 0.25rem;
     border-top: 1px solid rgba(148, 163, 184, 0.14);
+    width: 100%;
+    box-sizing: border-box;
   }
   .econ-pill {
     display: flex;
     align-items: center;
     justify-content: center;
     gap: 0.28rem;
-    padding: 0.24rem 0.38rem;
+    padding: 0.25rem 0.38rem;
     border-radius: 6px;
     background: rgba(15, 23, 42, 0.72);
     border: 1px solid rgba(148, 163, 184, 0.18);
-    font-size: 0.74rem;
+    font-size: 0.76rem;
     font-weight: 700;
     color: #e2e8f0;
+    min-width: 0;
+    white-space: nowrap;
+    box-sizing: border-box;
   }
   .econ-pill.money {
     color: #34d399;
-    border-color: rgba(52, 211, 153, 0.28);
+    border-color: rgba(52, 211, 153, 0.38);
+    background: rgba(16, 185, 129, 0.1);
+    padding: 0.25rem 0.5rem;
+    font-size: 0.82rem;
+    gap: 0.32rem;
   }
   .econ-pill.steel {
     color: #94a3b8;
@@ -3124,11 +3133,19 @@
   .econ-val {
     color: #f8fafc;
     font-variant-numeric: tabular-nums;
+    font-weight: 800;
+  }
+  .econ-pill.money .econ-val {
+    font-size: 0.84rem;
   }
   .econ-delta {
-    font-size: 0.65rem;
-    font-weight: 600;
-    opacity: 0.88;
+    font-size: 0.68rem;
+    font-weight: 700;
+    opacity: 0.95;
+    background: rgba(52, 211, 153, 0.14);
+    padding: 1px 4px;
+    border-radius: 3px;
+    color: #34d399;
   }
 
   /* Map Mode Bar & Overlays (HEGEM-62) */
@@ -4041,7 +4058,21 @@
     }
   }
 
+  @media (max-width: 960px) {
+    .hq-economy-bar {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 0.3rem;
+    }
+    .econ-pill.money {
+      font-size: 0.82rem;
+    }
+  }
+
   @media (max-width: 820px) {
+    .hq-economy-bar {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 0.25rem;
+    }
     .top-center-banner {
       max-width: 300px;
       padding: 0.35rem 0.55rem;
@@ -4051,6 +4082,20 @@
     }
     .tc-directive {
       font-size: 0.66rem;
+    }
+  }
+
+  @media (max-width: 600px) {
+    .hq-economy-bar {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 0.2rem;
+    }
+    .econ-pill {
+      font-size: 0.70rem;
+      padding: 0.2rem 0.28rem;
+    }
+    .econ-pill.money {
+      font-size: 0.76rem;
     }
   }
 </style>

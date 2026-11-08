@@ -10,6 +10,7 @@
     getMovedInUnits,
     getTerritoryUnits,
     hasTerritoryBuilding,
+    isConnectedByFriendlyPath,
     subtractUnits,
     totalUnits,
   } from "@hegemonia/engine";
@@ -122,6 +123,74 @@
     }
     selectedUnits = next;
   }
+
+  let isOccupyLocked = $state(false);
+  let lockoutRemaining = $state(0);
+  let lockoutTimer: ReturnType<typeof setTimeout> | null = null;
+  let countdownInterval: ReturnType<typeof setInterval> | null = null;
+
+  $effect(() => {
+    if (game.pendingConquest) {
+      isOccupyLocked = true;
+      lockoutRemaining = 2;
+      if (lockoutTimer) clearTimeout(lockoutTimer);
+      if (countdownInterval) clearInterval(countdownInterval);
+
+      countdownInterval = setInterval(() => {
+        lockoutRemaining = Math.max(0, lockoutRemaining - 1);
+      }, 1000);
+
+      lockoutTimer = setTimeout(() => {
+        isOccupyLocked = false;
+        lockoutRemaining = 0;
+        if (countdownInterval) clearInterval(countdownInterval);
+      }, 2000);
+    } else {
+      isOccupyLocked = false;
+      lockoutRemaining = 0;
+      if (lockoutTimer) clearTimeout(lockoutTimer);
+      if (countdownInterval) clearInterval(countdownInterval);
+    }
+    return () => {
+      if (lockoutTimer) clearTimeout(lockoutTimer);
+      if (countdownInterval) clearInterval(countdownInterval);
+    };
+  });
+
+  let canSwapManeuverRoute = $derived.by(() => {
+    if (!selectedFromId || !selectedToId || !game || !myPlayerId) return false;
+    const toTerr = game.territories[selectedToId];
+    if (!toTerr || toTerr.ownerId !== myPlayerId) return false;
+    const avail = subtractUnits(getTerritoryUnits(toTerr), getMovedInUnits(toTerr));
+    return totalUnits(avail) > 1;
+  });
+
+  function swapManeuverRoute() {
+    if (!canSwapManeuverRoute || !selectedFromId || !selectedToId) return;
+    const oldFrom = selectedFromId;
+    const oldTo = selectedToId;
+    selectedFromId = oldTo;
+    selectedToId = oldFrom;
+    const fromT = game.territories[oldTo];
+    if (fromT) {
+      const avail = subtractUnits(getTerritoryUnits(fromT), getMovedInUnits(fromT));
+      const maxM = Math.max(0, totalUnits(avail) - 1);
+      quickSetManeuver("max", maxM, avail);
+    }
+  }
+
+  function useDestinationAsOrigin() {
+    if (!selectedToId || !game) return;
+    const newFrom = selectedToId;
+    selectedFromId = newFrom;
+    selectedToId = null;
+    const fromT = game.territories[newFrom];
+    if (fromT) {
+      const avail = subtractUnits(getTerritoryUnits(fromT), getMovedInUnits(fromT));
+      const maxM = Math.max(0, totalUnits(avail) - 1);
+      quickSetManeuver("max", maxM, avail);
+    }
+  }
 </script>
 
 {#if !isImmersiveMode && hudVisible}
@@ -141,11 +210,17 @@
             maxTotal={game.pendingConquest.maxMove}
           />
           <button
-            class="btn primary-gold"
-            disabled={selectedUnitTotal < game.pendingConquest.minMove}
+            class="btn primary-gold conquest-btn"
+            class:locked={isOccupyLocked}
+            disabled={isOccupyLocked || selectedUnitTotal < game.pendingConquest.minMove}
             onclick={confirmOccupy}
+            title={isOccupyLocked ? "Trava de segurança antidisparo ativa (2s)" : ""}
           >
-            {t("conquest_advance", { count: selectedUnitTotal })}
+            {#if isOccupyLocked}
+              <Icon name="clock" size={14} /> Aguarde ({lockoutRemaining > 0 ? `${lockoutRemaining}s` : "..."})
+            {:else}
+              {t("conquest_advance", { count: selectedUnitTotal })}
+            {/if}
           </button>
         </div>
 
@@ -393,6 +468,9 @@
                 {/if}
               </p>
               <div class="maneuver-prompt-actions">
+                <button class="btn secondary" onclick={clearSelection} title="Desmarcar esta província e escolher outra origem">
+                  Trocar Origem
+                </button>
                 <button class="btn outline-button" onclick={() => sendAction({ type: "end_turn" })}>
                   {t("end_turn")}
                 </button>
@@ -403,8 +481,10 @@
           {@const fromT = game.territories[selectedFromId]}
           {@const toT = game.territories[selectedToId]}
           {@const availableUnits = subtractUnits(getTerritoryUnits(fromT), getMovedInUnits(fromT))}
+          {@const isNeighbor = Boolean(territoryById.get(selectedFromId)?.neighbors.includes(selectedToId))}
+          {@const isConnected = isNeighbor || isConnectedByFriendlyPath(game, selectedFromId, selectedToId, myPlayerId ?? "")}
           {@const isAirlift =
-            !territoryById.get(selectedFromId)?.neighbors.includes(selectedToId) &&
+            !isConnected &&
             hasTerritoryBuilding(fromT, "airfield") &&
             hasTerritoryBuilding(toT, "airfield")}
           {@const maxM = isAirlift
@@ -548,6 +628,37 @@
                 <Icon name="check" size={14} />
                 CONFIRMAR REAGRUPAMENTO ({currentTransfer})
               </button>
+
+              {#if canSwapManeuverRoute}
+                <button
+                  type="button"
+                  class="btn secondary btn-swap-route"
+                  onclick={swapManeuverRoute}
+                  title="Inverter origem e destino: enviar de {getTerritoryName(selectedToId)} para {getTerritoryName(selectedFromId)}"
+                >
+                  <Icon name="reset" size={13} />
+                  INVERTER ROTA (⇄)
+                </button>
+              {/if}
+
+              <button
+                type="button"
+                class="btn outline-button btn-change-origin"
+                onclick={useDestinationAsOrigin}
+                title="Tornar este destino a nova província de origem"
+              >
+                USAR COMO ORIGEM
+              </button>
+
+              <button
+                type="button"
+                class="btn outline-button btn-change-target"
+                onclick={() => { selectedToId = null; }}
+                title="Escolher outro território de destino"
+              >
+                TROCAR DESTINO
+              </button>
+
               <button
                 class="btn outline-button btn-skip-maneuver"
                 onclick={() => sendAction({ type: "end_turn" })}
@@ -627,19 +738,20 @@
     bottom: 0.75rem;
     transform: translateX(-50%);
     z-index: 25;
-    width: fit-content;
-    min-width: min(calc(100vw - 2rem), 620px);
-    max-width: min(calc(100vw - 1.5rem), 780px);
+    width: auto;
+    min-width: min(calc(100vw - 2rem), 320px);
+    max-width: min(calc(100vw - 1.5rem), 560px);
     margin: 0;
     pointer-events: auto;
     background: rgba(8, 14, 26, 0.94);
     border: 1px solid rgba(212, 175, 55, 0.45);
     border-radius: 6px;
-    padding: 0.5rem 0.85rem;
+    padding: 0.45rem 0.75rem;
     box-shadow: 0 10px 30px rgba(0, 0, 0, 0.85);
     display: flex;
     flex-direction: column;
-    gap: 0.45rem;
+    gap: 0.4rem;
+    box-sizing: border-box;
   }
   .action-popup {
     background: rgba(5, 9, 18, 0.92);
@@ -649,6 +761,12 @@
     display: flex;
     flex-direction: column;
     gap: 0.45rem;
+  }
+  .conquest-btn.locked {
+    opacity: 0.65;
+    cursor: not-allowed;
+    filter: grayscale(0.5);
+    pointer-events: none;
   }
   .popup-head {
     display: flex;
@@ -1107,36 +1225,80 @@
     cursor: not-allowed;
   }
   .maneuver-actions-row {
-    display: flex;
-    gap: 0.4rem;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+    gap: 0.35rem;
     margin-top: 0.4rem;
+    width: 100%;
+    box-sizing: border-box;
   }
   .btn-confirm-maneuver {
-    flex: 1.3;
+    grid-column: 1 / -1;
     display: inline-flex;
     align-items: center;
     justify-content: center;
     gap: 0.35rem;
+    padding: 0.45rem 0.75rem;
+  }
+  .btn-swap-route,
+  .btn-change-origin,
+  .btn-change-target {
+    font-size: 0.68rem;
+    padding: 0.32rem 0.4rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.25rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
   .btn-skip-maneuver {
-    flex: 1;
+    grid-column: 1 / -1;
     font-size: 0.72rem;
-    white-space: nowrap;
+    white-space: normal;
+    text-align: center;
+    padding: 0.35rem 0.5rem;
     opacity: 0.85;
+  }
+
+  @media (max-width: 1200px) {
+    .bottom-center-dock {
+      max-width: min(calc(100vw - 2rem), 480px);
+      padding: 0.4rem 0.65rem;
+    }
   }
 
   @media (max-width: 820px) {
     .bottom-center-dock {
-      min-width: min(calc(100vw - 1rem), 440px);
+      width: calc(100vw - 1rem);
+      max-width: calc(100vw - 1rem);
+      min-width: 0;
+      bottom: 0.4rem;
+      padding: 0.35rem 0.5rem;
     }
     .phase-stepper-row {
-      flex-wrap: wrap;
-      justify-content: center;
-      gap: 0.35rem;
+      display: grid;
+      grid-template-columns: 1fr;
+      justify-items: center;
+      gap: 0.3rem;
+    }
+    .phase-steps-group {
+      display: flex;
+      width: 100%;
+      justify-content: space-between;
     }
     .phase-step {
-      padding: 0.25rem 0.45rem;
-      font-size: 0.68rem;
+      flex: 1;
+      justify-content: center;
+      padding: 0.22rem 0.32rem;
+      font-size: 0.65rem;
+    }
+    .phase-action-slot {
+      width: 100%;
+    }
+    .phase-action-slot button {
+      width: 100%;
     }
   }
 </style>

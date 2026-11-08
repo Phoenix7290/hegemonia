@@ -15,7 +15,7 @@ export const ptBRSocial: TranslationCatalog = {
   menu_leaderboard: "Classificação Global",
   menu_edit_profile: "Editar Credenciais",
   menu_logout: "Encerrar Sessão",
-  menu_login_register: "Entrar / Alistar",
+  menu_login_register: "Alistar",
 
   // Auth Dialog
   auth_eyebrow: "ALTO COMANDO CENTRAL",

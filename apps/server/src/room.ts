@@ -42,6 +42,7 @@ interface LobbyPlayer {
   isHost: boolean;
   isBot: boolean;
   connected: boolean;
+  isReady?: boolean;
   userId?: string;
   username?: string;
   avatarUrl?: string | null;
@@ -201,6 +202,15 @@ export class HegemoniaRoom extends Room {
       this.broadcastRoomState();
     });
 
+    this.onMessage("set_ready", (client, payload: { ready?: boolean }) => {
+      if (this.gameState) return;
+      const player = this.lobbyPlayers.find((p) => p.sessionId === client.sessionId);
+      if (player && !player.isBot) {
+        player.isReady = Boolean(payload?.ready);
+        this.broadcastRoomState();
+      }
+    });
+
     this.onMessage("start_game", (client) => {
       this.enqueueAction(async () => {
         if (this.gameState) return;
@@ -211,6 +221,13 @@ export class HegemoniaRoom extends Room {
         }
         if (this.lobbyPlayers.length < 2) {
           client.send("error_msg", { message: "São necessários pelo menos 2 jogadores." });
+          return;
+        }
+        const unready = this.lobbyPlayers.filter((p) => !p.isHost && !p.isBot && !p.isReady);
+        if (unready.length > 0) {
+          client.send("error_msg", {
+            message: "Todos os generais devem confirmar prontidão antes do início da operação.",
+          });
           return;
         }
         const missingReservedPlayer = [...this.expectedUserIds].some((userId) =>
@@ -783,6 +800,7 @@ export class HegemoniaRoom extends Room {
         isHost: p.isHost,
         isBot: p.isBot,
         connected: p.connected,
+        isReady: Boolean(p.isHost || p.isReady),
         userId: p.userId ?? null,
         username: p.username ?? null,
         avatarUrl: p.avatarUrl ?? null,

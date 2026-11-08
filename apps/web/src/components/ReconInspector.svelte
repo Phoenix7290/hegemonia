@@ -284,7 +284,6 @@
                 <strong class="cost-tag">$6+1A</strong>
               </button>
             {/if}
-
             <!-- Fortification (Casamata $6 / Fortaleza $6+2A) -->
             {#if inspectedFortLevel === 0}
               <button
