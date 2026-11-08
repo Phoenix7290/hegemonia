@@ -21,6 +21,12 @@ export default defineConfig({
   server: {
     host: "::",
     port: 5173,
+    proxy: {
+      "/api": {
+        target: "http://localhost:2567",
+        changeOrigin: true,
+      },
+    },
   },
   test: {
     exclude: ["e2e/**", "node_modules/**", "dist/**"],

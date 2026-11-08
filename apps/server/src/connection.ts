@@ -10,7 +10,11 @@ try {
   }
 }
 
-const databaseUrl = process.env.DATABASE_URL;
+const databaseUrl =
+  process.env.DATABASE_URL ||
+  (process.env.NODE_ENV === "test" || process.env.VITEST
+    ? "postgres://localhost:5432/test"
+    : undefined);
 
 if (!databaseUrl) {
   throw new Error("DATABASE_URL é obrigatório para a persistência PostgreSQL.");

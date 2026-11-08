@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { formatCompactTroops } from "@hegemonia/shared";
-import { ALL_OBJECTIVES, ASIA_SUBREGIONS, CLASSIC_MAP, CLASSIC_OBJECTIVES, ROLEPLAY_OBJECTIVES } from "@hegemonia/maps";
+import { formatCompactTroops, isObjectiveCompatibleWithDoctrine } from "@hegemonia/shared";
+import { ALL_OBJECTIVES, ASIA_SUBREGIONS, CLASSIC_MAP, CLASSIC_OBJECTIVES, ROLEPLAY_OBJECTIVES, isSeaLink } from "@hegemonia/maps";
 import {
   applyAction,
+  calculateObjectiveProgress,
   calculateTurnEconomy,
   calculateTurnReinforcements,
   checkNavalBlockade,
@@ -23,6 +24,14 @@ import {
   setTerritoryUnits,
   updateSupplyAndEncirclement,
 } from "./index.js";
+
+const unitCounts = (
+  infantry = 0,
+  tank = 0,
+  artillery = 0,
+  aircraft = 0,
+  navy = 0
+) => ({ infantry, tank, artillery, aircraft, navy });
 
 describe("Classic Map Graph Integrity", () => {
   it("has exactly 53 territories across 6 continents", () => {
@@ -90,9 +99,9 @@ describe("Classic Map Graph Integrity", () => {
 });
 
 describe("War Classic Rules Engine", () => {
-  it("computes classic card trade escalation (4, 6, 8, 10, 12, 15, 20...)", () => {
+  it("computes card trade escalation capped at 15 (4, 6, 8, 10, 12, 15, 15...)", () => {
     expect([0, 1, 2, 3, 4, 5, 6, 7].map(getTradeBonusArmies)).toEqual([
-      4, 6, 8, 10, 12, 15, 20, 25,
+      4, 6, 8, 10, 12, 15, 15, 15,
     ]);
   });
 
@@ -232,7 +241,7 @@ describe("War Classic Rules Engine", () => {
 
   it("verifies specific_territories roleplay objectives victory condition", () => {
     expect(ROLEPLAY_OBJECTIVES.length).toBe(10);
-    expect(ALL_OBJECTIVES.length).toBe(CLASSIC_OBJECTIVES.length + 10);
+    expect(ALL_OBJECTIVES.length).toBe(CLASSIC_OBJECTIVES.length + ROLEPLAY_OBJECTIVES.length + 8);
 
     const state = createGame({
       id: "g-rp",
@@ -2934,6 +2943,911 @@ describe("HEGEM-96: Manual Deploy Phase Transition (end_deploy)", () => {
 
       expect(state.lastCombat?.artillerySuppressionBonus).toBe(true);
       expect(state.lastCombat?.artillerySiegeBonus).toBe(true);
+    });
+  });
+
+  describe("HEGEM-112: Naval Mobility - Coastal Projection without Port & Fuel Surcharge", () => {
+    it("allows sea maneuvers to coastal territories without port when oil is available, charging fuel surcharge", () => {
+      const rng = createSeededRng("hegem-112-naval");
+      let state = createGame({
+        id: "g_naval_112",
+        seed: "hegem-112-naval",
+        players: [
+          { id: "p1", name: "Alice", color: "blue" },
+          { id: "p2", name: "Bob", color: "red" },
+        ],
+      });
+
+      const p1 = state.players[0];
+      state.turnIndex = 0;
+      state.phase = "maneuver";
+      p1.resources = { money: 10, steel: 5, oil: 5, gold: 0 };
+
+      // Find two territories connected by sea link (e.g., brasil and saara, or alaska and dudinka)
+      // Or pair two connected coastal territories owned by p1
+      const seaPair = CLASSIC_MAP.territories.flatMap((t1) =>
+        t1.neighbors.map((nbrId) => [t1.id, nbrId] as [string, string])
+      ).find(([a, b]) => isSeaLink(a, b))!;
+
+      const [fromId, toId] = seaPair;
+      state.territories[fromId].ownerId = p1.id;
+      state.territories[toId].ownerId = p1.id;
+      state.territories[fromId].armies = 5;
+      state.territories[fromId].units = { infantry: 2, tank: 0, artillery: 0, aircraft: 0, navy: 3 };
+      state.territories[toId].armies = 1;
+      state.territories[toId].units = { infantry: 1, tank: 0, artillery: 0, aircraft: 0, navy: 0 };
+      state.territories[toId].buildings = []; // No port at destination
+
+      // Maneuver 2 navy divisions across sea to coast without port
+      const prevOil = p1.resources.oil;
+      state = applyAction(
+        state,
+        p1.id,
+        {
+          type: "maneuver",
+          fromTerritoryId: fromId,
+          toTerritoryId: toId,
+          armies: 2,
+          units: { infantry: 0, tank: 0, artillery: 0, aircraft: 0, navy: 2 },
+        },
+        rng
+      );
+
+      // Successfully moved and charged 1 oil
+      expect(state.territories[toId].units.navy).toBe(2);
+      expect(state.players[0].resources.oil).toBe(prevOil - 1);
+      expect(state.log.some((msg) => msg.includes("Sobretaxa Logística: -1 Petróleo"))).toBe(true);
+
+      // Now with 0 oil, another sea maneuver without port should fail
+      state.players[0].resources.oil = 0;
+      expect(() =>
+        applyAction(
+          state,
+          p1.id,
+          {
+            type: "maneuver",
+            fromTerritoryId: fromId,
+            toTerritoryId: toId,
+            armies: 1,
+            units: { infantry: 1, tank: 0, artillery: 0, aircraft: 0, navy: 0 },
+          },
+          rng
+        )
+      ).toThrow(/Petróleo insuficiente para a sobretaxa logística/i);
+    });
+  });
+
+  describe("HEGEM-107: Advanced Economy - Industrial Division & Extraction Infrastructure", () => {
+    it("builds advanced structures and applies bonuses (Civilian Factory, Mines, Wells, Refinery & Military Factory)", () => {
+      const rng = createSeededRng("hegem-107-econ");
+      let state = createGame({
+        id: "g_econ_107",
+        seed: "hegem-107-econ",
+        players: [
+          { id: "p1", name: "Alice", color: "blue" },
+          { id: "p2", name: "Bob", color: "red" },
+        ],
+      });
+
+      const p1 = state.players[0];
+      state.turnIndex = 0;
+      state.phase = "deploy";
+      p1.resources = { money: 100, steel: 50, oil: 50, gold: 10 };
+
+      const ownedTerrs = Object.values(state.territories).filter((t) => t.ownerId === p1.id);
+      const t1 = ownedTerrs[0];
+      const t2 = ownedTerrs[1];
+      t1.buildings = [];
+      t2.buildings = [];
+
+      // 1. Build civilian factory: costs $5, 1 steel
+      state = applyAction(
+        state,
+        p1.id,
+        { type: "build_structure", territoryId: t1.id, buildingType: "civilian_factory" },
+        rng
+      );
+      expect(state.territories[t1.id].buildings?.some((b) => b.type === "civilian_factory")).toBe(true);
+      // Civilian factory expands slots: standard is 2, now 3
+      expect(getTerritoryMaxBuildingSlots(state, t1.id)).toBe(3);
+
+      // 2. Build steel mine on t1
+      state = applyAction(
+        state,
+        p1.id,
+        { type: "build_structure", territoryId: t1.id, buildingType: "steel_mine" },
+        rng
+      );
+      expect(state.territories[t1.id].buildings?.some((b) => b.type === "steel_mine")).toBe(true);
+
+      // 3. Build oil well and refinery on t2
+      state = applyAction(
+        state,
+        p1.id,
+        { type: "build_structure", territoryId: t2.id, buildingType: "oil_well" },
+        rng
+      );
+      state = applyAction(
+        state,
+        p1.id,
+        { type: "build_structure", territoryId: t2.id, buildingType: "refinery" },
+        rng
+      );
+      expect(state.territories[t2.id].buildings?.some((b) => b.type === "oil_well")).toBe(true);
+      expect(state.territories[t2.id].buildings?.some((b) => b.type === "refinery")).toBe(true);
+
+      // 4. Calculate economy: civilian factory grants +$3, steel mine grants +1 (or +2), refinery +1 oil
+      const econ = calculateTurnEconomy(state, p1.id, CLASSIC_MAP);
+      expect(econ.grossMoney).toBeGreaterThan(0);
+      expect(econ.oil).toBeGreaterThan(0);
+
+      // 5. Military Factory recruitment discount
+      const t3 = ownedTerrs[2];
+      t3.buildings = [];
+      state = applyAction(
+        state,
+        p1.id,
+        { type: "build_structure", territoryId: t3.id, buildingType: "military_factory" },
+        rng
+      );
+      expect(state.territories[t3.id].buildings?.some((b) => b.type === "military_factory")).toBe(true);
+
+      // Recruits tank with military factory: costs 1 steel instead of 2
+      const moneyBefore = state.players[0].resources.money;
+      const steelBefore = state.players[0].resources.steel;
+      state = applyAction(
+        state,
+        p1.id,
+        { type: "recruit_unit", territoryId: t3.id, unitType: "tank", quantity: 1 },
+        rng
+      );
+      expect(state.territories[t3.id].units.tank).toBe(1);
+      expect(state.players[0].resources.steel).toBe(steelBefore - 1); // 1 steel instead of 2!
+      expect(state.players[0].resources.money).toBe(moneyBefore - 4);
+    });
+  });
+
+  describe("HEGEM-116: Doutrinas Militares 2.0 (Matriz HoI4)", () => {
+    it("enforces lobby limits: max 1 for extermination and max 2 for standard doctrines", () => {
+      const rng = createSeededRng("doc_lobby_limits");
+      let state = createGame({
+        id: "doc_test",
+        seed: "doc_lobby_limits",
+        players: [
+          { id: "p1", name: "Alpha", color: "blue" },
+          { id: "p2", name: "Bravo", color: "red" },
+          { id: "p3", name: "Charlie", color: "yellow" },
+        ],
+      });
+      state.round = 1;
+      state.phase = "deploy";
+      const p1Obj = state.players.find((p) => p.id === "p1")!;
+      p1Obj.objective = {
+        id: "obj_extermination_annihilation",
+        descriptionPt: "Aniquilação",
+        descriptionEn: "Annihilation",
+        rule: { type: "eliminate_players", minEliminations: 2 },
+      };
+
+      // 1. First player picks extermination
+      state = applyAction(state, "p1", { type: "select_doctrine", doctrineId: "extermination" }, rng);
+      const p1 = state.players.find((p) => p.id === "p1")!;
+      expect(p1.doctrineId).toBe("extermination");
+      expect(p1.infamy).toBe(50);
+      expect(state.worldTension).toBeGreaterThanOrEqual(50);
+
+      // 2. Second player cannot pick extermination (max 1)
+      expect(() =>
+        applyAction(state, "p2", { type: "select_doctrine", doctrineId: "extermination" }, rng)
+      ).toThrow(/limite de generais/);
+
+      // 3. Two players can pick blitzkrieg (max 2)
+      state = applyAction(state, "p2", { type: "select_doctrine", doctrineId: "blitzkrieg" }, rng);
+      state = applyAction(state, "p3", { type: "select_doctrine", doctrineId: "blitzkrieg" }, rng);
+      expect(state.players.find((p) => p.id === "p2")!.doctrineId).toBe("blitzkrieg");
+      expect(state.players.find((p) => p.id === "p3")!.doctrineId).toBe("blitzkrieg");
+    });
+
+    it("mass_assault restricts heavy tech, gives $2 infantry, +2 card trade and -40% economy", () => {
+      const rng = createSeededRng("mass_assault_test");
+      let state = createGame({
+        id: "ma_game",
+        seed: "mass_assault_test",
+        players: [
+          { id: "p1", name: "Alpha", color: "blue", doctrineId: "mass_assault" },
+          { id: "p2", name: "Bravo", color: "red" },
+        ],
+      });
+      state.round = 2;
+      state.phase = "deploy";
+      state.turnIndex = state.players.findIndex((p) => p.id === "p1");
+
+      const p1Terr = Object.values(state.territories).find((t) => t.ownerId === "p1")!;
+      p1Terr.buildings = [{ type: "military_factory", level: 1 }];
+      state.players.find((p) => p.id === "p1")!.resources = { money: 100, steel: 10, oil: 10, gold: 10 };
+
+      // Prohibits tanks, artillery, aircraft
+      expect(() =>
+        applyAction(
+          state,
+          "p1",
+          { type: "recruit_unit", territoryId: p1Terr.id, unitType: "tank", quantity: 1 },
+          rng
+        )
+      ).toThrow(/Assalto em Massa proíbe/);
+      expect(() =>
+        applyAction(
+          state,
+          "p1",
+          { type: "recruit_unit", territoryId: p1Terr.id, unitType: "artillery", quantity: 1 },
+          rng
+        )
+      ).toThrow(/Assalto em Massa proíbe/);
+      expect(() =>
+        applyAction(
+          state,
+          "p1",
+          { type: "recruit_unit", territoryId: p1Terr.id, unitType: "aircraft", quantity: 1 },
+          rng
+        )
+      ).toThrow(/Assalto em Massa proíbe/);
+
+      // Recruits infantry for $2 instead of $3
+      const moneyBefore = state.players.find((p) => p.id === "p1")!.resources.money;
+      state = applyAction(
+        state,
+        "p1",
+        { type: "recruit_unit", territoryId: p1Terr.id, unitType: "infantry", quantity: 2 },
+        rng
+      );
+      expect(state.players.find((p) => p.id === "p1")!.resources.money).toBe(moneyBefore - 4); // 2 * $2 = $4
+
+      // Card trade gives +2 bonus troops
+      const p1Current = state.players.find((p) => p.id === "p1")!;
+      p1Current.cards = [
+        { id: "c1", territoryId: "brasil", symbol: "infantry" },
+        { id: "c2", territoryId: "argentina", symbol: "infantry" },
+        { id: "c3", territoryId: "chile", symbol: "infantry" },
+      ];
+      const unplacedBefore = p1Current.unplacedArmies;
+      state = applyAction(
+        state,
+        "p1",
+        { type: "trade_cards", cardIds: ["c1", "c2", "c3"] },
+        rng
+      );
+      // Standard trade 1 is 4 armies, plus 2 for mass assault = 6
+      expect(state.players.find((p) => p.id === "p1")!.unplacedArmies).toBe(unplacedBefore + 6);
+
+      // Economy calculation has -40% gross income
+      const econ = calculateTurnEconomy(state, "p1", CLASSIC_MAP);
+      expect(econ.grossMoney).toBeGreaterThan(0);
+    });
+
+    it("superior_firepower (Classic Command) acts as neutral standard doctrine with 0 buffs and 0 debuffs", () => {
+      const rng = createSeededRng("sfp_test");
+      let state = createGame({
+        id: "sfp_game",
+        seed: "sfp_test",
+        players: [
+          { id: "p1", name: "ClassicGeneral", color: "blue", doctrineId: "superior_firepower" },
+          { id: "p2", name: "Defender", color: "red" },
+        ],
+      });
+      state.round = 2;
+      state.phase = "attack";
+      state.turnIndex = state.players.findIndex((p) => p.id === "p1");
+
+      // Setup adjacent territories
+      const t1 = state.territories["sao_paulo"];
+      const t2 = state.territories["argentina"];
+      t1.ownerId = "p1";
+      t1.armies = 5;
+      t1.units = unitCounts(1, 0, 4); // 4 artilleries
+      t2.ownerId = "p2";
+      t2.armies = 5;
+      t2.units = unitCounts(5, 0, 0);
+
+      // Barrage 1 succeeds (standard 1 barrage limit)
+      state = applyAction(
+        state,
+        "p1",
+        { type: "artillery_barrage", fromTerritoryId: "sao_paulo", toTerritoryId: "argentina" },
+        rng
+      );
+      expect(state.territories["sao_paulo"].artilleryBarrageFiredThisTurn).toBe(true);
+      expect(state.territories["sao_paulo"].artilleryBarragesCountThisTurn).toBe(1);
+
+      // Barrage 2 is blocked (max 1)
+      expect(() =>
+        applyAction(
+          state,
+          "p1",
+          { type: "artillery_barrage", fromTerritoryId: "sao_paulo", toTerritoryId: "argentina" },
+          rng
+        )
+      ).toThrow(/barragem de saturação/);
+
+      // Tank recruitment costs standard 2 steel (no penalty)
+      state.phase = "deploy";
+      state.territories["sao_paulo"].buildings = [{ type: "industry", level: 1 }];
+      state.players.find((p) => p.id === "p1")!.resources = { money: 100, steel: 10, oil: 10, gold: 10 };
+      const steelBefore = state.players.find((p) => p.id === "p1")!.resources.steel;
+      state = applyAction(
+        state,
+        "p1",
+        { type: "recruit_unit", territoryId: "sao_paulo", unitType: "tank", quantity: 1 },
+        rng
+      );
+      expect(state.players.find((p) => p.id === "p1")!.resources.steel).toBe(steelBefore - 2);
+    });
+
+    it("extermination gives double plunder (+ $2, +1 steel) on conquest and is forbidden from civilian structures", () => {
+      const rng = createSeededRng("extermination_loot");
+      let state = createGame({
+        id: "ext_game",
+        seed: "extermination_loot",
+        players: [
+          { id: "p1", name: "Destroyer", color: "black", doctrineId: "extermination" },
+          { id: "p2", name: "Victim", color: "green" },
+        ],
+      });
+      state.round = 2;
+      state.phase = "deploy";
+      state.turnIndex = state.players.findIndex((p) => p.id === "p1");
+
+      const t1 = state.territories["sao_paulo"];
+      t1.ownerId = "p1";
+      state.players.find((p) => p.id === "p1")!.resources = { money: 50, steel: 5, oil: 5, gold: 5 };
+
+      // Forbidden from civilian structures
+      expect(() =>
+        applyAction(
+          state,
+          "p1",
+          { type: "build_structure", territoryId: "sao_paulo", buildingType: "market" },
+          rng
+        )
+      ).toThrow(/Extermínio proíbe a construção de melhorias civis/);
+      expect(() =>
+        applyAction(
+          state,
+          "p1",
+          { type: "build_structure", territoryId: "sao_paulo", buildingType: "civilian_factory" },
+          rng
+        )
+      ).toThrow(/Extermínio proíbe a construção de melhorias civis/);
+
+      // Conquest double plunder
+      state.phase = "attack";
+      state.territories["sao_paulo"].armies = 10;
+      state.territories["sao_paulo"].units = unitCounts(10, 0, 0);
+      state.territories["argentina"].ownerId = "p2";
+      state.territories["argentina"].armies = 1;
+      state.territories["argentina"].units = unitCounts(1, 0, 0);
+
+      const fakeRng = createSeededRng("fixed_combat");
+      let rollCount = 0;
+      fakeRng.rollD6 = () => {
+        rollCount++;
+        return rollCount <= 3 ? 6 : 1;
+      };
+
+      const moneyBefore = state.players.find((p) => p.id === "p1")!.resources.money;
+      const steelBefore = state.players.find((p) => p.id === "p1")!.resources.steel;
+
+      state = applyAction(
+        state,
+        "p1",
+        {
+          type: "attack",
+          fromTerritoryId: "sao_paulo",
+          toTerritoryId: "argentina",
+          armies: 3,
+        },
+        fakeRng
+      );
+
+      // After conquest, extermination looted + $2 and + 1 steel
+      expect(state.territories["argentina"].ownerId).toBe("p1");
+      const updatedP1 = state.players.find((p) => p.id === "p1")!;
+      expect(updatedP1.resources.money).toBe(moneyBefore + 2);
+      expect(updatedP1.resources.steel).toBe(steelBefore + 1);
+      expect(state.log.some((l) => l.includes("SAQUE TOTAL"))).toBe(true);
+    });
+  });
+
+  describe("HEGEM-117: Novos Objetivos Secretos & Compatibilidade de Doutrinas", () => {
+    it("economic_hegemony victory condition triggers on $300 treasury, 50 gold and 2 active investment routes", () => {
+      const rng = createSeededRng("econ_hegemony_victory");
+      let state = createGame({
+        id: "econ_game",
+        seed: "econ_hegemony_victory",
+        players: [
+          { id: "p1", name: "Capitalist", color: "blue" },
+          { id: "p2", name: "Partner", color: "yellow" },
+        ],
+      });
+      state.round = 3;
+      state.phase = "attack";
+      state.turnIndex = 0;
+
+      const p1 = state.players.find((p) => p.id === "p1")!;
+      p1.objective = {
+        id: "obj_bretton_woods",
+        descriptionPt: "Hegemonia Econômica",
+        descriptionEn: "Economic Hegemony",
+        rule: {
+          type: "economic_hegemony",
+          targetMoney: 300,
+          targetGold: 50,
+          activeInvestmentRoutes: 2,
+          consecutiveRoundsRequired: 2,
+        },
+        disallowedDoctrines: ["mass_assault", "extermination"],
+      };
+
+      p1.resources = { money: 200, steel: 10, oil: 10, gold: 40 };
+      expect(checkPlayerVictory(state, "p1", CLASSIC_MAP)).toBe(false);
+
+      // Provide requirements: $300, 50 gold, 2 routes
+      p1.resources.money = 300;
+      p1.resources.gold = 50;
+      state.investmentRoutes = [
+        {
+          id: "r1",
+          playerAId: "p1",
+          playerBId: "p2",
+          territoryAId: "brasil",
+          territoryBId: "argentina",
+          status: "active",
+          investedCapitalA: 10,
+          investedCapitalB: 10,
+          roundsActive: 2,
+          level: 1,
+        },
+        {
+          id: "r2",
+          playerAId: "p1",
+          playerBId: "p2",
+          territoryAId: "brasil",
+          territoryBId: "chile",
+          status: "active",
+          investedCapitalA: 10,
+          investedCapitalB: 10,
+          roundsActive: 2,
+          level: 1,
+        },
+      ];
+
+      expect(checkPlayerVictory(state, "p1", CLASSIC_MAP)).toBe(true);
+      const progress = calculateObjectiveProgress(state, "p1", CLASSIC_MAP);
+      expect(progress.completionPct).toBe(100);
+    });
+
+    it("fortified_bastion tracks held rounds, logs global alerts and checks victory after 5 rounds", () => {
+      const rng = createSeededRng("bastion_test");
+      let state = createGame({
+        id: "bastion_game",
+        seed: "bastion_test",
+        players: [
+          { id: "p1", name: "BastionLord", color: "blue", doctrineId: "tall_sovereign" },
+          { id: "p2", name: "Attacker", color: "red" },
+        ],
+      });
+      state.round = 2;
+      state.phase = "attack";
+      state.turnIndex = 0;
+
+      const p1 = state.players.find((p) => p.id === "p1")!;
+      p1.objective = {
+        id: "obj_fortified_bastion",
+        descriptionPt: "Bastião Inexpugnável",
+        descriptionEn: "Impregnable Bastion",
+        rule: {
+          type: "fortified_bastion",
+          bastionTerritoryCount: 4,
+          roundsRequired: 5,
+        },
+        allowedDoctrines: ["tall_sovereign", "defense_in_depth"],
+      };
+
+      // Set 4 fortified territories
+      const ownedTerrs = Object.values(state.territories).filter((t) => t.ownerId === "p1").slice(0, 4);
+      for (const t of ownedTerrs) {
+        t.buildings = [{ type: "fortification", level: 1 }];
+      }
+
+      expect(checkPlayerVictory(state, "p1", CLASSIC_MAP)).toBe(false);
+
+      // Advance turn through all players to advance the round
+      state.turnIndex = state.players.findIndex((p) => p.id === "p1");
+      state.phase = "attack";
+      state = applyAction(state, "p1", { type: "end_turn" }, rng);
+      const nextPlayer = state.players[state.turnIndex];
+      nextPlayer.unplacedArmies = 0;
+      state.phase = "attack";
+      state = applyAction(state, nextPlayer.id, { type: "end_turn" }, rng);
+
+      // Round advanced: bastionRoundsHeld should be 1, and global alert logged
+      const updatedP1 = state.players.find((p) => p.id === "p1")!;
+      expect(updatedP1.bastionRoundsHeld).toBe(1);
+      expect(state.log.some((l) => l.includes("ALERTA GLOBAL — BASTIÃO SOBERANO"))).toBe(true);
+
+      // Simulate 5 rounds held
+      updatedP1.bastionRoundsHeld = 5;
+      expect(checkPlayerVictory(state, "p1", CLASSIC_MAP)).toBe(true);
+    });
+
+    it("enforces strict doctrine and objective compatibility", () => {
+      const rng = createSeededRng("compat_test");
+      let state = createGame({
+        id: "compat_game",
+        seed: "compat_test",
+        players: [
+          { id: "p1", name: "Pacifist", color: "blue" },
+          { id: "p2", name: "Rival", color: "red" },
+        ],
+      });
+      state.round = 1;
+      state.phase = "deploy";
+      state.turnIndex = 0;
+
+      const p1 = state.players.find((p) => p.id === "p1")!;
+      // Player with Pax Hegemonica objective cannot pick Extermination
+      p1.objective = {
+        id: "obj_pax_hegemonica",
+        descriptionPt: "Pax Hegemonica",
+        descriptionEn: "Pax Hegemonica",
+        rule: {
+          type: "diplomatic_pax",
+          requiredAlliances: 1,
+          requireNapWithAllLiving: true,
+          fallbackRoundsSurvival: 30,
+        },
+        disallowedDoctrines: ["extermination"],
+      };
+
+      expect(() =>
+        applyAction(state, "p1", { type: "select_doctrine", doctrineId: "extermination" }, rng)
+      ).toThrow(/incompatível com o seu Objetivo Secreto/);
+    });
+
+    it("handles eliminate_players objective victory check and progress calculation", () => {
+      const state = createGame({
+        id: "elim_game",
+        seed: "elim_seed",
+        players: [
+          { id: "p1", name: "Destroyer", color: "red" },
+          { id: "p2", name: "Victim1", color: "blue" },
+          { id: "p3", name: "Victim2", color: "green" },
+        ],
+      });
+      const p1 = state.players.find((p) => p.id === "p1")!;
+      const p2 = state.players.find((p) => p.id === "p2")!;
+      const p3 = state.players.find((p) => p.id === "p3")!;
+      p1.doctrineId = "extermination";
+      p1.objective = {
+        id: "obj_extermination_annihilation",
+        descriptionPt: "Aniquilação Absoluta",
+        descriptionEn: "Absolute Annihilation",
+        rule: {
+          type: "eliminate_players",
+          minEliminations: 2,
+        },
+        allowedDoctrines: ["extermination"],
+      };
+
+      // 1 victim eliminated
+      p2.eliminated = true;
+      p2.eliminatedBy = "p1";
+
+      expect(checkPlayerVictory(state, "p1", CLASSIC_MAP)).toBe(false);
+      const prog1 = calculateObjectiveProgress(state, "p1", CLASSIC_MAP);
+      expect(prog1.held).toBe(1);
+      expect(prog1.total).toBe(2);
+      expect(prog1.completionPct).toBe(50);
+
+      // 2nd victim eliminated
+      p3.eliminated = true;
+      p3.eliminatedBy = "p1";
+      expect(checkPlayerVictory(state, "p1", CLASSIC_MAP)).toBe(true);
+      const prog2 = calculateObjectiveProgress(state, "p1", CLASSIC_MAP);
+      expect(prog2.held).toBe(2);
+      expect(prog2.completionPct).toBe(100);
+    });
+
+    it("requires objective confirmation before Round 1 deploy advances", () => {
+      const rng = createSeededRng("obj_choice_test");
+      let state = createGame({
+        id: "choice_game",
+        seed: "choice_seed",
+        players: [
+          { id: "p1", name: "Commander1", color: "blue" },
+          { id: "p2", name: "Commander2", color: "red" },
+        ],
+      });
+      state.round = 1;
+      state.phase = "deploy";
+      const activePlayer = state.players[state.turnIndex];
+      const otherPlayer = state.players.find((p) => p.id !== activePlayer.id)!;
+
+      activePlayer.pendingObjectiveChoice = true;
+      expect(activePlayer.availableObjectives?.length).toBe(3);
+      const chosenId = activePlayer.availableObjectives![0].id;
+
+      // Deploy armies until unplacedArmies is 0
+      const activeTerr = Object.values(state.territories).find((t) => t.ownerId === activePlayer.id)!;
+      state = applyAction(state, activePlayer.id, {
+        type: "deploy",
+        territoryId: activeTerr.id,
+        armies: activePlayer.unplacedArmies,
+      }, rng);
+
+      // Should still be on activePlayer's turn because pendingObjectiveChoice is true
+      expect(state.players[state.turnIndex].id).toBe(activePlayer.id);
+      const curr = state.players.find((p) => p.id === activePlayer.id)!;
+      expect(curr.pendingObjectiveChoice).toBe(true);
+
+      // Now choose objective
+      state = applyAction(state, activePlayer.id, {
+        type: "choose_objective",
+        objectiveId: chosenId,
+      }, rng);
+
+      const afterChoice = state.players.find((p) => p.id === activePlayer.id)!;
+      expect(afterChoice.objective?.id).toBe(chosenId);
+      expect(afterChoice.pendingObjectiveChoice).toBe(false);
+      // Turn advances to otherPlayer since unplacedArmies was already 0
+      expect(state.players[state.turnIndex].id).toBe(otherPlayer.id);
+    });
+
+    it("handles expand_infrastructure action and slot calculation", () => {
+      const rng = createSeededRng("infra_test");
+      let state = createGame({
+        id: "infra_game",
+        seed: "infra_seed",
+        players: [
+          { id: "p1", name: "Builder", color: "blue" },
+          { id: "p2", name: "Rival", color: "red" },
+        ],
+      });
+      state.round = 2;
+      state.phase = "deploy";
+
+      const activePlayer = state.players[state.turnIndex];
+      activePlayer.resources.money = 10;
+      activePlayer.resources.steel = 5;
+
+      const activeTerr = Object.values(state.territories).find((t) => t.ownerId === activePlayer.id)!;
+      const baseSlots = getTerritoryMaxBuildingSlots(state, activeTerr.id);
+
+      // Expand infrastructure
+      state = applyAction(state, activePlayer.id, {
+        type: "expand_infrastructure",
+        territoryId: activeTerr.id,
+      }, rng);
+
+      const updatedPlayer = state.players.find((p) => p.id === activePlayer.id)!;
+      expect(state.territories[activeTerr.id].infrastructureExpanded).toBe(true);
+      expect(updatedPlayer.resources.money).toBe(6); // 10 - 4
+      expect(updatedPlayer.resources.steel).toBe(4); // 5 - 1
+      expect(getTerritoryMaxBuildingSlots(state, activeTerr.id)).toBe(baseSlots + 1);
+
+      // Cannot expand a second time
+      expect(() =>
+        applyAction(state, activePlayer.id, {
+          type: "expand_infrastructure",
+          territoryId: activeTerr.id,
+        }, rng)
+      ).toThrow(/já recebeu uma expansão/);
+    });
+
+    it("masks availableObjectives for other players in createPlayerView", () => {
+      const state = createGame({
+        id: "view_game",
+        seed: "view_seed",
+        players: [
+          { id: "p1", name: "Player1", color: "blue" },
+          { id: "p2", name: "Player2", color: "red" },
+        ],
+      });
+      state.players[0].pendingObjectiveChoice = true;
+      state.players[1].pendingObjectiveChoice = true;
+
+      const p1View = createPlayerView(state, "p1");
+      const ownP1 = p1View.players.find((p) => p.id === "p1")!;
+      const otherP2 = p1View.players.find((p) => p.id === "p2")!;
+
+      expect(ownP1.availableObjectives).toBeDefined();
+      expect(ownP1.availableObjectives?.length).toBe(3);
+      expect(otherP2.availableObjectives).toBeUndefined();
+    });
+
+    it("verifies strict doctrine objective compatibility, slot 1 affinity, and anti-repetition telemetry", () => {
+      // 1. Extermination compatibility
+      for (const obj of ALL_OBJECTIVES) {
+        const isExtermCompatible = isObjectiveCompatibleWithDoctrine(obj, "extermination");
+        if (obj.rule.type === "eliminate_players" && obj.rule.minEliminations >= 2) {
+          expect(isExtermCompatible).toBe(true);
+        } else {
+          expect(isExtermCompatible).toBe(false);
+        }
+      }
+
+      // 2. Tall Sovereign compatibility
+      const tallCompatible = ALL_OBJECTIVES.filter((o) =>
+        isObjectiveCompatibleWithDoctrine(o, "tall_sovereign")
+      );
+      for (const obj of tallCompatible) {
+        expect(obj.rule.type).not.toBe("territories");
+        expect(obj.rule.type).not.toBe("destroy_color");
+        expect(obj.rule.type).not.toBe("eliminate_players");
+        if (obj.rule.type === "continents") {
+          expect(obj.rule.continents).not.toContain("asia");
+          expect(obj.rule.continents).not.toContain("africa");
+          expect(obj.rule.extraAnyContinent).toBeFalsy();
+        }
+      }
+
+      // 3. createGame with Tall Sovereign guarantees slot 1 has tactical affinity
+      const tallGame = createGame({
+        id: "tall_game",
+        seed: "tall_seed_affinity",
+        players: [
+          { id: "p1", name: "TallCommander", color: "blue", doctrineId: "tall_sovereign" },
+          { id: "p2", name: "ExtermCommander", color: "red", doctrineId: "extermination" },
+        ],
+      });
+      const p1 = tallGame.players.find((p) => p.id === "p1")!;
+      const p2 = tallGame.players.find((p) => p.id === "p2")!;
+
+      expect(["fortified_bastion", "economic_hegemony", "diplomatic_pax"]).toContain(
+        p1.availableObjectives![0].rule.type
+      );
+      expect(p2.availableObjectives!.every((o) => o.rule.type === "eliminate_players")).toBe(true);
+
+      // 4. Anti-repetition telemetry deprioritizes recentObjectiveIds
+      const recentId = p1.availableObjectives![0].id;
+      const game2 = createGame({
+        id: "telemetry_game",
+        seed: "tall_seed_affinity",
+        players: [
+          {
+            id: "p1",
+            name: "TallCommander",
+            color: "blue",
+            doctrineId: "tall_sovereign",
+            recentObjectiveIds: [recentId],
+          },
+          { id: "p2", name: "Rival", color: "red" },
+        ],
+      });
+      const p1Game2 = game2.players.find((p) => p.id === "p1")!;
+      expect(p1Game2.availableObjectives![0].id).not.toBe(recentId);
+
+      // 5. Compound eliminate_players conditions: tension, infamy, and territories held
+      const chaosState = createGame({
+        id: "chaos_game",
+        seed: "chaos_seed",
+        players: [
+          { id: "p1", name: "Warmonger", color: "red", doctrineId: "extermination" },
+          { id: "p2", name: "Victim1", color: "blue" },
+          { id: "p3", name: "Victim2", color: "green" },
+          { id: "p4", name: "Survivor", color: "yellow" },
+        ],
+      });
+      const pChaos = chaosState.players.find((p) => p.id === "p1")!;
+      pChaos.objective = {
+        id: "obj_extermination_world_chaos",
+        descriptionPt: "Caos Global",
+        descriptionEn: "World Chaos",
+        rule: {
+          type: "eliminate_players",
+          minEliminations: 2,
+          requireWorldTension: 100,
+        },
+        allowedDoctrines: ["extermination"],
+      };
+
+      // 2 eliminations but worldTension is < 100, and p4 is still alive
+      chaosState.players.find((p) => p.id === "p2")!.eliminated = true;
+      chaosState.players.find((p) => p.id === "p2")!.eliminatedBy = "p1";
+      chaosState.players.find((p) => p.id === "p3")!.eliminated = true;
+      chaosState.players.find((p) => p.id === "p3")!.eliminatedBy = "p1";
+      chaosState.worldTension = 50;
+
+      expect(checkPlayerVictory(chaosState, "p1", CLASSIC_MAP)).toBe(false);
+      const progChaos = calculateObjectiveProgress(chaosState, "p1", CLASSIC_MAP);
+      expect(progChaos.completionPct).toBe(75); // (1.0 + 0.5) / 2 = 75%
+
+      // Escalate to 100% tension -> Victory!
+      chaosState.worldTension = 100;
+      expect(checkPlayerVictory(chaosState, "p1", CLASSIC_MAP)).toBe(true);
+      expect(calculateObjectiveProgress(chaosState, "p1", CLASSIC_MAP).completionPct).toBe(100);
+    });
+
+    it("HEGEM-125/128/129: verifies Partisan supply immunity, Extermination port-free navy, Gold Reserve Interest, and Coalition Aircraft/Aid transfer", () => {
+      const rng = createSeededRng("v061_test");
+      let state = createGame({
+        id: "v061_game",
+        seed: "v061_seed",
+        players: [
+          { id: "p1", name: "Partisan", color: "dark_green", doctrineId: "guerrilla" },
+          { id: "p2", name: "Exterminator", color: "pink", doctrineId: "extermination" },
+          { id: "p3", name: "Ally", color: "purple", doctrineId: "tall_sovereign" },
+        ],
+      });
+      state.round = 2;
+      state.phase = "deploy";
+      state.turnIndex = 1; // p2's turn
+
+      // 1. Partisan supply immunity: isolated territory without capital or port is NEVER encircled
+      for (const t of Object.values(state.territories)) {
+        t.ownerId = "p2";
+      }
+      state.territories["alemanha"].ownerId = "p1";
+      state.players.find((p) => p.id === "p1")!.capitalTerritoryId = "brasil"; // lost capital
+      state.players.find((p) => p.id === "p1")!.isCapitalLost = true;
+      updateSupplyAndEncirclement(state, CLASSIC_MAP);
+      expect(state.territories["alemanha"].isEncircled).toBe(false);
+
+      // 2. Extermination recruits navy on coastal territory without port
+      state.territories["brasil"].ownerId = "p2";
+      state.territories["brasil"].buildings = [];
+      state.players.find((p) => p.id === "p2")!.resources = { money: 50, steel: 10, oil: 10, gold: 6 };
+      state = applyAction(
+        state,
+        "p2",
+        { type: "recruit_unit", territoryId: "brasil", unitType: "navy", quantity: 1 },
+        rng
+      );
+      expect(state.territories["brasil"].units?.navy).toBeGreaterThanOrEqual(1);
+
+      // 3. Gold Reserve Interest (+$2 per 3 Gold held in Round 2+)
+      const econP2 = calculateTurnEconomy(state, "p2", CLASSIC_MAP);
+      expect(econP2.goldPassiveMoney).toBeGreaterThanOrEqual(4); // 6 gold = +$4 interest
+
+      // 4. Coalition Lend-Lease & Aircraft Transfer between p1 and p3
+      state.territories["inglaterra"].ownerId = "p1";
+      state.territories["inglaterra"].armies = 3;
+      state.territories["inglaterra"].units = { infantry: 1, tank: 0, artillery: 0, aircraft: 2, navy: 0 };
+      state.territories["franca"].ownerId = "p3";
+      state.territories["franca"].armies = 2;
+      state.territories["franca"].units = { infantry: 2, tank: 0, artillery: 0, aircraft: 0, navy: 0 };
+      state.coalitions = [
+        {
+          id: "coal_1",
+          targetPlayerId: "p2",
+          memberPlayerIds: ["p1", "p3"],
+          createdRound: 2,
+        },
+      ];
+      state.players.find((p) => p.id === "p1")!.resources = { money: 20, steel: 5, oil: 5, gold: 2 };
+      state.players.find((p) => p.id === "p3")!.resources = { money: 0, steel: 0, oil: 0, gold: 0 };
+
+      state = applyAction(
+        state,
+        "p1",
+        { type: "send_alliance_aid", targetPlayerId: "p3", money: 5, steel: 2, oil: 1 },
+        rng
+      );
+      expect(state.players.find((p) => p.id === "p3")!.resources.money).toBe(5);
+      expect(state.players.find((p) => p.id === "p3")!.resources.steel).toBe(2);
+
+      state = applyAction(
+        state,
+        "p1",
+        {
+          type: "send_coalition_aircraft",
+          targetPlayerId: "p3",
+          fromTerritoryId: "inglaterra",
+          toTerritoryId: "franca",
+          quantity: 1,
+        },
+        rng
+      );
+      expect(state.territories["franca"].units?.aircraft).toBe(1);
     });
   });
 });

@@ -64,6 +64,19 @@ describe("Hegemonia Icon Design System (HEGEM-63)", () => {
     expect(deployJson).not.toEqual(maneuverJson);
   });
 
+  it("provides semantically distinct silhouettes for Military Units vs Infrastructure (Aircraft/Airfield, Navy/Port/Anchor)", () => {
+    const aircraftJson = JSON.stringify(ICON_CATALOG.aircraft);
+    const airfieldJson = JSON.stringify(ICON_CATALOG.airfield);
+    const navyJson = JSON.stringify(ICON_CATALOG.navy);
+    const portJson = JSON.stringify(ICON_CATALOG.port);
+    const anchorJson = JSON.stringify(ICON_CATALOG.anchor);
+
+    expect(aircraftJson).not.toEqual(airfieldJson);
+    expect(navyJson).not.toEqual(portJson);
+    expect(navyJson).not.toEqual(anchorJson);
+    expect(portJson).not.toEqual(anchorJson);
+  });
+
   it("verifies all static <Icon name=\"...\" /> usages in Svelte components reference registered icons", () => {
     const srcRoot = join(__dirname, "..");
     const svelteFiles = collectSourceFiles(srcRoot).filter((f) => f.endsWith(".svelte"));

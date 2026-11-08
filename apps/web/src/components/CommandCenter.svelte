@@ -2,6 +2,7 @@
   import {
     DOCTRINE_LIST,
     DoctrineIdSchema,
+    isDoctrineAvailableInLobby,
     type CompetitionMode,
     type DoctrineId,
     type LeaderboardRow,
@@ -95,7 +96,11 @@
     blue: "#3b82f6",
     red: "#ef4444",
     green: "#10b981",
-    yellow: "#f59e0b",
+    dark_green: "#15803d",
+    yellow: "#facc15",
+    orange: "#f97316",
+    pink: "#ec4899",
+    purple: "#a855f7",
     black: "#21262B",
     white: "#F0F0F5",
   };
@@ -104,19 +109,16 @@
     "blue",
     "red",
     "green",
+    "dark_green",
     "yellow",
+    "orange",
+    "pink",
+    "purple",
     "black",
     "white",
   ];
 
-  function readSavedDoctrine(): DoctrineId {
-    if (typeof window === "undefined") return "blitzkrieg";
-    const raw = window.localStorage.getItem("hegemonia_doctrine");
-    const parsed = DoctrineIdSchema.safeParse(raw);
-    return parsed.success ? parsed.data : "blitzkrieg";
-  }
-
-  let selectedDoctrineId = $state<DoctrineId>(readSavedDoctrine());
+  let selectedDoctrineId = $state<DoctrineId | null>(null);
   let topCommanders = $state<LeaderboardRow[]>([]);
   let copiedCode = $state(false);
 
@@ -461,28 +463,31 @@
                     </div>
 
                     <div class="slot-badges">
-                      <DoctrineCrest doctrineId={effectiveDocId} size={22} />
-                      {#if p.isHost}
-                        <span class="role-badge host"
-                          ><Icon name="crown" size={12} />
-                          {t("lobby_role_host")}</span
-                        >
-                      {:else if p.isBot}
-                        <span class="role-badge bot"
-                          ><Icon name="bot" size={12} />
-                          {t("lobby_role_bot")}</span
-                        >
+                      {#if p.token === myPlayerId}
+                        {#if selectedDoctrineId}
+                          <DoctrineCrest doctrineId={selectedDoctrineId} size={22} />
+                        {:else}
+                          <DoctrineCrest variant="blank" size={22} />
+                        {/if}
                       {:else}
-                        <span class="role-badge human"
-                          >{t("lobby_role_human")}</span
-                        >
+                        <DoctrineCrest variant="confidential" size={22} />
+                      {/if}
+                      {#if p.isHost}
+                        <span class="role-badge host" title={t("lobby_role_host")}>
+                          <Icon name="crown" size={12} />
+                        </span>
+                      {:else if p.isBot}
+                        <span class="role-badge bot" title={t("lobby_role_bot")}>
+                          <Icon name="bot" size={13} />
+                        </span>
+                      {:else}
                         {#if p.isReady}
                           <span class="ready-pill ready" title="General pronto para o combate">
-                            <Icon name="check" size={11} /> {t("lobby_ready_status")}
+                            <Icon name="check" size={11} />
                           </span>
                         {:else}
                           <span class="ready-pill preparing" title="Aguardando confirmação de prontidão">
-                            <Icon name="clock" size={11} /> {t("lobby_preparing_status")}
+                            <Icon name="clock" size={11} />
                           </span>
                         {/if}
                       {/if}
@@ -493,7 +498,7 @@
                           onclick={() => onRemoveBot(p.token)}
                           title={t("lobby_btn_remove_bot")}
                         >
-                          <Icon name="close" size={14} />
+                          <Icon name="close" size={12} />
                         </button>
                       {/if}
                     </div>
@@ -563,20 +568,28 @@
 
             <div class="doctrine-picker-panel">
               <div class="section-subhead">
-                <span>DOUTRINA MILITAR NACIONAL (EPIC IX)</span>
-                <small
-                  >Especialização estratégica de armas combinadas para esta
-                  campanha</small
-                >
+                <span>DOUTRINA MILITAR NACIONAL (OBRIGATÓRIA & SECRETA)</span>
+                <small>
+                  {#if selectedDoctrineId}
+                    Doutrina selecionada em sigilo para esta campanha
+                  {:else}
+                    Leia e selecione uma doutrina abaixo antes de iniciar a partida
+                  {/if}
+                </small>
               </div>
 
               <div class="doctrine-cards-grid">
                 {#each DOCTRINE_LIST as doc}
                   {@const isSelected = selectedDoctrineId === doc.id}
+                  {@const otherDoctrines = lobbyPlayers.filter((p) => p.token !== myPlayerId).map((p) => p.doctrineId)}
+                  {@const isAvailable = isSelected || isDoctrineAvailableInLobby(doc.id, otherDoctrines)}
                   <button
                     type="button"
                     class="doctrine-choice-card"
                     class:selected={isSelected}
+                    class:unselected-blank={!selectedDoctrineId}
+                    class:full-width={doc.id === "extermination"}
+                    disabled={!isAvailable}
                     aria-pressed={isSelected}
                     style="--doc-accent: {doc.accentColor};"
                     onclick={() => selectDoctrine(doc.id)}
@@ -591,6 +604,8 @@
                         >
                         {#if isSelected}
                           <span class="doc-active-pill">ATIVA</span>
+                        {:else if !isAvailable}
+                          <span class="doc-active-pill limit-pill">LIMITE</span>
                         {/if}
                       </div>
                       <small
@@ -1155,7 +1170,7 @@
 
   .briefing-body-grid {
     display: grid;
-    grid-template-columns: 1.32fr 0.68fr;
+    grid-template-columns: minmax(0, 1.18fr) minmax(0, 0.82fr);
     gap: 24px;
     align-items: start;
   }
@@ -1193,15 +1208,19 @@
 
   .slots-grid {
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
     gap: 12px;
   }
   .slot-card {
     display: flex;
     align-items: center;
-    gap: 12px;
+    gap: 10px;
     min-height: 62px;
-    padding: 12px 14px;
+    min-width: 0;
+    width: 100%;
+    box-sizing: border-box;
+    overflow: hidden;
+    padding: 10px 12px;
     background: rgba(5, 9, 18, 0.85);
     border: 1px solid rgba(148, 163, 184, 0.22);
     border-left: 3px solid #eab308;
@@ -1254,18 +1273,22 @@
   .slot-badges {
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: 5px;
+    flex-shrink: 0;
   }
   .role-badge {
     font-family: var(--font-tactical);
     font-size: 0.62rem;
     font-weight: 800;
     letter-spacing: 0.08em;
-    padding: 3px 7px;
-    border-radius: 3px;
+    width: 24px;
+    height: 24px;
+    padding: 0;
+    border-radius: 4px;
     display: inline-flex;
     align-items: center;
-    gap: 4px;
+    justify-content: center;
+    flex-shrink: 0;
   }
   .role-badge.host {
     background: rgba(234, 179, 8, 0.2);
@@ -1285,13 +1308,14 @@
     font-family: var(--font-tactical);
     font-size: 0.6rem;
     font-weight: 800;
-    letter-spacing: 0.08em;
-    padding: 3px 6px;
-    border-radius: 3px;
+    width: 24px;
+    height: 24px;
+    padding: 0;
+    border-radius: 4px;
     display: inline-flex;
     align-items: center;
-    gap: 4px;
-    text-transform: uppercase;
+    justify-content: center;
+    flex-shrink: 0;
   }
   .ready-pill.ready {
     background: rgba(16, 185, 129, 0.2);
@@ -1304,13 +1328,18 @@
     border: 1px solid rgba(245, 158, 11, 0.35);
   }
   .remove-bot-btn {
-    width: 26px;
-    height: 26px;
+    width: 24px;
+    height: 24px;
     padding: 0;
-    display: grid;
-    place-items: center;
+    margin: 0;
+    line-height: 0;
+    border-radius: 4px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
     background: rgba(127, 29, 29, 0.4);
-    border-color: rgba(239, 68, 68, 0.45);
+    border: 1px solid rgba(239, 68, 68, 0.45);
     color: #fca5a5;
   }
   .remove-bot-btn:hover:not(:disabled) {
@@ -1354,14 +1383,20 @@
 
   .faction-cards-grid {
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(auto-fill, minmax(155px, 1fr));
     gap: 10px;
+    width: 100%;
+    min-width: 0;
   }
   .faction-choice-card {
     display: flex;
     align-items: center;
-    gap: 12px;
-    padding: 11px 13px;
+    gap: 10px;
+    padding: 10px 11px;
+    min-width: 0;
+    width: 100%;
+    box-sizing: border-box;
+    overflow: hidden;
     background: rgba(5, 9, 18, 0.82);
     border: 1px solid rgba(148, 163, 184, 0.22);
     border-radius: 6px;
@@ -1388,11 +1423,16 @@
     flex-direction: column;
     gap: 2px;
     min-width: 0;
+    flex: 1;
+    overflow: hidden;
   }
   .f-choice-meta strong {
     font-family: var(--font-tactical);
-    font-size: 0.86rem;
+    font-size: 0.82rem;
     color: #f8fafc;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   .f-choice-meta small {
     font-size: 0.68rem;
@@ -1404,14 +1444,18 @@
 
   .doctrine-cards-grid {
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
     gap: 10px;
+    width: 100%;
   }
   .doctrine-choice-card {
     display: flex;
     align-items: flex-start;
     gap: 12px;
     padding: 12px 14px;
+    min-width: 0;
+    width: 100%;
+    box-sizing: border-box;
     background: rgba(5, 9, 18, 0.84);
     border: 1px solid rgba(148, 163, 184, 0.24);
     border-radius: 6px;
@@ -1421,7 +1465,31 @@
       border-color 0.16s ease,
       background 0.16s ease,
       box-shadow 0.16s ease,
-      transform 0.12s ease;
+      transform 0.12s ease,
+      opacity 0.16s ease;
+  }
+  .doctrine-choice-card.unselected-blank {
+    background: rgba(2, 4, 9, 0.96);
+    border-color: rgba(71, 85, 105, 0.32);
+    opacity: 0.72;
+  }
+  .secret-doctrine-badge {
+    font-family: var(--font-mono);
+    font-size: 0.58rem;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    padding: 3px 7px;
+    border-radius: 4px;
+    background: #020617;
+    border: 1px solid rgba(71, 85, 105, 0.55);
+    color: #64748b;
+  }
+  .secret-doctrine-badge.pending {
+    border-color: rgba(234, 179, 8, 0.55);
+    color: #fde047;
+  }
+  .doctrine-choice-card.full-width {
+    grid-column: span 2;
   }
   .doctrine-choice-card:hover {
     background: rgba(15, 23, 42, 0.94);
@@ -1457,6 +1525,11 @@
     font-size: 0.84rem;
     color: #f8fafc;
   }
+  .doctrine-choice-card:disabled {
+    opacity: 0.38;
+    cursor: not-allowed;
+    filter: grayscale(0.6);
+  }
   .doc-active-pill {
     font-family: var(--font-mono);
     font-size: 0.56rem;
@@ -1467,6 +1540,10 @@
     background: var(--doc-accent, #eab308);
     color: #050911;
     flex-shrink: 0;
+  }
+  .doc-active-pill.limit-pill {
+    background: #334155;
+    color: #94a3b8;
   }
   .doc-choice-meta small {
     font-size: 0.68rem;
@@ -1658,15 +1735,15 @@
     color: #fef08a;
   }
 
-  @media (max-width: 1080px) {
+  @media (max-width: 1280px) {
     .command-deck-container,
     .briefing-room-container {
-      width: min(960px, calc(100% - 28px));
+      width: min(1120px, calc(100% - 28px));
       padding: 16px 0 32px;
     }
     .deck-grid,
     .briefing-body-grid {
-      grid-template-columns: 1fr;
+      grid-template-columns: minmax(0, 1fr);
     }
     .briefing-card,
     .deck-card {
@@ -1674,10 +1751,10 @@
     }
     .slots-grid,
     .doctrine-cards-grid {
-      grid-template-columns: 1fr 1fr;
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
     }
     .faction-cards-grid {
-      grid-template-columns: repeat(3, 1fr);
+      grid-template-columns: repeat(auto-fill, minmax(155px, 1fr));
     }
     .lobby-comms-box {
       min-height: 310px;

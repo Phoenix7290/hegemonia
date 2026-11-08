@@ -7,7 +7,9 @@ describe("VersionGuardState", () => {
 
   beforeEach(() => {
     vi.useFakeTimers();
-    sessionStorage.clear();
+    if (typeof sessionStorage !== "undefined") {
+      sessionStorage.clear();
+    }
     guard = new VersionGuardState();
   });
 

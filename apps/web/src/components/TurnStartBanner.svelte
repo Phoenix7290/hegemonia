@@ -25,7 +25,7 @@
   let lastShownKey = $state("");
   let dismissTimer: ReturnType<typeof setTimeout> | null = null;
 
-  const currentTurnKey = $derived(`${game.round}-${game.turnPlayerId}`);
+  const currentTurnKey = $derived(`${game.round}-${game.turnIndex}-${myPlayerId}`);
 
   const myEconomy = $derived.by(() => {
     if (!myPlayerState) return null;

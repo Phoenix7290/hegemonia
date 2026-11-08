@@ -1,5 +1,6 @@
 <script lang="ts">
   import FactionFlag from "./FactionFlag.svelte";
+  import DoctrineCrest from "./DoctrineCrest.svelte";
   import Icon from "./Icon.svelte";
   import TacticalAlerts from "./TacticalAlerts.svelte";
   import { t } from "../i18n/index.svelte";
@@ -8,6 +9,7 @@
     getContinentName,
     getSubregionName,
     getObjectiveDescription,
+    getFactionDoctrine,
   } from "../i18n/content.svelte";
   import { sound } from "../audio.js";
   import { ui } from "../lib/ui.svelte";
@@ -34,7 +36,11 @@
     blue: "#3b82f6",
     red: "#ef4444",
     green: "#10b981",
-    yellow: "#f59e0b",
+    dark_green: "#15803d",
+    yellow: "#facc15",
+    orange: "#f97316",
+    pink: "#ec4899",
+    purple: "#a855f7",
     black: "#21262B",
     white: "#F0F0F5",
   };
@@ -128,8 +134,10 @@
 
   let activeDiplomacyTargetId = $state<string | null>(null);
   let showContinents = $state(false);
+  let showMobilizationPopup = $state(false);
   let marketBatchQty = $state(1);
   let showExitConfirmModal = $state(false);
+  let botTakeoverMode = $state<"after_2_turns" | "immediate">("after_2_turns");
 
   // HEGEM-62: Backward compatibility bridge for callers using legacy mapMode
   $effect(() => {
@@ -171,6 +179,62 @@
       (c) => c.targetPlayerId === activeDiplomacyTargetId,
     ) ?? null,
   );
+
+  let inSameCoalitionWithTarget = $derived(
+    Boolean(
+      game &&
+        myPlayerId &&
+        activeDiplomacyTargetId &&
+        (game.coalitions ?? []).some(
+          (c) =>
+            c.memberPlayerIds.includes(myPlayerId) &&
+            c.memberPlayerIds.includes(activeDiplomacyTargetId!),
+        ),
+    ),
+  );
+
+  let myAlliesAndCoalitionPartners = $derived.by(() => {
+    if (!game || !myPlayerId) return [];
+    return game.players.filter((p) => {
+      if (p.id === myPlayerId || p.eliminated) return false;
+      const hasAlliedTreaty = (game.treaties ?? []).some(
+        (tr) =>
+          tr.status === "active" &&
+          tr.type === "alliance" &&
+          ((tr.fromPlayerId === myPlayerId && tr.toPlayerId === p.id) ||
+            (tr.fromPlayerId === p.id && tr.toPlayerId === myPlayerId)),
+      );
+      const inCoalition = (game.coalitions ?? []).some(
+        (c) =>
+          c.memberPlayerIds.includes(myPlayerId) &&
+          c.memberPlayerIds.includes(p.id),
+      );
+      return hasAlliedTreaty || inCoalition;
+    });
+  });
+
+  let myHasCoalitionPartner = $derived(
+    Boolean(
+      game &&
+        myPlayerId &&
+        (game.coalitions ?? []).some(
+          (c) =>
+            c.memberPlayerIds.includes(myPlayerId) &&
+            c.memberPlayerIds.length >= 2,
+        ),
+    ),
+  );
+
+  let myAircraftTerritoryId = $derived.by(() => {
+    if (!game || !myPlayerId) return null;
+    const found = Object.values(game.territories).find(
+      (t) =>
+        t.ownerId === myPlayerId &&
+        (t.units?.aircraft ?? 0) >= 1 &&
+        t.armies >= 2,
+    );
+    return found?.id ?? null;
+  });
 
   let myEconomyIncome = $derived.by(() => {
     if (!game || !myPlayerId) return null;
@@ -337,6 +401,27 @@
       coalitionId,
     });
   }
+
+  function handleSendAllianceAid(
+    targetPlayerId: string,
+    payload: { money?: number; steel?: number; oil?: number; gold?: number },
+  ) {
+    sendAction({
+      type: "send_alliance_aid",
+      targetPlayerId,
+      ...payload,
+    });
+  }
+
+  function handleSendCoalitionAircraft(targetPlayerId: string) {
+    if (!myAircraftTerritoryId) return;
+    sendAction({
+      type: "send_coalition_aircraft",
+      targetPlayerId,
+      fromTerritoryId: myAircraftTerritoryId,
+      quantity: 1,
+    });
+  }
 </script>
 
 <!-- REAL-TIME TREATY PROPOSALS TOAST -->
@@ -381,22 +466,34 @@
 <!-- ↖ TOP-LEFT: HEGEMONIA BRANDING, BALANCE OF POWER & CONTINENT/ASIA SUB-REGIONS -->
 {#if !isImmersiveMode && hudVisibility.continents}
   <aside class="hud-panel top-left-panel">
+    <span class="card-corner tl"></span>
+    <span class="card-corner tr"></span>
+    <span class="card-corner bl"></span>
+    <span class="card-corner br"></span>
+
     <div class="panel-header">
       <div class="brand-row">
-        <img src="/hegemonia-logo.webp" alt="Hegemonia" class="hud-mini-logo" />
-        <div class="brand-lockup">
-          <strong>HEGEMONIA</strong>
-          <small>OPERAÇÃO {roomCode}</small>
+        <div class="brand-identity">
+          <div class="brand-emblem-frame">
+            <img src="/hegemonia-logo.webp" alt="Hegemonia" class="hud-mini-logo" />
+          </div>
+          <div class="brand-lockup">
+            <strong>HEGEMONIA</strong>
+            <small><Icon name="compass" size={10} /> OPERAÇÃO {roomCode}</small>
+          </div>
         </div>
         <span class="round-tag" title={t("round", { round: game.round })}>
-          {t("round", { round: game.round }).toUpperCase()}
+          <Icon name="clock" size={11} />
+          <span>{t("round", { round: game.round }).toUpperCase()}</span>
         </span>
       </div>
     </div>
 
     {#if game.round === 1}
       <div class="round1-treaty-banner">
-        <Icon name="shield" size={13} />
+        <div class="treaty-banner-icon">
+          <Icon name="shield" size={14} />
+        </div>
         <span>{t("banner_round1_treaty")}</span>
       </div>
     {/if}
@@ -409,9 +506,10 @@
         0}% (Alianças Militares em 50%)"
     >
       <div class="tension-top-row">
-        <span class="tension-title"
-          ><Icon name="globe" size={12} /> TENSÃO MUNDIAL</span
-        >
+        <span class="tension-title">
+          <span class="tension-icon-box"><Icon name="globe" size={12} /></span>
+          <span>TENSÃO MUNDIAL</span>
+        </span>
         <strong
           class="tension-value"
           class:high-tension={(game.worldTension ?? 0) >= 50}
@@ -433,9 +531,9 @@
       </div>
       <div class="tension-subtext">
         {#if (game.worldTension ?? 0) < 50}
-          <span>Alianças Militares bloqueadas (&ge; 50%)</span>
+          <span><Icon name="lock" size={10} /> Alianças Militares bloqueadas (&ge; 50%)</span>
         {:else}
-          <span class="unlocked-text">Alianças Militares Desbloqueadas</span>
+          <span class="unlocked-text"><Icon name="swords" size={10} /> Alianças Militares Desbloqueadas</span>
         {/if}
       </div>
     </div>
@@ -458,21 +556,23 @@
           style="border-left-color: {activeDiplomacyTarget.color === 'black' ? '#cbd5e1' : COLOR_HEX[activeDiplomacyTarget.color]};"
         >
           <div class="target-card-top">
-            <FactionFlag
-              color={activeDiplomacyTarget.color}
-              width={24}
-              height={16}
-            />
+            <div class="g-flag-frame">
+              <FactionFlag
+                color={activeDiplomacyTarget.color}
+                width={26}
+                height={17}
+              />
+            </div>
             <div class="target-card-info">
               <strong>{activeDiplomacyTarget.name}</strong>
-              <small>DOSSIÊ DO GENERAL</small>
+              <small>DOSSIÊ DIPLOMÁTICO DO GENERAL</small>
             </div>
           </div>
 
           <!-- Infamy Gauge -->
           <div class="infamy-wrap">
             <div class="infamy-row">
-              <span>INFÂMIA DO GENERAL</span>
+              <span><Icon name="infamy" size={11} /> INFÂMIA DO GENERAL</span>
               <strong
                 class="infamy-value"
                 class:high-infamy={(activeDiplomacyTarget.infamy ?? 0) >= 50}
@@ -574,7 +674,7 @@
                 onclick={() =>
                   handleProposeTreaty(activeDiplomacyTarget.id, "nap")}
               >
-                <Icon name="handshake" size={13} />
+                <Icon name="handshake" size={14} />
                 <span>Propor Pacto de Não-Agressão (NAP)</span>
               </button>
               <button
@@ -587,7 +687,7 @@
                   ? "Requer Tensão Mundial de pelo menos 50%"
                   : "Propor aliança militar mútua"}
               >
-                <Icon name="crown" size={13} />
+                <Icon name="crown" size={14} />
                 <span
                   >Propor Aliança Militar {(game.worldTension ?? 0) < 50
                     ? "(Requer 50% Tensão)"
@@ -679,6 +779,76 @@
             </div>
           {/if}
 
+          {#if (targetTreatyWithMe?.status === "active" && targetTreatyWithMe.type === "alliance") || inSameCoalitionWithTarget}
+            {@const myRes = myPlayerState?.resources ?? { money: 0, steel: 0, oil: 0, gold: 0 }}
+            <div class="dossier-section lend-lease-section">
+              <div class="dossier-section-title">
+                <Icon name={inSameCoalitionWithTarget ? "swords" : "handshake"} size={12} />
+                <span>
+                  {inSameCoalitionWithTarget
+                    ? "Logística de Coalizão (Lend-Lease & Aeronaves)"
+                    : "Ajuda Militar de Aliança (Lend-Lease)"}
+                </span>
+              </div>
+              <div class="lend-lease-grid">
+                <button
+                  type="button"
+                  class="btn-lend-lease"
+                  disabled={myRes.money < 3}
+                  onclick={() => handleSendAllianceAid(activeDiplomacyTarget.id, { money: 3 })}
+                  title="Enviar $3 do Tesouro Nacional para este aliado"
+                >
+                  <Icon name="coins" size={12} />
+                  <span>Enviar $3</span>
+                </button>
+                <button
+                  type="button"
+                  class="btn-lend-lease"
+                  disabled={myRes.steel < 1}
+                  onclick={() => handleSendAllianceAid(activeDiplomacyTarget.id, { steel: 1 })}
+                  title="Enviar 1 Aço para este aliado"
+                >
+                  <Icon name="steel" size={12} />
+                  <span>+1 Aço</span>
+                </button>
+                <button
+                  type="button"
+                  class="btn-lend-lease"
+                  disabled={myRes.oil < 1}
+                  onclick={() => handleSendAllianceAid(activeDiplomacyTarget.id, { oil: 1 })}
+                  title="Enviar 1 Petróleo para este aliado"
+                >
+                  <Icon name="oil" size={12} />
+                  <span>+1 Petróleo</span>
+                </button>
+                <button
+                  type="button"
+                  class="btn-lend-lease"
+                  disabled={myRes.gold < 1}
+                  onclick={() => handleSendAllianceAid(activeDiplomacyTarget.id, { gold: 1 })}
+                  title="Enviar 1 Ouro para este aliado"
+                >
+                  <Icon name="gold" size={12} />
+                  <span>+1 Ouro</span>
+                </button>
+              </div>
+              {#if inSameCoalitionWithTarget}
+                <button
+                  type="button"
+                  class="btn-coalition-aircraft"
+                  disabled={!myAircraftTerritoryId}
+                  onclick={() => handleSendCoalitionAircraft(activeDiplomacyTarget.id)}
+                  title={myAircraftTerritoryId
+                    ? "Transferir 1 Aeronave de combate diretamente para a base do seu parceiro de Coalizão"
+                    : "Você precisa ter ao menos 1 Aeronave em um território com mais de 1 divisão para transferir"}
+                >
+                  <Icon name="aircraft" size={13} />
+                  <span>Transferir +1 Aeronave de Coalizão</span>
+                </button>
+              {/if}
+            </div>
+          {/if}
+
           <!-- Hegemon Last Stand Alert -->
           {#if activeCoalitionAgainstTarget && activeCoalitionAgainstTarget.memberPlayerIds.length >= 2}
             {@const bonus =
@@ -687,8 +857,9 @@
                 ? 2
                 : 1}
             <div class="hegemon-bonus-banner">
+              <Icon name="star" size={13} />
               <span
-                >⭐ Mobilização Total Hegemon: +{bonus} nos dados contra membros
+                >Mobilização Total Hegemon: +{bonus} nos dados contra membros
                 da coalizão</span
               >
             </div>
@@ -699,8 +870,11 @@
       <!-- Hegemony Power Bar (Segmented World Dominance %) -->
       <div class="hegemony-bar-wrap">
         <div class="hegemony-bar-label">
-          <span>{t("hegemony_bar")}</span>
-          <span>{t("territories_count", { count: 44 }).toUpperCase()}</span>
+          <span class="hegemony-label-left">
+            <Icon name="flag" size={11} />
+            <span>{t("hegemony_bar")}</span>
+          </span>
+          <span class="hegemony-terr-pill">{t("territories_count", { count: 44 }).toUpperCase()}</span>
         </div>
         <div class="hegemony-bar" title={t("hegemony_bar")}>
           {#each playerMetrics as m}
@@ -718,64 +892,143 @@
         </div>
       </div>
 
-      <!-- Generals Roster with Heraldic Flags & Strengths -->
-      <div class="generals-table">
-        {#each playerMetrics as m, idx}
-          {@const isTurn = idx === game.turnIndex}
-          <div
-            class="general-row"
-            class:active-turn={isTurn}
-            class:eliminated={m.player.eliminated}
-            style="border-left-color: {m.player.color === 'black' ? '#cbd5e1' : COLOR_HEX[m.player.color]};"
-          >
-            <div class="g-info">
-              <FactionFlag color={m.player.color} width={20} height={13} />
-              <span class="g-name">
-                {m.player.name}
-                {#if m.player.id === myPlayerId}
-                  <small class="you-badge">{t("you")}</small>
+      <!-- Generals Roster with Heraldic Flags & Icon-Backed Telemetry -->
+      <div class="generals-roster-box">
+        <div class="roster-header-bar">
+          <span class="roster-header-title">
+            <Icon name="crown" size={11} />
+            <span>COMANDANTES EM OPERAÇÃO</span>
+          </span>
+          {#if myAlliesAndCoalitionPartners.length > 0}
+            <button
+              type="button"
+              class="btn-top-left-alliance"
+              class:coalition={myHasCoalitionPartner}
+              onclick={() => {
+                sound.playClick();
+                activeDiplomacyTargetId = myAlliesAndCoalitionPartners[0].id;
+              }}
+              use:tooltip={{
+                title: myHasCoalitionPartner ? "Comando de Coalizão Ativo" : "Comando de Aliança Ativo",
+                content: myHasCoalitionPartner
+                  ? "Clique para enviar Dinheiro, Recursos ou Aeronaves de combate aos membros da sua Coalizão."
+                  : "Clique para enviar Dinheiro ou Recursos (Lend-Lease) aos seus aliados militares."
+              }}
+            >
+              <Icon name={myHasCoalitionPartner ? "swords" : "handshake"} size={11} />
+              <span>{myHasCoalitionPartner ? "COALIZÃO" : "ALIANÇA"} ({myAlliesAndCoalitionPartners.length})</span>
+            </button>
+          {/if}
+          <span class="roster-legend-hint" title="Territórios / Divisões / Cartas">
+            <span><Icon name="globe" size={10} /> TERR</span>
+            <span><Icon name="infantry" size={10} /> DIV</span>
+            <span><Icon name="cards" size={10} /> CART</span>
+          </span>
+        </div>
+
+        <div class="generals-table">
+          {#each playerMetrics as m, idx}
+            {@const isTurn = idx === game.turnIndex}
+            {@const activeTreaty = game.treaties?.find(
+              (tr) =>
+                tr.status === "active" &&
+                ((tr.fromPlayerId === myPlayerId && tr.toPlayerId === m.player.id) ||
+                  (tr.fromPlayerId === m.player.id && tr.toPlayerId === myPlayerId))
+            )}
+            <div
+              class="general-row"
+              class:active-turn={isTurn}
+              class:is-me={m.player.id === myPlayerId}
+              class:eliminated={m.player.eliminated}
+              style="border-left-color: {m.player.color === 'black' ? '#cbd5e1' : COLOR_HEX[m.player.color]};"
+            >
+              <div class="g-info">
+                <div class="g-flag-frame">
+                  <FactionFlag color={m.player.color} width={24} height={16} />
+                </div>
+                <div class="g-name-stack">
+                  <span class="g-name">
+                    <span class="g-name-text">{m.player.name}</span>
+                    {#if m.player.doctrineId}
+                      <span
+                        class="g-doctrine-crest"
+                        use:tooltip={{
+                          title: `Doutrina: ${getFactionDoctrine(m.player.doctrineId)}`,
+                          content: "Doutrina Militar Nacional ativa para este comandante."
+                        }}
+                      >
+                        <DoctrineCrest doctrineId={m.player.doctrineId} size={14} />
+                      </span>
+                    {/if}
+                    {#if m.player.id === myPlayerId}
+                      <small class="you-badge">{t("you")}</small>
+                    {/if}
+                    {#if isTurn}
+                      <span class="turn-indicator" title={t("turn")}>
+                        <Icon name="crown" size={12} />
+                      </span>
+                    {/if}
+                  </span>
+                  {#if activeTreaty}
+                    <span class="g-treaty-tag" class:alliance={activeTreaty.type === "alliance"}>
+                      <Icon name="shield" size={9} />
+                      {activeTreaty.type === "alliance" ? "ALIANÇA" : "PACTO NAP"}
+                    </span>
+                  {/if}
+                </div>
+              </div>
+
+              <div class="g-stats">
+                <span
+                  title={t("territories_count", { count: m.terrCount })}
+                  class="stat-pill stat-terr"
+                >
+                  <Icon name="globe" size={11} />
+                  <strong>{m.terrCount}</strong>
+                </span>
+                <span
+                  title={t("divisions", { count: m.totalArmies })}
+                  class="stat-pill stat-div"
+                >
+                  <Icon name="infantry" size={11} />
+                  <strong>{m.totalArmies}</strong>
+                </span>
+                <span
+                  title={t("cards_title")}
+                  class="stat-pill stat-cards"
+                >
+                  <Icon name="cards" size={11} />
+                  <strong>{m.player.cards.length}</strong>
+                </span>
+                {#if (m.player.infamy ?? 0) > 0}
+                  <span title="Infâmia do General" class="stat-pill infamy-pill">
+                    <Icon name="infamy" size={11} />
+                    <strong>{m.player.infamy}%</strong>
+                  </span>
                 {/if}
-              </span>
-              {#if isTurn}
-                <span class="turn-indicator" title={t("turn")}
-                  ><Icon name="crown" size={13} /></span
-                >
-              {/if}
+                {#if m.player.id !== myPlayerId && !m.player.eliminated}
+                  <button
+                    class="btn-diplomacy-icon"
+                    class:active={activeDiplomacyTargetId === m.player.id}
+                    class:has-treaty={Boolean(activeTreaty)}
+                    title="Dossiê Diplomático com {m.player.name}"
+                    onclick={() =>
+                      (activeDiplomacyTargetId =
+                        activeDiplomacyTargetId === m.player.id
+                          ? null
+                          : m.player.id)}
+                  >
+                    <Icon name="handshake" size={13} />
+                  </button>
+                {:else if m.player.id === myPlayerId}
+                  <span class="btn-diplomacy-spacer" title="Seu Comando">
+                    <Icon name="star" size={11} />
+                  </span>
+                {/if}
+              </div>
             </div>
-            <div class="g-stats">
-              <span
-                title={t("territories_count", { count: m.terrCount })}
-                class="stat-pill">T: {m.terrCount}</span
-              >
-              <span
-                title={t("divisions", { count: m.totalArmies })}
-                class="stat-pill">D: {m.totalArmies}</span
-              >
-              <span title={t("cards_title")} class="stat-pill"
-                >C: {m.player.cards.length}</span
-              >
-              {#if (m.player.infamy ?? 0) > 0}
-                <span title="Infâmia do General" class="stat-pill infamy-pill"
-                  ><Icon name="infamy" size={11} /> {m.player.infamy}%</span
-                >
-              {/if}
-              {#if m.player.id !== myPlayerId && !m.player.eliminated}
-                <button
-                  class="btn-diplomacy-icon"
-                  class:active={activeDiplomacyTargetId === m.player.id}
-                  title="Dossiê Diplomático com {m.player.name}"
-                  onclick={() =>
-                    (activeDiplomacyTargetId =
-                      activeDiplomacyTargetId === m.player.id
-                        ? null
-                        : m.player.id)}
-                >
-                  <Icon name="handshake" size={12} />
-                </button>
-              {/if}
-            </div>
-          </div>
-        {/each}
+          {/each}
+        </div>
       </div>
     {/if}
 
@@ -783,17 +1036,24 @@
     <div class="continents-toggle-row">
       <button
         class="btn-ghost"
+        class:open={showContinents}
         onclick={() => (showContinents = !showContinents)}
       >
-        <span><Icon name="globe" size={14} /> {t("theatres_and_bonuses")}</span>
-        <Icon name={showContinents ? "chevron-up" : "chevron-down"} size={14} />
+        <span class="theatres-btn-left">
+          <span class="theatres-icon-badge"><Icon name="globe" size={13} /></span>
+          <span>{t("theatres_and_bonuses")}</span>
+        </span>
+        <span class="theatres-chevron-box">
+          <Icon name={showContinents ? "chevron-up" : "chevron-down"} size={13} />
+        </span>
       </button>
     </div>
 
     {#if showContinents}
       <div class="continents-dropdown">
         <div class="dropdown-section-title">
-          {t("classic_continents_section")}
+          <Icon name="compass" size={11} />
+          <span>{t("classic_continents_section")}</span>
         </div>
         {#each CLASSIC_MAP.continents.filter((c) => c.id !== "asia") as c}
           {@const terrs = CLASSIC_MAP.territories.filter(
@@ -803,8 +1063,8 @@
           {@const isMonopoly = terrs.every(
             (t) => game!.territories[t.id].ownerId === ownerId,
           )}
-          <div class="cont-pill">
-            <span>{getContinentName(c.id)}</span>
+          <div class="cont-pill" class:monopoly={isMonopoly}>
+            <span class="cont-name">{getContinentName(c.id)}</span>
             <div class="cont-right">
               {#if isMonopoly}
                 {@const p = game.players.find((plr) => plr.id === ownerId)}
@@ -819,14 +1079,17 @@
           </div>
         {/each}
 
-        <div class="dropdown-section-title">{t("asia_subregions_section")}</div>
+        <div class="dropdown-section-title">
+          <Icon name="star" size={11} />
+          <span>{t("asia_subregions_section")}</span>
+        </div>
         {#each ASIA_SUBREGIONS as sub}
           {@const ownerId = game.territories[sub.territoryIds[0]]?.ownerId}
           {@const isMonopoly = sub.territoryIds.every(
             (tid) => game!.territories[tid]?.ownerId === ownerId,
           )}
-          <div class="cont-pill asia-sub-pill">
-            <span>{getSubregionName(sub.id)}</span>
+          <div class="cont-pill asia-sub-pill" class:monopoly={isMonopoly}>
+            <span class="cont-name">{getSubregionName(sub.id)}</span>
             <div class="cont-right">
               {#if isMonopoly}
                 {@const p = game.players.find((plr) => plr.id === ownerId)}
@@ -864,9 +1127,11 @@
               {t("phase_pending_conquest")}
             {:else if game.phase === "deploy"}
               {isMyTurn
-                ? t("phase_deploy_my_turn", {
-                    count: myPlayerState?.unplacedArmies ?? 0,
-                  })
+                ? ((myPlayerState?.unplacedArmies ?? 0) > 0
+                    ? t("phase_deploy_my_turn", {
+                        count: myPlayerState?.unplacedArmies ?? 0,
+                      })
+                    : t("phase_deploy_ready"))
                 : t("phase_deploy_waiting")}
             {:else if game.phase === "attack"}
               {isMyTurn ? t("phase_attack_my_turn") : t("phase_attack_waiting")}
@@ -899,7 +1164,12 @@
 <!-- ↗ TOP-RIGHT: PLAYER HEADQUARTERS, MAP MODE SWITCHER, CARDS, OBJECTIVE & EQUALIZER -->
 {#if !isImmersiveMode}
   <aside class="hud-panel top-right-panel">
-    <div class="my-hq-row">
+    <span class="card-corner tl"></span>
+    <span class="card-corner tr"></span>
+    <span class="card-corner bl"></span>
+    <span class="card-corner br"></span>
+
+    <div class="hq-header-bar">
       {#if myPlayerState}
         {@const userLevel = auth.user?.level ?? 1}
         {@const rank = getMilitaryRank(userLevel)}
@@ -912,86 +1182,32 @@
               : `Comandante da facção em campo tático.`
           }}
         >
-          <FactionFlag color={myPlayerState.color} width={24} height={15} />
-          <span class="hq-name">{myPlayerState.name}</span>
-          <span class="hq-rank-badge">{rank.titlePt}</span>
-        </div>
-
-        {#if isMyTurn && myPlayerState.unplacedArmies > 0}
-          <div class="reserve-badge">
-            <Icon name="shield" size={13} />
-            {t("reserve_badge", { count: myPlayerState.unplacedArmies })}
+          <div class="hq-flag-frame">
+            <FactionFlag color={myPlayerState.color} width={28} height={19} />
           </div>
-        {/if}
+          <div class="hq-identity-stack">
+            <div class="hq-kicker-row">
+              <span class="hq-kicker">QUARTEL-GENERAL</span>
+              <span class="hq-rank-badge">{rank.titlePt}</span>
+            </div>
+            <span class="hq-name">{myPlayerState.name}</span>
+          </div>
+        </div>
       {/if}
 
-      <div class="hq-buttons">
-        <button
-          class="hud-btn"
-          data-testid="btn-open-cards"
-          class:highlight={Boolean(validTradeTriplet)}
-          class:mandatory={Boolean(
-            myPlayerState && myPlayerState.cards.length >= 5,
-          )}
-          class:active={activeRightDrawer === "cards"}
-          onclick={() => toggleRightDrawer("cards")}
-          title={t("cards_title")}
-        >
-          <Icon name="cards" size={14} />
-          {myPlayerState?.cards.length ?? 0}/5
-        </button>
-
-        <button
-          class="hud-btn"
-          data-testid="btn-open-objective"
-          class:active={activeRightDrawer === "objective"}
-          onclick={() => toggleRightDrawer("objective")}
-          title={t("secret_objective_label")}
-        >
-          <Icon name="target" size={14} />
-          {t("secret_objective_label")}
-        </button>
-
-        <button
-          class="hud-btn"
-          data-testid="btn-open-market"
-          class:highlight={Boolean(myHasMarket)}
-          class:active={activeRightDrawer === "market"}
-          onclick={() => toggleRightDrawer("market")}
-          title={t("market_btn_open")}
-        >
-          <Icon name="market" size={14} />
-          {t("market_btn_open")}
-        </button>
-
-        <button
-          class="hud-btn"
-          data-testid="btn-open-audio"
-          class:active={activeRightDrawer === "audio" ||
-            (ui.isMusicPlaying && !ui.isMuted)}
-          onclick={() => toggleRightDrawer("audio")}
-          title={t("audio_radio_eq")}
-        >
-          <Icon name={ui.isMuted ? "mute" : "radio"} size={14} />
-          {ui.isMuted
-            ? t("audio_muted")
-            : ui.isMusicPlaying
-              ? t("audio_radio_on")
-              : t("audio_status")}
-        </button>
-
-        <button
-          class="hud-btn"
-          class:active={showHudManager}
-          onclick={() => {
-            sound.playClick();
-            showHudManager = !showHudManager;
-            if (showHudManager) activeRightDrawer = null;
-          }}
-          title={t("hud_vision_title")}
-        >
-          <Icon name="eye" size={14} /> HUD
-        </button>
+      <div class="hq-header-right">
+        {#if myPlayerState && isMyTurn && myPlayerState.unplacedArmies > 0}
+          <div
+            class="reserve-badge"
+            use:tooltip={{
+              title: "Reservas Prontas para Posicionar",
+              content: `Você possui +${myPlayerState.unplacedArmies} divisão(ões) de reserva para posicionar em seus territórios neste turno.`
+            }}
+          >
+            <Icon name="shield" size={12} />
+            <span>+{myPlayerState.unplacedArmies}</span>
+          </div>
+        {/if}
 
         <button
           class="hud-btn btn-exit-room"
@@ -1006,6 +1222,87 @@
           title={t("exit_button_tooltip")}
         >
           <Icon name="logout" size={14} />
+        </button>
+      </div>
+    </div>
+
+    <!-- Structured 2-Row Command Deck -->
+    <div class="hq-command-grid">
+      <div class="hq-primary-row">
+        <button
+          class="hud-btn hq-deck-btn"
+          data-testid="btn-open-cards"
+          class:highlight={Boolean(validTradeTriplet)}
+          class:mandatory={Boolean(
+            myPlayerState && myPlayerState.cards.length >= 5,
+          )}
+          class:active={activeRightDrawer === "cards"}
+          onclick={() => toggleRightDrawer("cards")}
+          title={t("cards_title")}
+        >
+          <span class="hq-btn-icon"><Icon name="cards" size={14} /></span>
+          <span class="hq-btn-label">Cartas</span>
+          <span class="hq-btn-pill">{myPlayerState?.cards.length ?? 0}/5</span>
+        </button>
+
+        <button
+          class="hud-btn hq-deck-btn"
+          data-testid="btn-open-objective"
+          class:active={activeRightDrawer === "objective"}
+          onclick={() => toggleRightDrawer("objective")}
+          title={t("secret_objective_label")}
+        >
+          <span class="hq-btn-icon"><Icon name="target" size={14} /></span>
+          <span class="hq-btn-label">Diretriz</span>
+          {#if objectiveProgress}
+            <span class="hq-btn-pill">{objectiveProgress.pct}%</span>
+          {/if}
+        </button>
+
+        <button
+          class="hud-btn hq-deck-btn"
+          data-testid="btn-open-market"
+          class:highlight={Boolean(myHasMarket)}
+          class:active={activeRightDrawer === "market"}
+          onclick={() => toggleRightDrawer("market")}
+          title={t("market_btn_open")}
+        >
+          <span class="hq-btn-icon"><Icon name="market" size={14} /></span>
+          <span class="hq-btn-label">{t("market_btn_open")}</span>
+        </button>
+      </div>
+
+      <div class="hq-secondary-row">
+        <button
+          class="hud-btn hq-sub-btn"
+          data-testid="btn-open-audio"
+          class:active={activeRightDrawer === "audio" ||
+            (ui.isMusicPlaying && !ui.isMuted)}
+          onclick={() => toggleRightDrawer("audio")}
+          title={t("audio_radio_eq")}
+        >
+          <Icon name={ui.isMuted ? "mute" : "radio"} size={13} />
+          <span>
+            {ui.isMuted
+              ? t("audio_muted")
+              : ui.isMusicPlaying
+                ? t("audio_radio_on")
+                : t("audio_status")}
+          </span>
+        </button>
+
+        <button
+          class="hud-btn hq-sub-btn"
+          class:active={showHudManager}
+          onclick={() => {
+            sound.playClick();
+            showHudManager = !showHudManager;
+            if (showHudManager) activeRightDrawer = null;
+          }}
+          title={t("hud_vision_title")}
+        >
+          <Icon name="eye" size={13} />
+          <span>Painéis HUD</span>
         </button>
       </div>
     </div>
@@ -1026,11 +1323,13 @@
             content: "Utilizado para aquisição de recursos no Mercado Global, edificação de defesas territoriais e custeio de manobras táticas."
           }}
         >
-          <Icon name="coins" size={14} />
-          <span class="econ-val">${res.money}</span>
-          {#if myEconomyIncome && myEconomyIncome.netMoney > 0}
-            <span class="econ-delta">+{myEconomyIncome.netMoney}</span>
-          {/if}
+          <span class="econ-icon-box"><Icon name="coins" size={14} /></span>
+          <div class="econ-data">
+            <span class="econ-val">${res.money}</span>
+            {#if myEconomyIncome && myEconomyIncome.netMoney > 0}
+              <span class="econ-delta">+{myEconomyIncome.netMoney}</span>
+            {/if}
+          </div>
         </div>
         <div
           class="econ-pill steel"
@@ -1040,11 +1339,13 @@
             content: "Matéria-prima pesada para produção de tanques blindados, peças de artilharia pesada e modernização de fortalezas nível 2."
           }}
         >
-          <Icon name="steel" size={13} />
-          <span class="econ-val">{res.steel}</span>
-          {#if myEconomyIncome && myEconomyIncome.steel > 0}
-            <span class="econ-delta">+{myEconomyIncome.steel}</span>
-          {/if}
+          <span class="econ-icon-box"><Icon name="steel" size={13} /></span>
+          <div class="econ-data">
+            <span class="econ-val">{res.steel}</span>
+            {#if myEconomyIncome && myEconomyIncome.steel > 0}
+              <span class="econ-delta">+{myEconomyIncome.steel}</span>
+            {/if}
+          </div>
         </div>
         <div
           class="econ-pill oil"
@@ -1054,11 +1355,13 @@
             content: "Recurso tático consumido no abastecimento de divisões blindadas e manobras territoriais de alcance estratégico."
           }}
         >
-          <Icon name="oil" size={13} />
-          <span class="econ-val">{res.oil}</span>
-          {#if myEconomyIncome && myEconomyIncome.oil > 0}
-            <span class="econ-delta">+{myEconomyIncome.oil}</span>
-          {/if}
+          <span class="econ-icon-box"><Icon name="oil" size={13} /></span>
+          <div class="econ-data">
+            <span class="econ-val">{res.oil}</span>
+            {#if myEconomyIncome && myEconomyIncome.oil > 0}
+              <span class="econ-delta">+{myEconomyIncome.oil}</span>
+            {/if}
+          </div>
         </div>
         <div
           class="econ-pill gold"
@@ -1068,11 +1371,13 @@
             content: "Ativo de reserva internacional de alta liquidez. Pode ser liquidado a taxas premium de conversão cambial."
           }}
         >
-          <Icon name="gold" size={13} />
-          <span class="econ-val">{res.gold}</span>
-          {#if myEconomyIncome && myEconomyIncome.gold > 0}
-            <span class="econ-delta">+{myEconomyIncome.gold}</span>
-          {/if}
+          <span class="econ-icon-box"><Icon name="gold" size={13} /></span>
+          <div class="econ-data">
+            <span class="econ-val">{res.gold}</span>
+            {#if myEconomyIncome && myEconomyIncome.gold > 0}
+              <span class="econ-delta">+{myEconomyIncome.gold}</span>
+            {/if}
+          </div>
         </div>
       </div>
     {/if}
@@ -1080,9 +1385,12 @@
     <!-- Map Mode Switcher & Overlays (HEGEM-62) + Camera Controls -->
     {#if hudVisibility.mapControls}
       <div class="map-mode-bar">
-        <!-- Group 1: Base Modes (Segmented Control) -->
-        <div class="mode-group base-group" title={t("map_base_label")}>
-          <span class="group-label">{t("map_base_label")}</span>
+        <!-- Row 1: Base Map Mode (Segmented Switch) -->
+        <div class="mode-row" title={t("map_base_label")}>
+          <span class="group-label">
+            <Icon name="compass" size={11} />
+            <span>{t("map_base_label")}</span>
+          </span>
           <div class="segmented-control">
             <button
               class="mode-btn base-btn"
@@ -1090,7 +1398,8 @@
               onclick={() => (baseMapMode = "cartographic")}
               title={t("map_mode_cartographic_title")}
             >
-              {t("map_mode_cartographic")}
+              <Icon name="compass" size={11} />
+              <span>{t("map_mode_cartographic")}</span>
             </button>
             <button
               class="mode-btn base-btn"
@@ -1098,16 +1407,18 @@
               onclick={() => (baseMapMode = "geopolitical")}
               title={t("map_mode_geopolitical_title")}
             >
-              {t("map_mode_geopolitical")}
+              <Icon name="flag" size={11} />
+              <span>{t("map_mode_geopolitical")}</span>
             </button>
           </div>
         </div>
 
-        <div class="mode-divider"></div>
-
-        <!-- Group 2: Overlays (Toggles + Clear) -->
-        <div class="mode-group overlay-group" title={t("map_overlays_label")}>
-          <span class="group-label">{t("map_overlays_label")}</span>
+        <!-- Row 2: Tactical Overlays (Toggles + Clear) -->
+        <div class="mode-row" title={t("map_overlays_label")}>
+          <span class="group-label">
+            <Icon name="globe" size={11} />
+            <span>{t("map_overlays_label")}</span>
+          </span>
           <div class="toggle-buttons">
             <button
               class="mode-btn overlay-btn"
@@ -1116,7 +1427,7 @@
               title={t("map_mode_regional_title")}
             >
               <Icon name="globe" size={12} />
-              {t("map_mode_regional")}
+              <span>{t("map_mode_regional")}</span>
             </button>
             <button
               class="mode-btn overlay-btn"
@@ -1125,7 +1436,7 @@
               title={t("map_mode_economic_title")}
             >
               <Icon name="coins" size={12} />
-              {t("map_mode_economic")}
+              <span>{t("map_mode_economic")}</span>
             </button>
             {#if overlays.regional || overlays.economic}
               <button
@@ -1137,38 +1448,39 @@
                 title={t("map_clear_overlays_title")}
               >
                 <Icon name="close" size={10} />
-                {t("map_clear_overlays")}
+                <span>{t("map_clear_overlays")}</span>
               </button>
             {/if}
           </div>
         </div>
 
-        <div class="mode-divider"></div>
-
-        <!-- Group 3: Display & Zoom Controls -->
-        <div class="mode-group display-group">
+        <!-- Row 3: Clean Vision & Camera Zoom Cluster -->
+        <div class="mode-row camera-row">
           <button
             class="mode-btn clean-mode-tab"
             class:active={cleanMapMode}
             onclick={() => (cleanMapMode = !cleanMapMode)}
             title={t("map_mode_clean_title")}
           >
-            <Icon name="eye" size={12} />
-            {cleanMapMode ? t("mode_clean_active") : t("mode_clean_label")}
+            <Icon name={cleanMapMode ? "eye-off" : "eye"} size={12} />
+            <span>{cleanMapMode ? t("mode_clean_active") : t("mode_clean_label")}</span>
           </button>
 
           <div class="zoom-cluster">
-            <button class="tool-btn" onclick={zoomIn} title="Aproximar (+)"
-              >+</button
-            >
-            <button class="tool-btn" onclick={zoomOut} title="Afastar (Q)"
-              >-</button
-            >
+            <button class="tool-btn" onclick={zoomIn} title="Aproximar (+)">
+              <Icon name="plus" size={13} />
+            </button>
+            <button class="tool-btn" onclick={zoomOut} title="Afastar (-)">
+              <Icon name="minus" size={13} />
+            </button>
             <button
-              class="tool-btn"
+              class="tool-btn reset-btn"
               onclick={resetZoom}
-              title="Centralizar Mapa">RST</button
+              title="Centralizar Mapa"
             >
+              <Icon name="reset" size={12} />
+              <span>RST</span>
+            </button>
           </div>
         </div>
       </div>
@@ -1994,6 +2306,32 @@
       <p class="exit-modal-desc">
         {t("exit_confirm_desc")}
       </p>
+      <div class="exit-bot-takeover-options">
+        <label class="bot-takeover-radio" class:selected={botTakeoverMode === "after_2_turns"}>
+          <input
+            type="radio"
+            name="botTakeoverMode"
+            value="after_2_turns"
+            bind:group={botTakeoverMode}
+          />
+          <div class="radio-copy">
+            <strong>IA assume após 2 turnos (Padrão)</strong>
+            <small>Permite reconexão caso você retorne em até 2 rodadas.</small>
+          </div>
+        </label>
+        <label class="bot-takeover-radio" class:selected={botTakeoverMode === "immediate"}>
+          <input
+            type="radio"
+            name="botTakeoverMode"
+            value="immediate"
+            bind:group={botTakeoverMode}
+          />
+          <div class="radio-copy">
+            <strong>General IA assume imediatamente</strong>
+            <small>Transfere o comando das suas forças para um Bot agora mesmo.</small>
+          </div>
+        </label>
+      </div>
       <div class="exit-modal-actions">
         <button
           type="button"
@@ -2007,6 +2345,13 @@
           class="btn-confirm-leave"
           onclick={() => {
             showExitConfirmModal = false;
+            try {
+              (window as any).__hegemoniaRoom?.send("leave_match", {
+                botTakeoverMode,
+              });
+            } catch {
+              // ignore
+            }
             leaveCurrentRoom();
           }}
         >
@@ -2021,21 +2366,60 @@
 <style>
   .hud-panel {
     pointer-events: auto;
-    backdrop-filter: blur(14px);
+    position: relative;
+    backdrop-filter: blur(18px);
     background: linear-gradient(
       180deg,
-      rgba(11, 18, 33, 0.94) 0%,
-      rgba(6, 11, 21, 0.96) 100%
+      rgba(9, 15, 29, 0.97) 0%,
+      rgba(5, 9, 18, 0.99) 100%
     );
-    border: 1px solid rgba(212, 175, 55, 0.44);
-    border-radius: 7px;
+    border: 1px solid rgba(234, 179, 8, 0.38);
+    border-radius: 10px;
     box-shadow:
-      0 14px 36px rgba(0, 0, 0, 0.8),
-      inset 0 1px 0 rgba(255, 255, 255, 0.06);
-    padding: 0.7rem 0.78rem;
+      0 20px 44px rgba(0, 0, 0, 0.88),
+      0 0 24px rgba(234, 179, 8, 0.08),
+      inset 0 1px 0 rgba(255, 255, 255, 0.08);
+    padding: 0.78rem 0.85rem;
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
+    gap: 0.55rem;
+  }
+
+  /* Brass Corner Brackets (Wargame Dossier Frame) */
+  .card-corner {
+    position: absolute;
+    width: 10px;
+    height: 10px;
+    pointer-events: none;
+    z-index: 5;
+  }
+  .card-corner.tl {
+    top: 4px;
+    left: 4px;
+    border-top: 2px solid #eab308;
+    border-left: 2px solid #eab308;
+    border-top-left-radius: 4px;
+  }
+  .card-corner.tr {
+    top: 4px;
+    right: 4px;
+    border-top: 2px solid #eab308;
+    border-right: 2px solid #eab308;
+    border-top-right-radius: 4px;
+  }
+  .card-corner.bl {
+    bottom: 4px;
+    left: 4px;
+    border-bottom: 2px solid #eab308;
+    border-left: 2px solid #eab308;
+    border-bottom-left-radius: 4px;
+  }
+  .card-corner.br {
+    bottom: 4px;
+    right: 4px;
+    border-bottom: 2px solid #eab308;
+    border-right: 2px solid #eab308;
+    border-bottom-right-radius: 4px;
   }
 
   /* Real-time Treaty Toast */
@@ -2056,13 +2440,13 @@
     gap: 0.65rem;
     background: linear-gradient(
       135deg,
-      rgba(15, 23, 42, 0.95),
-      rgba(30, 41, 59, 0.95)
+      rgba(15, 23, 42, 0.96),
+      rgba(30, 41, 59, 0.96)
     );
     border: 1px solid rgba(234, 179, 8, 0.7);
-    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.7);
+    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.75);
     padding: 0.55rem 0.85rem;
-    border-radius: 6px;
+    border-radius: 7px;
     color: #f8fafc;
     animation: toast-slide-down 0.25s ease-out;
   }
@@ -2132,116 +2516,198 @@
     background: #b91c1c;
   }
 
-  /* Top-Left Panel */
+  /* ↖ Top-Left Panel (Supreme Command & Generals Dossier) */
   .top-left-panel {
     grid-column: 1;
     grid-row: 1 / span 2;
     align-self: start;
-    max-height: calc(100vh - 115px);
+    max-height: calc(100vh - 108px);
     overflow: hidden;
+  }
+  .panel-header {
+    padding-bottom: 0.48rem;
+    border-bottom: 1px solid rgba(234, 179, 8, 0.22);
   }
   .brand-row {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 0.45rem;
+    gap: 0.5rem;
+  }
+  .brand-identity {
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
+    min-width: 0;
+  }
+  .brand-emblem-frame {
+    width: 36px;
+    height: 36px;
+    border-radius: 7px;
+    background: radial-gradient(
+      circle at 50% 35%,
+      rgba(234, 179, 8, 0.2),
+      rgba(15, 23, 42, 0.92)
+    );
+    border: 1px solid rgba(234, 179, 8, 0.42);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1);
   }
   .hud-mini-logo {
     width: 26px;
     height: 26px;
     object-fit: contain;
-    filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.7));
+    filter: drop-shadow(0 2px 5px rgba(0, 0, 0, 0.75));
   }
   .brand-lockup {
     display: flex;
     flex-direction: column;
-    line-height: 1.1;
+    gap: 0.1rem;
+    line-height: 1.05;
   }
   .brand-lockup strong {
     font-family: var(--font-tactical);
-    font-size: 0.88rem;
+    font-size: 0.92rem;
     font-weight: 900;
-    letter-spacing: 0.12em;
+    letter-spacing: 0.14em;
     color: #fef08a;
+    text-shadow: 0 1px 6px rgba(234, 179, 8, 0.25);
   }
   .brand-lockup small {
     font-family: var(--font-mono);
     font-size: 0.62rem;
+    font-weight: 700;
     color: #94a3b8;
-    letter-spacing: 0.05em;
+    letter-spacing: 0.06em;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
   }
   .round-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
     font-family: var(--font-mono);
-    font-size: 0.66rem;
-    background: rgba(234, 179, 8, 0.14);
-    border: 1px solid rgba(234, 179, 8, 0.35);
+    font-size: 0.68rem;
+    background: linear-gradient(
+      180deg,
+      rgba(234, 179, 8, 0.2) 0%,
+      rgba(161, 98, 7, 0.18) 100%
+    );
+    border: 1px solid rgba(234, 179, 8, 0.48);
     color: #fef08a;
-    padding: 0.15rem 0.45rem;
-    border-radius: 4px;
-    font-weight: 700;
-    letter-spacing: 0.04em;
+    padding: 0.24rem 0.55rem;
+    border-radius: 6px;
+    font-weight: 800;
+    letter-spacing: 0.05em;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
   }
   .round1-treaty-banner {
     display: flex;
     align-items: center;
-    gap: 0.4rem;
-    background: rgba(59, 130, 246, 0.18);
-    border: 1px solid rgba(96, 165, 250, 0.35);
-    color: #93c5fd;
-    padding: 0.32rem 0.55rem;
-    border-radius: 4px;
-    font-size: 0.7rem;
+    gap: 0.5rem;
+    background: linear-gradient(
+      90deg,
+      rgba(30, 58, 138, 0.38) 0%,
+      rgba(15, 23, 42, 0.85) 100%
+    );
+    border: 1px solid rgba(96, 165, 250, 0.4);
+    color: #bfdbfe;
+    padding: 0.4rem 0.55rem;
+    border-radius: 7px;
+    font-size: 0.69rem;
     font-weight: 600;
+    line-height: 1.3;
   }
-  .world-tension-wrap {
-    background: rgba(5, 9, 18, 0.75);
-    border: 1px solid rgba(148, 163, 184, 0.18);
+  .treaty-banner-icon {
+    width: 26px;
+    height: 26px;
     border-radius: 5px;
-    padding: 0.38rem 0.55rem;
+    background: rgba(59, 130, 246, 0.22);
+    border: 1px solid rgba(96, 165, 250, 0.45);
+    color: #60a5fa;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+
+  /* World Tension Telemetry Box */
+  .world-tension-wrap {
+    background: linear-gradient(
+      180deg,
+      rgba(15, 23, 42, 0.82) 0%,
+      rgba(8, 13, 25, 0.92) 100%
+    );
+    border: 1px solid rgba(148, 163, 184, 0.22);
+    border-radius: 7px;
+    padding: 0.45rem 0.6rem;
     display: flex;
     flex-direction: column;
-    gap: 0.25rem;
+    gap: 0.3rem;
   }
   .tension-top-row {
     display: flex;
     justify-content: space-between;
     align-items: center;
     font-size: 0.68rem;
-    font-weight: 700;
+    font-weight: 800;
   }
   .tension-title {
     display: inline-flex;
     align-items: center;
-    gap: 0.3rem;
-    color: #94a3b8;
-    letter-spacing: 0.05em;
+    gap: 0.38rem;
+    color: #cbd5e1;
+    font-family: var(--font-tactical);
+    letter-spacing: 0.06em;
+  }
+  .tension-icon-box {
+    width: 20px;
+    height: 20px;
+    border-radius: 4px;
+    background: rgba(56, 189, 248, 0.14);
+    border: 1px solid rgba(56, 189, 248, 0.32);
+    color: #38bdf8;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
   }
   .tension-value {
     font-family: var(--font-mono);
+    font-size: 0.72rem;
     color: #fef08a;
+    background: rgba(234, 179, 8, 0.14);
+    border: 1px solid rgba(234, 179, 8, 0.32);
+    padding: 0.08rem 0.4rem;
+    border-radius: 4px;
   }
   .tension-value.high-tension {
-    color: #ef4444;
+    color: #fecaca;
+    background: rgba(239, 68, 68, 0.2);
+    border-color: rgba(239, 68, 68, 0.45);
     text-shadow: 0 0 8px rgba(239, 68, 68, 0.5);
   }
   .tension-gauge-bar {
     position: relative;
-    height: 6px;
-    background: rgba(15, 23, 42, 0.85);
+    height: 7px;
+    background: rgba(4, 8, 16, 0.92);
     border-radius: 999px;
     overflow: hidden;
-    border: 1px solid rgba(148, 163, 184, 0.2);
+    border: 1px solid rgba(148, 163, 184, 0.25);
   }
   .tension-gauge-fill {
     height: 100%;
-    background: #eab308;
+    background: linear-gradient(90deg, #ca8a04, #facc15);
     transition: width 0.4s ease;
   }
   .tension-gauge-fill.elevated {
-    background: #f97316;
+    background: linear-gradient(90deg, #ea580c, #fb923c);
   }
   .tension-gauge-fill.critical {
-    background: #ef4444;
+    background: linear-gradient(90deg, #dc2626, #f87171);
   }
   .tension-threshold-marker {
     position: absolute;
@@ -2249,70 +2715,150 @@
     bottom: 0;
     width: 2px;
     background: #38bdf8;
+    box-shadow: 0 0 6px #38bdf8;
     z-index: 2;
   }
   .tension-subtext {
     font-size: 0.62rem;
-    color: #64748b;
+    color: #94a3b8;
     display: flex;
     justify-content: space-between;
+    align-items: center;
+  }
+  .tension-subtext span {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.28rem;
   }
   .tension-subtext .unlocked-text {
     color: #38bdf8;
-    font-weight: 600;
+    font-weight: 700;
   }
 
-  /* Hegemony Bar */
+  /* Hegemony Balance of Power Card */
   .hegemony-bar-wrap {
     display: flex;
     flex-direction: column;
-    gap: 0.25rem;
+    gap: 0.32rem;
+    background: rgba(8, 13, 25, 0.72);
+    border: 1px solid rgba(148, 163, 184, 0.18);
+    border-radius: 7px;
+    padding: 0.42rem 0.58rem;
   }
   .hegemony-bar-label {
     display: flex;
     justify-content: space-between;
-    font-size: 0.64rem;
+    align-items: center;
+    font-size: 0.63rem;
+    color: #cbd5e1;
+    font-family: var(--font-tactical);
+    font-weight: 800;
+    letter-spacing: 0.05em;
+  }
+  .hegemony-label-left {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    color: #eab308;
+  }
+  .hegemony-terr-pill {
+    font-family: var(--font-mono);
+    font-size: 0.58rem;
     color: #94a3b8;
-    font-weight: 700;
-    letter-spacing: 0.04em;
+    background: rgba(15, 23, 42, 0.85);
+    border: 1px solid rgba(148, 163, 184, 0.2);
+    padding: 0.06rem 0.35rem;
+    border-radius: 4px;
   }
   .hegemony-bar {
-    height: 7px;
+    height: 8px;
     border-radius: 999px;
     overflow: hidden;
     display: flex;
-    background: rgba(15, 23, 42, 0.9);
-    border: 1px solid rgba(148, 163, 184, 0.2);
+    background: rgba(4, 8, 16, 0.95);
+    border: 1px solid rgba(148, 163, 184, 0.24);
   }
   .hegemony-segment {
     height: 100%;
     transition: width 0.3s ease;
   }
 
-  /* Generals Table */
+  /* Generals Roster Box & Table */
+  .generals-roster-box {
+    display: flex;
+    flex-direction: column;
+    gap: 0.32rem;
+  }
+  .roster-header-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 0.15rem;
+  }
+  .roster-header-title {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    font-family: var(--font-tactical);
+    font-size: 0.63rem;
+    font-weight: 800;
+    letter-spacing: 0.07em;
+    color: #eab308;
+  }
+  .roster-legend-hint {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.42rem;
+    font-family: var(--font-mono);
+    font-size: 0.56rem;
+    font-weight: 700;
+    color: #64748b;
+  }
+  .roster-legend-hint span {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.16rem;
+  }
   .generals-table {
     display: flex;
     flex-direction: column;
-    gap: 0.28rem;
-    max-height: calc(100vh - 350px);
+    gap: 0.32rem;
+    max-height: calc(100vh - 380px);
     overflow-y: auto;
-    padding-right: 0.2rem;
+    padding-right: 0.15rem;
   }
   .general-row {
-    background: rgba(5, 9, 18, 0.72);
-    border: 1px solid rgba(148, 163, 184, 0.15);
-    border-left: 3px solid #64748b;
-    border-radius: 4px;
-    padding: 0.32rem 0.5rem;
+    background: linear-gradient(
+      90deg,
+      rgba(15, 23, 42, 0.88) 0%,
+      rgba(8, 13, 25, 0.92) 100%
+    );
+    border: 1px solid rgba(148, 163, 184, 0.2);
+    border-left: 4px solid #64748b;
+    border-radius: 6px;
+    padding: 0.38rem 0.48rem;
     display: flex;
     justify-content: space-between;
     align-items: center;
     gap: 0.4rem;
+    transition: all 0.15s ease;
+  }
+  .general-row:hover {
+    border-color: rgba(148, 163, 184, 0.38);
+    background: linear-gradient(
+      90deg,
+      rgba(22, 33, 58, 0.92) 0%,
+      rgba(11, 18, 34, 0.95) 100%
+    );
   }
   .general-row.active-turn {
-    background: rgba(234, 179, 8, 0.12);
-    border-color: rgba(234, 179, 8, 0.4);
-    box-shadow: 0 0 12px rgba(234, 179, 8, 0.15);
+    background: linear-gradient(
+      90deg,
+      rgba(234, 179, 8, 0.18) 0%,
+      rgba(15, 23, 42, 0.92) 100%
+    );
+    border-color: rgba(234, 179, 8, 0.5);
+    box-shadow: 0 0 14px rgba(234, 179, 8, 0.16);
   }
   .general-row.eliminated {
     opacity: 0.35;
@@ -2321,114 +2867,266 @@
   .g-info {
     display: flex;
     align-items: center;
-    gap: 0.4rem;
+    gap: 0.45rem;
+    min-width: 0;
+    flex: 1;
+  }
+  .g-flag-frame {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 2px;
+    border-radius: 4px;
+    background: rgba(4, 8, 16, 0.85);
+    border: 1px solid rgba(148, 163, 184, 0.28);
+    flex-shrink: 0;
+  }
+  .g-name-stack {
+    display: flex;
+    flex-direction: column;
+    gap: 0.1rem;
     min-width: 0;
   }
   .g-name {
-    font-size: 0.74rem;
-    font-weight: 600;
+    font-size: 0.75rem;
+    font-weight: 700;
     color: #f8fafc;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.28rem;
+    min-width: 0;
+  }
+  .g-name-text {
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    display: inline-flex;
-    align-items: center;
-    gap: 0.3rem;
   }
   .you-badge {
-    background: #3b82f6;
+    background: linear-gradient(135deg, #2563eb, #1d4ed8);
+    border: 1px solid rgba(147, 197, 253, 0.45);
     color: #eff6ff;
-    padding: 0.05rem 0.3rem;
+    padding: 0.04rem 0.3rem;
     border-radius: 3px;
-    font-size: 0.58rem;
+    font-family: var(--font-tactical);
+    font-size: 0.55rem;
     font-weight: 800;
+    letter-spacing: 0.04em;
+    flex-shrink: 0;
   }
   .turn-indicator {
-    color: #eab308;
+    color: #facc15;
     display: inline-flex;
+    filter: drop-shadow(0 0 4px rgba(250, 204, 21, 0.5));
+    flex-shrink: 0;
+  }
+  .g-treaty-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.2rem;
+    width: fit-content;
+    font-family: var(--font-tactical);
+    font-size: 0.54rem;
+    font-weight: 800;
+    padding: 0.04rem 0.32rem;
+    border-radius: 3px;
+    background: rgba(56, 189, 248, 0.15);
+    border: 1px solid rgba(56, 189, 248, 0.38);
+    color: #7dd3fc;
+  }
+  .g-treaty-tag.alliance {
+    background: rgba(16, 185, 129, 0.16);
+    border-color: rgba(52, 211, 153, 0.42);
+    color: #6ee7b7;
   }
   .g-stats {
     display: flex;
     align-items: center;
-    gap: 0.25rem;
+    gap: 0.24rem;
+    flex-shrink: 0;
   }
   .stat-pill {
-    background: rgba(15, 23, 42, 0.85);
-    border: 1px solid rgba(148, 163, 184, 0.25);
-    color: #cbd5e1;
+    background: rgba(6, 11, 22, 0.9);
+    border: 1px solid rgba(148, 163, 184, 0.24);
+    color: #94a3b8;
     font-family: var(--font-mono);
-    font-size: 0.64rem;
-    padding: 0.1rem 0.32rem;
-    border-radius: 3px;
-    font-weight: 700;
+    font-size: 0.65rem;
+    padding: 0.16rem 0.36rem;
+    border-radius: 4px;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.22rem;
+    min-width: 34px;
+    justify-content: center;
+  }
+  .stat-pill strong {
+    color: #f8fafc;
+    font-weight: 800;
+    font-variant-numeric: tabular-nums;
+  }
+  .stat-pill.stat-terr {
+    color: #38bdf8;
+    border-color: rgba(56, 189, 248, 0.24);
+  }
+  .stat-pill.stat-div {
+    color: #eab308;
+    border-color: rgba(234, 179, 8, 0.24);
+  }
+  .stat-pill.stat-cards {
+    color: #a78bfa;
+    border-color: rgba(167, 139, 250, 0.24);
   }
   .stat-pill.infamy-pill {
     color: #f87171;
-    border-color: rgba(239, 68, 68, 0.35);
+    border-color: rgba(239, 68, 68, 0.38);
+    background: rgba(127, 29, 29, 0.25);
+  }
+  .stat-pill.infamy-pill strong {
+    color: #fca5a5;
   }
   .btn-diplomacy-icon {
-    background: rgba(15, 23, 42, 0.9);
-    border: 1px solid rgba(148, 163, 184, 0.3);
+    width: 26px;
+    height: 24px;
+    background: linear-gradient(
+      180deg,
+      rgba(30, 41, 59, 0.92) 0%,
+      rgba(15, 23, 42, 0.96) 100%
+    );
+    border: 1px solid rgba(148, 163, 184, 0.35);
     color: #cbd5e1;
-    padding: 0.18rem 0.35rem;
-    border-radius: 3px;
+    border-radius: 5px;
     cursor: pointer;
     display: inline-flex;
     align-items: center;
+    justify-content: center;
+    transition: all 0.15s ease;
+  }
+  .btn-diplomacy-icon:hover {
+    border-color: #eab308;
+    color: #fef08a;
+    background: rgba(234, 179, 8, 0.18);
+  }
+  .btn-diplomacy-icon.has-treaty {
+    border-color: rgba(52, 211, 153, 0.5);
+    color: #6ee7b7;
+    background: rgba(16, 185, 129, 0.16);
   }
   .btn-diplomacy-icon.active {
-    background: rgba(234, 179, 8, 0.25);
+    background: rgba(234, 179, 8, 0.28);
     border-color: #fde047;
     color: #fef08a;
+    box-shadow: 0 0 10px rgba(234, 179, 8, 0.3);
+  }
+  .btn-diplomacy-spacer {
+    width: 26px;
+    height: 24px;
+    border-radius: 5px;
+    background: rgba(234, 179, 8, 0.1);
+    border: 1px solid rgba(234, 179, 8, 0.25);
+    color: #eab308;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
   }
 
   /* Continents & Asian Sub-Regions Toggle */
   .continents-toggle-row {
-    margin-top: 0.1rem;
+    margin-top: 0.08rem;
   }
   .btn-ghost {
-    background: rgba(30, 41, 59, 0.45);
-    border: 1px solid rgba(100, 116, 139, 0.35);
-    color: #cbd5e1;
+    background: linear-gradient(
+      180deg,
+      rgba(22, 33, 58, 0.78) 0%,
+      rgba(11, 18, 34, 0.9) 100%
+    );
+    border: 1px solid rgba(234, 179, 8, 0.32);
+    color: #e2e8f0;
     width: 100%;
-    padding: 0.32rem 0.55rem;
-    border-radius: 5px;
-    font-size: 0.74rem;
-    font-weight: 700;
+    padding: 0.38rem 0.55rem;
+    border-radius: 7px;
+    font-family: var(--font-tactical);
+    font-size: 0.73rem;
+    font-weight: 800;
+    letter-spacing: 0.04em;
     display: flex;
     justify-content: space-between;
     align-items: center;
     cursor: pointer;
+    transition: all 0.15s ease;
+  }
+  .btn-ghost:hover,
+  .btn-ghost.open {
+    border-color: rgba(234, 179, 8, 0.65);
+    color: #fef08a;
+    background: linear-gradient(
+      180deg,
+      rgba(30, 45, 78, 0.88) 0%,
+      rgba(15, 23, 42, 0.95) 100%
+    );
+  }
+  .theatres-btn-left {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+  }
+  .theatres-icon-badge {
+    width: 22px;
+    height: 22px;
+    border-radius: 5px;
+    background: rgba(234, 179, 8, 0.15);
+    border: 1px solid rgba(234, 179, 8, 0.35);
+    color: #facc15;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .theatres-chevron-box {
+    width: 22px;
+    height: 22px;
+    border-radius: 4px;
+    background: rgba(5, 9, 18, 0.65);
+    border: 1px solid rgba(148, 163, 184, 0.22);
+    color: #cbd5e1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
   }
   .continents-dropdown {
     display: flex;
     flex-direction: column;
-    gap: 0.22rem;
+    gap: 0.25rem;
     max-height: 175px;
     overflow-y: auto;
-    padding-top: 0.15rem;
+    padding: 0.25rem 0.1rem 0.1rem;
   }
   .dropdown-section-title {
     font-family: var(--font-tactical);
-    font-size: 0.65rem;
+    font-size: 0.64rem;
     text-transform: uppercase;
-    letter-spacing: 0.1em;
+    letter-spacing: 0.08em;
     color: #eab308;
     margin-top: 0.2rem;
     font-weight: 800;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
   }
   .cont-pill {
     display: flex;
     justify-content: space-between;
     align-items: center;
     font-size: 0.72rem;
-    padding: 0.22rem 0.45rem;
-    background: rgba(5, 9, 18, 0.75);
-    border-radius: 4px;
-    color: #cbd5e1;
+    padding: 0.28rem 0.5rem;
+    background: rgba(8, 13, 25, 0.85);
+    border: 1px solid rgba(148, 163, 184, 0.16);
+    border-radius: 5px;
+    color: #e2e8f0;
+  }
+  .cont-pill.monopoly {
+    border-color: rgba(234, 179, 8, 0.4);
+    background: rgba(234, 179, 8, 0.08);
   }
   .asia-sub-pill {
-    border-left: 2px solid #eab308;
+    border-left: 3px solid #eab308;
   }
   .cont-right {
     display: flex;
@@ -2437,77 +3135,95 @@
   }
   .bonus-tag {
     font-family: var(--font-mono);
-    color: #facc15;
-    font-weight: 700;
+    font-size: 0.66rem;
+    color: #fef08a;
+    background: rgba(234, 179, 8, 0.16);
+    border: 1px solid rgba(234, 179, 8, 0.35);
+    padding: 0.06rem 0.35rem;
+    border-radius: 4px;
+    font-weight: 800;
   }
 
   /* Diplomatic Dossier */
   .diplomacy-dossier {
     display: flex;
     flex-direction: column;
-    gap: 0.45rem;
-    background: rgba(5, 9, 18, 0.85);
-    border: 1px solid rgba(234, 179, 8, 0.35);
-    border-radius: 5px;
-    padding: 0.5rem;
+    gap: 0.48rem;
+    background: rgba(6, 11, 22, 0.9);
+    border: 1px solid rgba(234, 179, 8, 0.38);
+    border-radius: 7px;
+    padding: 0.55rem;
   }
   .btn-dossier-back {
     display: inline-flex;
     align-items: center;
-    gap: 0.3rem;
-    background: none;
-    border: none;
-    color: #94a3b8;
-    font-size: 0.72rem;
+    gap: 0.35rem;
+    background: rgba(15, 23, 42, 0.85);
+    border: 1px solid rgba(148, 163, 184, 0.25);
+    color: #cbd5e1;
+    font-family: var(--font-tactical);
+    font-size: 0.68rem;
+    font-weight: 700;
+    padding: 0.25rem 0.5rem;
+    border-radius: 5px;
     cursor: pointer;
+    transition: all 0.15s ease;
   }
   .btn-dossier-back:hover {
-    color: #f8fafc;
+    color: #fef08a;
+    border-color: rgba(234, 179, 8, 0.5);
   }
   .dossier-target-card {
-    background: rgba(15, 23, 42, 0.8);
-    border: 1px solid rgba(148, 163, 184, 0.2);
-    border-left: 3px solid #64748b;
-    border-radius: 4px;
-    padding: 0.4rem 0.5rem;
+    background: rgba(15, 23, 42, 0.85);
+    border: 1px solid rgba(148, 163, 184, 0.22);
+    border-left: 4px solid #64748b;
+    border-radius: 6px;
+    padding: 0.45rem 0.55rem;
     display: flex;
     flex-direction: column;
-    gap: 0.35rem;
+    gap: 0.38rem;
   }
   .target-card-top {
     display: flex;
     align-items: center;
-    gap: 0.45rem;
+    gap: 0.5rem;
   }
   .target-card-info strong {
-    font-size: 0.8rem;
+    font-size: 0.82rem;
     color: #f8fafc;
   }
   .target-card-info small {
     display: block;
+    font-family: var(--font-tactical);
     font-size: 0.58rem;
-    color: #94a3b8;
-    letter-spacing: 0.05em;
+    color: #eab308;
+    letter-spacing: 0.06em;
   }
   .infamy-wrap {
     display: flex;
     flex-direction: column;
-    gap: 0.2rem;
+    gap: 0.22rem;
   }
   .infamy-row {
     display: flex;
     justify-content: space-between;
+    align-items: center;
     font-size: 0.62rem;
     color: #94a3b8;
     font-weight: 700;
+  }
+  .infamy-row span {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
   }
   .infamy-value.high-infamy {
     color: #ef4444;
   }
   .infamy-bar {
     position: relative;
-    height: 5px;
-    background: rgba(5, 9, 18, 0.9);
+    height: 6px;
+    background: rgba(5, 9, 18, 0.92);
     border-radius: 999px;
     overflow: hidden;
   }
@@ -2531,7 +3247,7 @@
   .dossier-section {
     display: flex;
     flex-direction: column;
-    gap: 0.3rem;
+    gap: 0.32rem;
   }
   .dossier-section-title {
     font-family: var(--font-tactical);
@@ -2544,8 +3260,8 @@
   .treaty-active-box {
     background: rgba(16, 185, 129, 0.12);
     border: 1px solid rgba(16, 185, 129, 0.35);
-    border-radius: 4px;
-    padding: 0.35rem 0.5rem;
+    border-radius: 5px;
+    padding: 0.38rem 0.55rem;
     display: flex;
     flex-direction: column;
     gap: 0.3rem;
@@ -2570,8 +3286,8 @@
     font-family: var(--font-tactical);
     font-size: 0.68rem;
     font-weight: 800;
-    padding: 0.28rem 0.5rem;
-    border-radius: 4px;
+    padding: 0.3rem 0.55rem;
+    border-radius: 5px;
     cursor: pointer;
     display: inline-flex;
     align-items: center;
@@ -2584,8 +3300,8 @@
   .treaty-pending-box {
     background: rgba(234, 179, 8, 0.12);
     border: 1px solid rgba(234, 179, 8, 0.35);
-    border-radius: 4px;
-    padding: 0.35rem 0.5rem;
+    border-radius: 5px;
+    padding: 0.38rem 0.55rem;
     font-size: 0.68rem;
     color: #fef08a;
     display: flex;
@@ -2597,18 +3313,18 @@
     border: 1px solid rgba(148, 163, 184, 0.3);
     color: #cbd5e1;
     font-size: 0.62rem;
-    padding: 0.15rem 0.35rem;
-    border-radius: 3px;
+    padding: 0.18rem 0.4rem;
+    border-radius: 4px;
     cursor: pointer;
   }
   .treaty-incoming-box {
     background: rgba(59, 130, 246, 0.15);
     border: 1px solid rgba(59, 130, 246, 0.4);
-    border-radius: 4px;
-    padding: 0.35rem 0.5rem;
+    border-radius: 5px;
+    padding: 0.38rem 0.55rem;
     display: flex;
     flex-direction: column;
-    gap: 0.3rem;
+    gap: 0.32rem;
   }
   .treaty-incoming-box strong {
     font-size: 0.72rem;
@@ -2625,8 +3341,8 @@
     font-family: var(--font-tactical);
     font-size: 0.66rem;
     font-weight: 800;
-    padding: 0.22rem 0.5rem;
-    border-radius: 3px;
+    padding: 0.25rem 0.55rem;
+    border-radius: 4px;
     cursor: pointer;
     display: inline-flex;
     align-items: center;
@@ -2639,8 +3355,8 @@
     font-family: var(--font-tactical);
     font-size: 0.66rem;
     font-weight: 800;
-    padding: 0.22rem 0.5rem;
-    border-radius: 3px;
+    padding: 0.25rem 0.55rem;
+    border-radius: 4px;
     cursor: pointer;
     display: inline-flex;
     align-items: center;
@@ -2649,20 +3365,22 @@
   .treaty-propose-box {
     display: flex;
     flex-direction: column;
-    gap: 0.3rem;
+    gap: 0.32rem;
   }
   .btn-treaty-propose {
-    background: rgba(15, 23, 42, 0.85);
+    background: rgba(15, 23, 42, 0.88);
     border: 1px solid rgba(148, 163, 184, 0.3);
-    color: #cbd5e1;
-    padding: 0.3rem 0.5rem;
-    border-radius: 4px;
-    font-size: 0.68rem;
-    font-weight: 600;
+    color: #e2e8f0;
+    padding: 0.36rem 0.55rem;
+    border-radius: 5px;
+    font-family: var(--font-tactical);
+    font-size: 0.7rem;
+    font-weight: 700;
     cursor: pointer;
     display: flex;
     align-items: center;
-    gap: 0.35rem;
+    gap: 0.4rem;
+    transition: all 0.15s ease;
   }
   .btn-treaty-propose:hover:not(:disabled) {
     background: rgba(30, 41, 59, 0.95);
@@ -2676,11 +3394,11 @@
   .coalition-active-box {
     background: rgba(220, 38, 38, 0.15);
     border: 1px solid rgba(239, 68, 68, 0.4);
-    border-radius: 4px;
-    padding: 0.4rem 0.5rem;
+    border-radius: 5px;
+    padding: 0.42rem 0.55rem;
     display: flex;
     flex-direction: column;
-    gap: 0.3rem;
+    gap: 0.32rem;
   }
   .coalition-header {
     display: flex;
@@ -2698,8 +3416,8 @@
   .coalition-member-tag {
     background: rgba(15, 23, 42, 0.9);
     border: 1px solid #64748b;
-    border-radius: 3px;
-    padding: 0.12rem 0.35rem;
+    border-radius: 4px;
+    padding: 0.14rem 0.38rem;
     font-size: 0.64rem;
     color: #e2e8f0;
     display: inline-flex;
@@ -2713,8 +3431,8 @@
     font-family: var(--font-tactical);
     font-size: 0.68rem;
     font-weight: 800;
-    padding: 0.3rem 0.55rem;
-    border-radius: 4px;
+    padding: 0.32rem 0.55rem;
+    border-radius: 5px;
     cursor: pointer;
     display: inline-flex;
     align-items: center;
@@ -2735,11 +3453,11 @@
   .coalition-call-box {
     background: rgba(234, 179, 8, 0.1);
     border: 1px solid rgba(234, 179, 8, 0.35);
-    border-radius: 4px;
-    padding: 0.4rem 0.5rem;
+    border-radius: 5px;
+    padding: 0.42rem 0.55rem;
     display: flex;
     flex-direction: column;
-    gap: 0.3rem;
+    gap: 0.32rem;
   }
   .coalition-call-desc {
     margin: 0;
@@ -2753,18 +3471,18 @@
     font-family: var(--font-tactical);
     font-size: 0.68rem;
     font-weight: 800;
-    padding: 0.3rem 0.55rem;
-    border-radius: 4px;
+    padding: 0.32rem 0.55rem;
+    border-radius: 5px;
     cursor: pointer;
     display: inline-flex;
     align-items: center;
     gap: 0.3rem;
   }
   .coalition-locked-box {
-    background: rgba(15, 23, 42, 0.7);
-    border: 1px solid rgba(148, 163, 184, 0.15);
-    border-radius: 4px;
-    padding: 0.35rem 0.5rem;
+    background: rgba(15, 23, 42, 0.72);
+    border: 1px solid rgba(148, 163, 184, 0.18);
+    border-radius: 5px;
+    padding: 0.38rem 0.55rem;
     font-size: 0.62rem;
     color: #94a3b8;
     display: flex;
@@ -2774,14 +3492,17 @@
   .hegemon-bonus-banner {
     background: rgba(234, 179, 8, 0.15);
     border: 1px solid rgba(234, 179, 8, 0.4);
-    border-radius: 4px;
-    padding: 0.32rem 0.5rem;
+    border-radius: 5px;
+    padding: 0.34rem 0.55rem;
     font-size: 0.66rem;
     color: #fef08a;
     font-weight: 700;
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
   }
 
-  /* Top-Center Banner */
+  /* ⬆ Top-Center Operational Banner */
   .top-center-banner {
     pointer-events: auto;
     grid-column: 2;
@@ -2794,27 +3515,27 @@
     gap: 0.35rem;
     background: linear-gradient(
       180deg,
-      rgba(11, 18, 33, 0.94) 0%,
-      rgba(6, 11, 21, 0.96) 100%
+      rgba(11, 18, 33, 0.95) 0%,
+      rgba(6, 11, 21, 0.98) 100%
     );
-    border: 1px solid rgba(148, 163, 184, 0.35);
-    border-radius: 7px;
-    padding: 0.48rem 0.95rem;
-    box-shadow: 0 12px 30px rgba(0, 0, 0, 0.75);
-    backdrop-filter: blur(14px);
+    border: 1px solid rgba(148, 163, 184, 0.38);
+    border-radius: 8px;
+    padding: 0.5rem 1rem;
+    box-shadow: 0 14px 32px rgba(0, 0, 0, 0.8);
+    backdrop-filter: blur(16px);
     max-width: 620px;
     width: fit-content;
   }
   .top-center-banner.my-turn-banner {
-    border-color: rgba(234, 179, 8, 0.75);
+    border-color: rgba(234, 179, 8, 0.78);
     box-shadow:
-      0 12px 30px rgba(0, 0, 0, 0.8),
-      0 0 20px rgba(234, 179, 8, 0.18);
+      0 14px 32px rgba(0, 0, 0, 0.82),
+      0 0 22px rgba(234, 179, 8, 0.2);
   }
   .tc-main-row {
     display: flex;
     align-items: center;
-    gap: 0.7rem;
+    gap: 0.75rem;
   }
   .tc-text {
     display: flex;
@@ -2828,7 +3549,7 @@
     color: #eab308;
   }
   .tc-directive {
-    font-size: 0.78rem;
+    font-size: 0.79rem;
     color: #f8fafc;
     font-weight: 600;
   }
@@ -2837,10 +3558,10 @@
     font-family: var(--font-mono);
     font-size: 0.86rem;
     font-weight: 800;
-    padding: 0.25rem 0.55rem;
-    border-radius: 4px;
-    background: rgba(5, 9, 18, 0.9);
-    border: 1px solid rgba(148, 163, 184, 0.3);
+    padding: 0.26rem 0.58rem;
+    border-radius: 5px;
+    background: rgba(5, 9, 18, 0.92);
+    border: 1px solid rgba(148, 163, 184, 0.32);
     color: #fef08a;
     display: inline-flex;
     align-items: center;
@@ -2852,85 +3573,404 @@
     background: rgba(127, 29, 29, 0.45);
   }
 
-  /* Top-Right Panel */
+  .g-doctrine-crest {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    margin-left: 0.25rem;
+    cursor: help;
+  }
+
+  .tc-sub-bar {
+    display: flex;
+    justify-content: center;
+    width: 100%;
+    margin-top: 0.15rem;
+  }
+  .btn-tc-mobilization {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.2rem 0.6rem;
+    border-radius: 4px;
+    background: rgba(15, 23, 42, 0.85);
+    border: 1px solid rgba(234, 179, 8, 0.4);
+    color: #e2e8f0;
+    font-family: var(--font-tactical);
+    font-size: 0.64rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+  .btn-tc-mobilization:hover,
+  .btn-tc-mobilization.active {
+    background: rgba(234, 179, 8, 0.2);
+    border-color: #facc15;
+    color: #fef08a;
+    box-shadow: 0 0 10px rgba(234, 179, 8, 0.25);
+  }
+  .tc-mob-armies {
+    background: #eab308;
+    color: #050911;
+    font-family: var(--font-mono);
+    font-size: 0.62rem;
+    font-weight: 900;
+    padding: 0.02rem 0.3rem;
+    border-radius: 3px;
+  }
+
+  .tc-mobilization-popover {
+    position: absolute;
+    top: calc(100% + 8px);
+    left: 50%;
+    transform: translateX(-50%);
+    width: min(340px, 92vw);
+    background: linear-gradient(
+      165deg,
+      rgba(15, 23, 42, 0.98) 0%,
+      rgba(8, 13, 26, 0.99) 100%
+    );
+    border: 1px solid rgba(234, 179, 8, 0.55);
+    border-radius: 8px;
+    box-shadow:
+      0 20px 45px rgba(0, 0, 0, 0.92),
+      0 0 20px rgba(234, 179, 8, 0.15);
+    padding: 0.65rem 0.75rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.45rem;
+    z-index: 60;
+  }
+  .mob-pop-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-bottom: 1px solid rgba(234, 179, 8, 0.25);
+    padding-bottom: 0.35rem;
+  }
+  .mob-pop-title {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    font-family: var(--font-tactical);
+    font-size: 0.7rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: #fef08a;
+  }
+  .mob-pop-close {
+    background: transparent;
+    border: none;
+    color: #94a3b8;
+    cursor: pointer;
+    display: grid;
+    place-items: center;
+    padding: 0.15rem;
+    border-radius: 3px;
+  }
+  .mob-pop-close:hover {
+    color: #f8fafc;
+    background: rgba(239, 68, 68, 0.25);
+  }
+  .mob-pop-body {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+  }
+  .mob-pop-armies {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.3rem 0.5rem;
+    border-radius: 5px;
+    background: rgba(234, 179, 8, 0.12);
+    border: 1px solid rgba(234, 179, 8, 0.3);
+  }
+  .mob-armies-lbl {
+    font-family: var(--font-tactical);
+    font-size: 0.66rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    color: #cbd5e1;
+  }
+  .mob-armies-val {
+    font-family: var(--font-mono);
+    font-size: 0.8rem;
+    font-weight: 900;
+    color: #fef08a;
+  }
+  .mob-pop-commodities {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 0.3rem;
+  }
+  .mob-comm-item {
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+    padding: 0.26rem 0.45rem;
+    border-radius: 4px;
+    background: rgba(15, 23, 42, 0.8);
+    border: 1px solid rgba(148, 163, 184, 0.2);
+  }
+  .mob-comm-label {
+    font-size: 0.64rem;
+    color: #94a3b8;
+    flex: 1;
+  }
+  .mob-comm-val {
+    font-family: var(--font-mono);
+    font-size: 0.74rem;
+    font-weight: 800;
+  }
+  .mob-comm-item.money {
+    border-color: rgba(16, 185, 129, 0.35);
+  }
+  .mob-comm-item.money .mob-comm-val {
+    color: #6ee7b7;
+  }
+  .mob-comm-item.steel {
+    border-color: rgba(148, 163, 184, 0.35);
+  }
+  .mob-comm-item.steel .mob-comm-val {
+    color: #cbd5e1;
+  }
+  .mob-comm-item.oil {
+    border-color: rgba(249, 115, 22, 0.35);
+  }
+  .mob-comm-item.oil .mob-comm-val {
+    color: #fdba74;
+  }
+  .mob-comm-item.gold {
+    border-color: rgba(234, 179, 8, 0.35);
+  }
+  .mob-comm-item.gold .mob-comm-val {
+    color: #fef08a;
+  }
+  .mob-pop-note {
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+    padding: 0.22rem 0.45rem;
+    border-radius: 4px;
+    font-size: 0.6rem;
+    line-height: 1.25;
+  }
+  .mob-pop-note.warning {
+    background: rgba(245, 158, 11, 0.15);
+    border: 1px solid rgba(245, 158, 11, 0.35);
+    color: #fde047;
+  }
+  .mob-pop-note.danger {
+    background: rgba(239, 68, 68, 0.15);
+    border: 1px solid rgba(239, 68, 68, 0.35);
+    color: #fca5a5;
+  }
+
+  /* ↗ Top-Right Panel (Commander HQ, Treasury & Map Control Deck) */
   .top-right-panel {
     grid-column: 3;
     grid-row: 1 / span 2;
     align-self: start;
     position: relative;
   }
-  .my-hq-row {
+  .hq-header-bar {
     display: flex;
-    flex-wrap: wrap;
     align-items: center;
     justify-content: space-between;
-    gap: 0.35rem;
+    gap: 0.5rem;
+    padding-bottom: 0.48rem;
+    border-bottom: 1px solid rgba(234, 179, 8, 0.22);
   }
   .hq-general {
     display: flex;
     align-items: center;
-    gap: 0.45rem;
+    gap: 0.55rem;
+    min-width: 0;
+  }
+  .hq-flag-frame {
+    padding: 3px;
+    border-radius: 5px;
+    background: rgba(4, 8, 16, 0.9);
+    border: 1px solid rgba(234, 179, 8, 0.42);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+  }
+  .hq-identity-stack {
+    display: flex;
+    flex-direction: column;
+    gap: 0.08rem;
+    min-width: 0;
+  }
+  .hq-kicker-row {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+  }
+  .hq-kicker {
+    font-family: var(--font-tactical);
+    font-size: 0.56rem;
+    font-weight: 800;
+    letter-spacing: 0.14em;
+    color: #eab308;
+    text-transform: uppercase;
+  }
+  .hq-rank-badge {
+    font-family: var(--font-tactical);
+    font-size: 0.56rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    background: rgba(212, 160, 23, 0.16);
+    color: #fbbf24;
+    border: 1px solid rgba(212, 160, 23, 0.38);
+    padding: 0.06rem 0.32rem;
+    border-radius: 3px;
   }
   .hq-name {
     font-family: var(--font-tactical);
-    font-weight: 800;
-    font-size: 0.84rem;
+    font-weight: 900;
+    font-size: 0.92rem;
     color: #f8fafc;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
-  .hq-rank-badge {
-    font-size: 0.62rem;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    background: rgba(212, 160, 23, 0.15);
-    color: #FBBF24;
-    border: 1px solid rgba(212, 160, 23, 0.35);
-    padding: 0.1rem 0.35rem;
-    border-radius: 3px;
-  }
-  .reserve-badge {
-    background: rgba(234, 179, 8, 0.16);
-    border: 1px solid rgba(234, 179, 8, 0.45);
-    color: #fef08a;
-    font-family: var(--font-mono);
-    font-size: 0.72rem;
-    font-weight: 700;
-    padding: 0.18rem 0.45rem;
-    border-radius: 4px;
-    display: inline-flex;
-    align-items: center;
-    gap: 0.3rem;
-  }
-  .hq-buttons {
+  .hq-header-right {
     display: flex;
     align-items: center;
-    gap: 0.28rem;
-    flex-wrap: wrap;
+    gap: 0.38rem;
+    flex-shrink: 0;
+  }
+  .reserve-badge {
+    background: linear-gradient(
+      135deg,
+      rgba(234, 179, 8, 0.24),
+      rgba(161, 98, 7, 0.2)
+    );
+    border: 1px solid rgba(250, 204, 21, 0.55);
+    color: #fef08a;
+    font-family: var(--font-mono);
+    font-size: 0.7rem;
+    font-weight: 800;
+    padding: 0.2rem 0.42rem;
+    border-radius: 6px;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.22rem;
+    box-shadow: 0 0 12px rgba(234, 179, 8, 0.18);
+    flex-shrink: 0;
+  }
+
+  /* Structured 2-Row HQ Command Grid */
+  .hq-command-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    min-width: 0;
+    width: 100%;
+  }
+  .hq-primary-row {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.3rem;
+    min-width: 0;
+    width: 100%;
+  }
+  .hq-secondary-row {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.3rem;
+    min-width: 0;
+    width: 100%;
   }
   .hud-btn {
-    background: rgba(15, 23, 42, 0.88);
+    background: linear-gradient(
+      180deg,
+      rgba(20, 30, 52, 0.92) 0%,
+      rgba(10, 16, 30, 0.96) 100%
+    );
     border: 1px solid rgba(148, 163, 184, 0.28);
-    color: #cbd5e1;
+    color: #e2e8f0;
     font-family: var(--font-tactical);
-    font-size: 0.72rem;
-    font-weight: 700;
-    padding: 0.28rem 0.52rem;
-    border-radius: 4px;
+    font-size: 0.7rem;
+    font-weight: 800;
+    padding: 0.34rem 0.4rem;
+    border-radius: 6px;
     cursor: pointer;
     display: inline-flex;
     align-items: center;
-    gap: 0.32rem;
+    justify-content: center;
+    gap: 0.25rem;
+    min-width: 0;
+    box-sizing: border-box;
+    overflow: hidden;
     transition: all 0.15s ease;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  }
+  .hq-deck-btn {
+    justify-content: space-between;
+    padding: 0.34rem 0.42rem;
+  }
+  .hq-btn-icon {
+    width: 22px;
+    height: 22px;
+    border-radius: 4px;
+    background: rgba(234, 179, 8, 0.14);
+    border: 1px solid rgba(234, 179, 8, 0.3);
+    color: #facc15;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+  .hq-btn-label {
+    font-size: 0.71rem;
+    font-weight: 800;
+    letter-spacing: 0.03em;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .hq-btn-pill {
+    font-family: var(--font-mono);
+    font-size: 0.62rem;
+    font-weight: 800;
+    padding: 0.06rem 0.32rem;
+    border-radius: 4px;
+    background: rgba(5, 9, 18, 0.85);
+    border: 1px solid rgba(148, 163, 184, 0.25);
+    color: #fef08a;
+  }
+  .hq-sub-btn {
+    padding: 0.32rem 0.5rem;
+    font-size: 0.69rem;
+    color: #cbd5e1;
   }
   .hud-btn:hover {
-    background: rgba(30, 41, 59, 0.95);
-    border-color: rgba(234, 179, 8, 0.5);
+    background: linear-gradient(
+      180deg,
+      rgba(30, 44, 74, 0.96) 0%,
+      rgba(15, 23, 42, 0.98) 100%
+    );
+    border-color: rgba(234, 179, 8, 0.58);
     color: #fef08a;
   }
   .hud-btn.active {
-    background: rgba(234, 179, 8, 0.22);
+    background: linear-gradient(
+      180deg,
+      rgba(234, 179, 8, 0.26) 0%,
+      rgba(161, 98, 7, 0.22) 100%
+    );
     border-color: #fde047;
     color: #fef08a;
+    box-shadow: 0 0 14px rgba(234, 179, 8, 0.25);
   }
   .hud-btn.highlight {
     border-color: #eab308;
@@ -2961,17 +4001,20 @@
     }
   }
   .btn-exit-room {
-    color: #ef4444;
-    background: rgba(239, 68, 68, 0.12);
-    border-color: rgba(239, 68, 68, 0.35);
+    width: 30px;
+    height: 30px;
+    padding: 0;
+    color: #f87171;
+    background: rgba(127, 29, 29, 0.28);
+    border-color: rgba(239, 68, 68, 0.42);
+    border-radius: 6px;
     transition: all 0.15s ease;
   }
-
   .btn-exit-room:hover {
-    color: #fca5a5;
-    background: rgba(239, 68, 68, 0.25);
-    border-color: #ef4444;
-    box-shadow: 0 0 10px rgba(239, 68, 68, 0.35);
+    color: #ffffff;
+    background: #dc2626;
+    border-color: #f87171;
+    box-shadow: 0 0 12px rgba(239, 68, 68, 0.45);
   }
 
   /* Exit Campaign Modal (HEGEM-106) */
@@ -2987,7 +4030,6 @@
     padding: 1rem;
     pointer-events: auto;
   }
-
   .exit-modal-box {
     background: #0f172a;
     border: 1px solid rgba(239, 68, 68, 0.45);
@@ -2998,14 +4040,12 @@
     width: 100%;
     color: #f8fafc;
   }
-
   .exit-modal-header {
     display: flex;
     align-items: center;
     gap: 0.85rem;
     margin-bottom: 1rem;
   }
-
   .exit-modal-icon-badge {
     width: 42px;
     height: 42px;
@@ -3018,14 +4058,12 @@
     justify-content: center;
     flex-shrink: 0;
   }
-
   .exit-modal-titles h4 {
     margin: 0;
     font-size: 1.1rem;
     font-weight: 700;
     color: #f8fafc;
   }
-
   .exit-modal-sub {
     font-size: 0.72rem;
     color: #ef4444;
@@ -3033,20 +4071,17 @@
     letter-spacing: 0.05em;
     text-transform: uppercase;
   }
-
   .exit-modal-desc {
     margin: 0 0 1.25rem 0;
     font-size: 0.85rem;
     line-height: 1.5;
     color: #94a3b8;
   }
-
   .exit-modal-actions {
     display: flex;
     justify-content: flex-end;
     gap: 0.65rem;
   }
-
   .exit-modal-actions .btn-cancel {
     padding: 0.5rem 1rem;
     font-size: 0.8rem;
@@ -3058,12 +4093,10 @@
     cursor: pointer;
     transition: all 0.15s ease;
   }
-
   .exit-modal-actions .btn-cancel:hover {
     background: rgba(148, 163, 184, 0.2);
     color: #fff;
   }
-
   .exit-modal-actions .btn-confirm-leave {
     padding: 0.5rem 1rem;
     font-size: 0.8rem;
@@ -3078,179 +4111,342 @@
     gap: 0.4rem;
     transition: all 0.15s ease;
   }
-
   .exit-modal-actions .btn-confirm-leave:hover {
     background: #b91c1c;
     box-shadow: 0 0 14px rgba(239, 68, 68, 0.5);
   }
 
-  /* Economy Bar */
+  /* 4-Column Economy & Stockpile Bar */
   .hq-economy-bar {
     display: grid;
-    grid-template-columns: minmax(105px, 1.35fr) repeat(3, minmax(54px, 1fr));
-    gap: 0.35rem;
-    padding-top: 0.25rem;
-    border-top: 1px solid rgba(148, 163, 184, 0.14);
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 0.28rem;
+    padding: 0.4rem 0;
+    min-width: 0;
     width: 100%;
-    box-sizing: border-box;
+    border-top: 1px solid rgba(148, 163, 184, 0.16);
+    border-bottom: 1px solid rgba(148, 163, 184, 0.16);
   }
   .econ-pill {
     display: flex;
     align-items: center;
-    justify-content: center;
-    gap: 0.28rem;
-    padding: 0.25rem 0.38rem;
-    border-radius: 6px;
-    background: rgba(15, 23, 42, 0.72);
-    border: 1px solid rgba(148, 163, 184, 0.18);
-    font-size: 0.76rem;
-    font-weight: 700;
-    color: #e2e8f0;
+    gap: 0.26rem;
+    padding: 0.28rem 0.32rem;
     min-width: 0;
-    white-space: nowrap;
     box-sizing: border-box;
+    overflow: hidden;
+    border-radius: 6px;
+    background: rgba(6, 11, 22, 0.85);
+    border: 1px solid rgba(148, 163, 184, 0.22);
+    font-family: var(--font-mono);
+    font-size: 0.7rem;
+    font-weight: 800;
+    color: #e2e8f0;
+  }
+  .econ-icon-box {
+    width: 19px;
+    height: 19px;
+    border-radius: 4px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+  .econ-data {
+    display: flex;
+    align-items: baseline;
+    gap: 0.16rem;
+    min-width: 0;
+    overflow: hidden;
+  }
+
+  .btn-top-left-alliance {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0.16rem 0.42rem;
+    border-radius: 4px;
+    font-family: var(--font-tactical);
+    font-size: 0.62rem;
+    font-weight: 800;
+    background: rgba(16, 185, 129, 0.18);
+    border: 1px solid rgba(52, 211, 153, 0.55);
+    color: #6ee7b7;
+    cursor: pointer;
+    transition: all 0.14s ease;
+  }
+  .btn-top-left-alliance.coalition {
+    background: rgba(234, 179, 8, 0.22);
+    border-color: rgba(250, 204, 21, 0.65);
+    color: #fef08a;
+  }
+  .lend-lease-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.35rem;
+    margin-bottom: 0.4rem;
+  }
+  .btn-lend-lease,
+  .btn-coalition-aircraft {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.3rem;
+    padding: 0.38rem 0.5rem;
+    border-radius: 6px;
+    font-family: var(--font-tactical);
+    font-size: 0.72rem;
+    font-weight: 800;
+    background: rgba(15, 23, 42, 0.9);
+    border: 1px solid rgba(52, 211, 153, 0.45);
+    color: #a7f3d0;
+    cursor: pointer;
+  }
+  .btn-coalition-aircraft {
+    width: 100%;
+    border-color: rgba(56, 189, 248, 0.6);
+    background: rgba(14, 116, 144, 0.25);
+    color: #7dd3fc;
+  }
+  .btn-lend-lease:disabled,
+  .btn-coalition-aircraft:disabled {
+    opacity: 0.38;
+    cursor: not-allowed;
+  }
+  .exit-bot-takeover-options {
+    display: flex;
+    flex-direction: column;
+    gap: 0.45rem;
+    margin-bottom: 1rem;
+  }
+  .bot-takeover-radio {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.55rem;
+    padding: 0.55rem 0.7rem;
+    border-radius: 6px;
+    background: rgba(15, 23, 42, 0.75);
+    border: 1px solid rgba(148, 163, 184, 0.25);
+    cursor: pointer;
+  }
+  .bot-takeover-radio.selected {
+    border-color: rgba(250, 204, 21, 0.65);
+    background: rgba(202, 138, 4, 0.14);
+  }
+  .bot-takeover-radio .radio-copy {
+    display: flex;
+    flex-direction: column;
+    gap: 0.1rem;
+  }
+  .bot-takeover-radio strong {
+    font-size: 0.78rem;
+    color: #f8fafc;
+  }
+  .bot-takeover-radio small {
+    font-size: 0.68rem;
+    color: #94a3b8;
   }
   .econ-pill.money {
+    border-color: rgba(52, 211, 153, 0.32);
+  }
+  .econ-pill.money .econ-icon-box {
+    background: rgba(16, 185, 129, 0.16);
+    border: 1px solid rgba(52, 211, 153, 0.35);
     color: #34d399;
-    border-color: rgba(52, 211, 153, 0.38);
-    background: rgba(16, 185, 129, 0.1);
-    padding: 0.25rem 0.5rem;
-    font-size: 0.82rem;
-    gap: 0.32rem;
+  }
+  .econ-pill.money .econ-delta {
+    color: #34d399;
   }
   .econ-pill.steel {
+    border-color: rgba(148, 163, 184, 0.32);
+  }
+  .econ-pill.steel .econ-icon-box {
+    background: rgba(148, 163, 184, 0.16);
+    border: 1px solid rgba(148, 163, 184, 0.35);
+    color: #cbd5e1;
+  }
+  .econ-pill.steel .econ-delta {
     color: #94a3b8;
-    border-color: rgba(148, 163, 184, 0.3);
   }
   .econ-pill.oil {
+    border-color: rgba(251, 146, 60, 0.32);
+  }
+  .econ-pill.oil .econ-icon-box {
+    background: rgba(249, 115, 22, 0.16);
+    border: 1px solid rgba(251, 146, 60, 0.35);
     color: #fb923c;
-    border-color: rgba(251, 146, 60, 0.28);
+  }
+  .econ-pill.oil .econ-delta {
+    color: #fb923c;
   }
   .econ-pill.gold {
+    border-color: rgba(251, 191, 36, 0.35);
+  }
+  .econ-pill.gold .econ-icon-box {
+    background: rgba(234, 179, 8, 0.16);
+    border: 1px solid rgba(251, 191, 36, 0.38);
     color: #fbbf24;
-    border-color: rgba(251, 191, 36, 0.32);
+  }
+  .econ-pill.gold .econ-delta {
+    color: #fbbf24;
   }
   .econ-val {
     color: #f8fafc;
+    font-size: 0.76rem;
     font-variant-numeric: tabular-nums;
-    font-weight: 800;
-  }
-  .econ-pill.money .econ-val {
-    font-size: 0.84rem;
   }
   .econ-delta {
-    font-size: 0.68rem;
+    font-size: 0.62rem;
     font-weight: 700;
-    opacity: 0.95;
-    background: rgba(52, 211, 153, 0.14);
-    padding: 1px 4px;
-    border-radius: 3px;
-    color: #34d399;
   }
 
-  /* Map Mode Bar & Overlays (HEGEM-62) */
+  /* Structured Map Mode & Camera Control Deck (HEGEM-62) */
   .map-mode-bar {
     display: flex;
-    justify-content: space-between;
+    flex-direction: column;
+    gap: 0.35rem;
+    background: rgba(6, 11, 22, 0.72);
+    border: 1px solid rgba(148, 163, 184, 0.18);
+    border-radius: 7px;
+    padding: 0.45rem 0.52rem;
+  }
+  .mode-row {
+    display: flex;
     align-items: center;
+    justify-content: space-between;
     gap: 0.45rem;
-    flex-wrap: wrap;
-    padding-top: 0.25rem;
+  }
+  .mode-row.camera-row {
+    padding-top: 0.32rem;
     border-top: 1px solid rgba(148, 163, 184, 0.14);
   }
-  .mode-group {
+  .group-label {
     display: inline-flex;
     align-items: center;
-    gap: 0.3rem;
-  }
-  .group-label {
-    font-size: 0.58rem;
+    gap: 0.28rem;
+    font-size: 0.6rem;
     text-transform: uppercase;
-    letter-spacing: 0.05em;
-    color: #64748b;
-    font-weight: 700;
+    letter-spacing: 0.06em;
+    color: #94a3b8;
+    font-weight: 800;
     font-family: var(--font-tactical);
     user-select: none;
+    flex-shrink: 0;
   }
   .segmented-control,
   .toggle-buttons {
     display: inline-flex;
-    gap: 0.2rem;
+    gap: 0.25rem;
     align-items: center;
-  }
-  .mode-divider {
-    width: 1px;
-    height: 16px;
-    background: rgba(148, 163, 184, 0.2);
+    flex-wrap: wrap;
+    justify-content: flex-end;
   }
   .mode-btn {
-    background: rgba(15, 23, 42, 0.8);
-    border: 1px solid rgba(148, 163, 184, 0.25);
-    color: #94a3b8;
+    background: linear-gradient(
+      180deg,
+      rgba(20, 30, 52, 0.88) 0%,
+      rgba(10, 16, 30, 0.94) 100%
+    );
+    border: 1px solid rgba(148, 163, 184, 0.26);
+    color: #cbd5e1;
     font-family: var(--font-tactical);
-    font-size: 0.66rem;
+    font-size: 0.67rem;
     font-weight: 700;
-    padding: 0.2rem 0.42rem;
-    border-radius: 3px;
+    padding: 0.26rem 0.5rem;
+    border-radius: 5px;
     cursor: pointer;
     display: inline-flex;
     align-items: center;
-    gap: 0.25rem;
+    gap: 0.28rem;
     transition: all 0.15s ease;
   }
   .mode-btn:hover {
     color: #f8fafc;
-    border-color: rgba(234, 179, 8, 0.4);
+    border-color: rgba(234, 179, 8, 0.48);
   }
   .mode-btn.active {
-    background: rgba(234, 179, 8, 0.2);
+    background: linear-gradient(
+      180deg,
+      rgba(234, 179, 8, 0.24) 0%,
+      rgba(161, 98, 7, 0.2) 100%
+    );
     border-color: #fde047;
     color: #fef08a;
+    box-shadow: 0 0 8px rgba(234, 179, 8, 0.2);
   }
   .mode-btn.overlay-btn.active {
-    background: rgba(56, 189, 248, 0.16);
+    background: rgba(56, 189, 248, 0.2);
     border-color: #38bdf8;
-    color: #bae6fd;
+    color: #e0f2fe;
+    box-shadow: 0 0 8px rgba(56, 189, 248, 0.2);
   }
   .mode-btn.clear-layers-btn {
-    font-size: 0.6rem;
-    padding: 0.18rem 0.35rem;
-    border: 1px dashed rgba(248, 113, 113, 0.4);
+    font-size: 0.62rem;
+    padding: 0.24rem 0.42rem;
+    border: 1px dashed rgba(248, 113, 113, 0.45);
     color: #fca5a5;
-    background: rgba(15, 23, 42, 0.6);
+    background: rgba(127, 29, 29, 0.2);
   }
   .mode-btn.clear-layers-btn:hover {
     border-color: #ef4444;
     color: #fee2e2;
-    background: rgba(239, 68, 68, 0.2);
+    background: rgba(239, 68, 68, 0.28);
   }
   .mode-btn.clean-mode-tab {
     display: inline-flex;
     align-items: center;
-    gap: 0.25rem;
+    gap: 0.3rem;
   }
   .zoom-cluster {
-    display: flex;
-    gap: 0.2rem;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+  }
+  .tool-btn {
+    background: linear-gradient(
+      180deg,
+      rgba(20, 30, 52, 0.9) 0%,
+      rgba(10, 16, 30, 0.96) 100%
+    );
+    border: 1px solid rgba(148, 163, 184, 0.28);
+    color: #e2e8f0;
+    font-family: var(--font-mono);
+    font-size: 0.66rem;
+    font-weight: 800;
+    min-width: 28px;
+    height: 26px;
+    padding: 0 0.4rem;
+    border-radius: 5px;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.22rem;
+    transition: all 0.15s ease;
+  }
+  .tool-btn:hover {
+    border-color: #fde047;
+    color: #fef08a;
+    background: rgba(234, 179, 8, 0.16);
   }
   .contextual-map-legend {
     display: flex;
     align-items: center;
     gap: 0.5rem;
-    padding: 0.15rem 0.5rem;
-    background: rgba(15, 23, 42, 0.75);
-    border: 1px solid rgba(148, 163, 184, 0.15);
-    border-radius: 3px;
-    font-size: 0.62rem;
+    padding: 0.22rem 0.55rem;
+    background: rgba(8, 13, 25, 0.85);
+    border: 1px solid rgba(148, 163, 184, 0.18);
+    border-radius: 5px;
+    font-size: 0.63rem;
     font-family: var(--font-tactical);
-    color: #94a3b8;
+    color: #cbd5e1;
     animation: fadeIn 0.15s ease;
   }
   .legend-chip {
     display: inline-flex;
     align-items: center;
     gap: 0.3rem;
-    font-weight: 600;
+    font-weight: 700;
   }
   .chip-dot {
     width: 6px;
@@ -3265,26 +4461,6 @@
     background: #f59e0b;
     box-shadow: 0 0 4px #f59e0b;
   }
-  .tool-btn {
-    background: rgba(15, 23, 42, 0.8);
-    border: 1px solid rgba(148, 163, 184, 0.25);
-    color: #cbd5e1;
-    font-family: var(--font-mono);
-    font-size: 0.68rem;
-    font-weight: 700;
-    min-width: 24px;
-    height: 22px;
-    padding: 0 0.3rem;
-    border-radius: 3px;
-    cursor: pointer;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-  }
-  .tool-btn:hover {
-    border-color: #fde047;
-    color: #fef08a;
-  }
 
   /* Floating Drawers */
   .floating-drawer {
@@ -3293,47 +4469,57 @@
     right: 0;
     background: linear-gradient(
       180deg,
-      rgba(11, 18, 33, 0.97) 0%,
-      rgba(6, 11, 21, 0.98) 100%
+      rgba(9, 15, 29, 0.98) 0%,
+      rgba(5, 9, 18, 0.99) 100%
     );
-    border: 1px solid rgba(212, 175, 55, 0.45);
-    border-radius: 7px;
-    box-shadow: 0 16px 40px rgba(0, 0, 0, 0.9);
-    backdrop-filter: blur(16px);
-    padding: 0.65rem 0.8rem;
+    border: 1px solid rgba(234, 179, 8, 0.45);
+    border-radius: 9px;
+    box-shadow:
+      0 20px 44px rgba(0, 0, 0, 0.92),
+      0 0 24px rgba(234, 179, 8, 0.1);
+    backdrop-filter: blur(18px);
+    padding: 0.72rem 0.85rem;
     z-index: 50;
     display: flex;
     flex-direction: column;
-    gap: 0.45rem;
+    gap: 0.48rem;
   }
   .drawer-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
     gap: 0.5rem;
-    border-bottom: 1px solid rgba(148, 163, 184, 0.15);
-    padding-bottom: 0.35rem;
+    border-bottom: 1px solid rgba(234, 179, 8, 0.2);
+    padding-bottom: 0.38rem;
   }
   .drawer-header h4 {
     margin: 0;
+    font-family: var(--font-tactical);
     font-size: 0.78rem;
+    font-weight: 800;
+    letter-spacing: 0.04em;
     color: #fef08a;
     display: flex;
     align-items: center;
-    gap: 0.35rem;
+    gap: 0.38rem;
   }
   .btn-close {
-    background: none;
-    border: none;
-    color: #94a3b8;
-    font-size: 0.8rem;
+    width: 24px;
+    height: 24px;
+    border-radius: 5px;
+    background: rgba(15, 23, 42, 0.85);
+    border: 1px solid rgba(148, 163, 184, 0.25);
+    color: #cbd5e1;
     cursor: pointer;
     display: inline-flex;
     align-items: center;
     justify-content: center;
+    transition: all 0.15s ease;
   }
   .btn-close:hover {
-    color: #f8fafc;
+    color: #fca5a5;
+    border-color: rgba(239, 68, 68, 0.5);
+    background: rgba(127, 29, 29, 0.3);
   }
 
   /* Music Drawer */
@@ -4058,21 +5244,7 @@
     }
   }
 
-  @media (max-width: 960px) {
-    .hq-economy-bar {
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: 0.3rem;
-    }
-    .econ-pill.money {
-      font-size: 0.82rem;
-    }
-  }
-
   @media (max-width: 820px) {
-    .hq-economy-bar {
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: 0.25rem;
-    }
     .top-center-banner {
       max-width: 300px;
       padding: 0.35rem 0.55rem;
@@ -4082,20 +5254,6 @@
     }
     .tc-directive {
       font-size: 0.66rem;
-    }
-  }
-
-  @media (max-width: 600px) {
-    .hq-economy-bar {
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: 0.2rem;
-    }
-    .econ-pill {
-      font-size: 0.70rem;
-      padding: 0.2rem 0.28rem;
-    }
-    .econ-pill.money {
-      font-size: 0.76rem;
     }
   }
 </style>

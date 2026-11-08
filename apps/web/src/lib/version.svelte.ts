@@ -1,4 +1,5 @@
 import { HEGEMONIA_VERSION } from "@hegemonia/shared";
+import { API_BASE } from "./api.js";
 
 declare const __COMMIT_HASH__: string | undefined;
 
@@ -68,7 +69,8 @@ export class VersionGuardState {
 
   async checkViaApi(inActiveBattle = false) {
     try {
-      const res = await fetch("/api/version", {
+      const endpoint = `${API_BASE}/api/version`;
+      const res = await fetch(endpoint, {
         cache: "no-store",
         headers: { "Cache-Control": "no-cache", Pragma: "no-cache" },
       });

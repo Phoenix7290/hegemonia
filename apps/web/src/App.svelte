@@ -46,13 +46,13 @@
     type LobbyPlayerView,
   } from "./components/CommandCenter.svelte";
   import Icon from "./components/Icon.svelte";
+  import ObjectiveSelectionModal from "./components/ObjectiveSelectionModal.svelte";
   import VictoryModal from "./components/VictoryModal.svelte";
   import WarJournal from "./components/WarJournal.svelte";
   import ReconInspector from "./components/ReconInspector.svelte";
   import ActionConsole from "./components/ActionConsole.svelte";
   import TopBar from "./components/TopBar.svelte";
   import TacticalMap, { wrapCamX, clampCamY } from "./components/TacticalMap.svelte";
-  import TurnStartBanner from "./components/TurnStartBanner.svelte";
   import {
     loadMapPreferences,
     saveMapPreferences,
@@ -84,7 +84,11 @@
   function getOrCreateToken(): string {
     const saved = localStorage.getItem("hegemonia_token");
     if (saved) return saved;
-    const fresh = "plr_" + crypto.randomUUID();
+    const uuid =
+      typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+        ? crypto.randomUUID()
+        : Math.random().toString(36).slice(2) + Date.now().toString(36);
+    const fresh = "plr_" + uuid;
     localStorage.setItem("hegemonia_token", fresh);
     return fresh;
   }
@@ -174,6 +178,7 @@
     if (!terr) return;
     selectedFromId = territoryId;
     selectedToId = null;
+    inspectedTerritoryId = territoryId;
 
     if (autoCameraFocus) {
       const [cx, cy] = terr.center;
@@ -195,6 +200,7 @@
   // Map Selection & Hover Intelligence State
   let selectedFromId = $state<string | null>(null);
   let selectedToId = $state<string | null>(null);
+  let inspectedTerritoryId = $state<string | null>(null);
   let hoveredTerritoryId = $state<string | null>(null);
   let sliderArmies = $state(1);
   let selectedUnits = $state<UnitCounts>(emptyUnitCounts());
@@ -214,6 +220,7 @@
     sendAction,
     selectTerritory: (id) => {
       selectedFromId = id;
+      inspectedTerritoryId = id;
     },
   });
 
@@ -340,7 +347,7 @@
 
   let inspectedTerritory = $derived.by(() => {
     if (!game) return null;
-    const targetId = hoveredTerritoryId ?? selectedToId ?? selectedFromId;
+    const targetId = selectedToId ?? selectedFromId ?? inspectedTerritoryId;
     if (!targetId) return null;
     const def = territoryById.get(targetId);
     const state = game.territories[targetId];
@@ -439,6 +446,7 @@
     } else if (e.key === "Escape") {
       selectedFromId = null;
       selectedToId = null;
+      inspectedTerritoryId = null;
       activeRightDrawer = null;
       showHudManager = false;
     }
@@ -472,6 +480,7 @@
   }
 
   function resetRoomState() {
+    connecting = false;
     communications.detach();
     connectedRoom = null;
     roomStatus = "disconnected";
@@ -487,6 +496,7 @@
     reconnectAttempts = 0;
     selectedFromId = null;
     selectedToId = null;
+    inspectedTerritoryId = null;
     activeRightDrawer = null;
     showHudManager = false;
     competitionMode = "custom";
@@ -623,15 +633,16 @@
     generation: number,
     reconnecting: boolean
   ): Promise<boolean> {
-    const client = new Client(
-      resolveWebSocketUrl(window.location, import.meta.env.VITE_WS_URL as string | undefined)
-    );
-    const token = getOrCreateToken();
-    const cleanName = (auth.user?.displayName || playerName).trim() || "General";
     connecting = true;
     isReconnecting = reconnecting;
 
     try {
+      const client = new Client(
+        resolveWebSocketUrl(window.location, import.meta.env.VITE_WS_URL as string | undefined)
+      );
+      const token = getOrCreateToken();
+      const cleanName = (auth.user?.displayName || playerName).trim() || "General";
+
       const room = await retryWithBackoff(
         () => connectToRoom<Room>(client, {
           create: createNew,
@@ -851,6 +862,13 @@
     });
   }
 
+  function handleExpandInfrastructure(territoryId: string) {
+    sendAction({
+      type: "expand_infrastructure",
+      territoryId,
+    });
+  }
+
   const UNIT_BUILDING_REQUIREMENTS: Partial<Record<UnitType, BuildingType>> = {
     tank: "industry",
     artillery: "industry",
@@ -863,8 +881,23 @@
     const territory = game.territories[territoryId];
     const definition = territoryById.get(territoryId);
     if (!territory || !definition) return false;
+    if (
+      myPlayerState.doctrineId === "mass_assault" &&
+      (unitType === "tank" || unitType === "artillery" || unitType === "aircraft")
+    ) {
+      return false;
+    }
     const requirement = UNIT_BUILDING_REQUIREMENTS[unitType];
-    if (requirement && !hasTerritoryBuilding(territory, requirement)) return false;
+    if (requirement) {
+      let hasReq = hasTerritoryBuilding(territory, requirement);
+      if (unitType === "tank" || unitType === "artillery") {
+        hasReq = hasReq || hasTerritoryBuilding(territory, "military_factory");
+      }
+      if (unitType === "navy" && myPlayerState.doctrineId === "extermination") {
+        hasReq = true;
+      }
+      if (!hasReq) return false;
+    }
     if (unitType === "navy" && definition.isCoastal === false) return false;
     const cost = UNIT_COSTS[unitType];
     return (
@@ -947,8 +980,11 @@
   }
 
   function onTerritoryClick(terrId: string) {
-    if (!game || !isMyTurn || game.pendingConquest) return;
+    if (!game) return;
     sound.playClick();
+    inspectedTerritoryId = terrId;
+
+    if (!isMyTurn || game.pendingConquest) return;
     const tState = game.territories[terrId];
     const tDef = territoryById.get(terrId)!;
 
@@ -958,6 +994,8 @@
         if ((myPlayerState?.unplacedArmies ?? 0) > 0) {
           sliderArmies = myPlayerState!.unplacedArmies;
         }
+      } else {
+        selectedFromId = null;
       }
       return;
     }
@@ -1036,9 +1074,16 @@
     selectedToId = null;
   }
 
+  function closeTerritoryInspector() {
+    inspectedTerritoryId = null;
+    selectedFromId = null;
+    selectedToId = null;
+  }
+
   function confirmDeploy() {
-    if (!selectedFromId) return;
-    sendAction({ type: "deploy", territoryId: selectedFromId, armies: sliderArmies });
+    if (!selectedFromId || !myPlayerState || (myPlayerState.unplacedArmies ?? 0) <= 0) return;
+    const deployCount = Math.min(Math.max(1, sliderArmies), myPlayerState.unplacedArmies);
+    sendAction({ type: "deploy", territoryId: selectedFromId, armies: deployCount });
     selectedFromId = null;
   }
 
@@ -1193,13 +1238,14 @@
       {onTerritoryClick}
     />
 
-    <!-- TURN START SUPREME COMMAND BRIEFING (HEGEM-102) -->
-    <TurnStartBanner
-      {game}
-      {myPlayerId}
-      {myPlayerState}
-      {isMyTurn}
-    />
+    <!-- ROUND 1 SECRET OBJECTIVE SELECTION MODAL (HEGEM-117) -->
+    {#if myPlayerState?.pendingObjectiveChoice && myPlayerState.availableObjectives && myPlayerState.availableObjectives.length > 0}
+      <ObjectiveSelectionModal
+        availableObjectives={myPlayerState.availableObjectives}
+        doctrineId={myPlayerState.doctrineId}
+        onSelect={(objectiveId) => sendAction({ type: "choose_objective", objectiveId })}
+      />
+    {/if}
 
     <!-- POST-VICTORY DOSSIER MODAL (HEGEM-9) -->
     {#if game.winnerId}
@@ -1247,7 +1293,7 @@
         {sendAction}
       />
 
-      <!-- ↙ BOTTOM-LEFT: LIVE TERRITORY RECON INSPECTOR & CONTROLS HINT -->
+      <!-- ↖ LEFT SLIDE-OVER TERRITORY COMMAND DOSSIER & BOTTOM-LEFT CONTROLS HINT -->
       <ReconInspector
         {game}
         {myPlayerId}
@@ -1258,10 +1304,13 @@
         hudVisible={hudVisibility.recon}
         {handleBuildStructure}
         {handleDemolishStructure}
+        {handleExpandInfrastructure}
         {handleRecruitUnit}
         {canRecruitUnit}
         {getRecruitRequirement}
         {getTerritoryName}
+        onClose={closeTerritoryInspector}
+        onSelectCapital={(territoryId) => sendAction({ type: "select_capital", territoryId })}
       />
 
       <!-- ⬇ BOTTOM-CENTER: TACTICAL ORDER CONSOLE & 1-2-3 PHASE STEPPER -->
@@ -1341,7 +1390,7 @@
     pointer-events: none;
     z-index: 20;
     display: grid;
-    grid-template-columns: 335px 1fr 365px;
+    grid-template-columns: 355px 1fr 385px;
     grid-template-rows: auto 1fr auto;
     padding: 0.75rem;
     gap: 0.65rem;
