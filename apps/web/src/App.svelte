@@ -12,8 +12,10 @@
     calculateObjectiveProgress,
     emptyUnitCounts,
     getMovedInUnits,
+    getReachableManeuverTargets,
     getTerritoryUnits,
     hasTerritoryBuilding,
+    isConnectedByFriendlyPath,
     selectUnits,
     subtractUnits,
     totalUnits,
@@ -978,32 +980,49 @@
     }
 
     if (game.phase === "maneuver") {
-      const fromT = selectedFromId ? game.territories[selectedFromId] : null;
-      const isAirliftTarget =
-        Boolean(selectedFromId) &&
-        terrId !== selectedFromId &&
-        tState.ownerId === myPlayerId &&
-        Boolean(fromT && hasTerritoryBuilding(fromT, "airfield")) &&
-        hasTerritoryBuilding(tState, "airfield") &&
-        !fromT?.airliftedThisTurn;
+      if (selectedFromId === terrId) {
+        selectedFromId = null;
+        selectedToId = null;
+        selectedUnits = emptyUnitCounts();
+        return;
+      }
 
-      if (
-        selectedFromId &&
-        terrId !== selectedFromId &&
-        tState.ownerId === myPlayerId &&
-        (tDef.neighbors.includes(selectedFromId) || isAirliftTarget)
-      ) {
-        selectedToId = terrId;
-        if (isAirliftTarget && fromT) {
-          const available = subtractUnits(getTerritoryUnits(fromT), getMovedInUnits(fromT));
-          sliderArmies = Math.max(
-            1,
-            Math.min(available.infantry, totalUnits(available) - 1)
-          );
-        } else {
-          resetManeuverSelection();
+      if (selectedToId === terrId) {
+        selectedFromId = terrId;
+        selectedToId = null;
+        resetManeuverSelection();
+        sliderArmies = Math.max(1, tState.armies - tState.movedInArmies - 1);
+        return;
+      }
+
+      if (selectedFromId && myPlayerId) {
+        const reachable = getReachableManeuverTargets(game, selectedFromId, myPlayerId);
+        if (reachable.has(terrId)) {
+          selectedToId = terrId;
+          const fromT = game.territories[selectedFromId];
+          const toT = game.territories[terrId];
+          const isAdjacent = territoryById.get(selectedFromId)?.neighbors.includes(terrId);
+          const isConnected = isAdjacent || isConnectedByFriendlyPath(game, selectedFromId, terrId, myPlayerId);
+          const isAirliftTarget =
+            !isConnected &&
+            Boolean(fromT && hasTerritoryBuilding(fromT, "airfield")) &&
+            hasTerritoryBuilding(toT, "airfield") &&
+            !fromT?.airliftedThisTurn;
+
+          if (isAirliftTarget && fromT) {
+            const available = subtractUnits(getTerritoryUnits(fromT), getMovedInUnits(fromT));
+            sliderArmies = Math.max(
+              1,
+              Math.min(available.infantry, totalUnits(available) - 1)
+            );
+          } else {
+            resetManeuverSelection();
+          }
+          return;
         }
-      } else if (tState.ownerId === myPlayerId) {
+      }
+
+      if (tState.ownerId === myPlayerId) {
         selectedFromId = terrId;
         selectedToId = null;
         resetManeuverSelection();
@@ -1075,9 +1094,10 @@
   }
 
   function confirmManeuver() {
-    if (!selectedFromId || !selectedToId) return;
+    if (!selectedFromId || !selectedToId || !game || !myPlayerId) return;
     const isAdjacent = territoryById.get(selectedFromId)?.neighbors.includes(selectedToId);
-    if (isAdjacent) {
+    const isConnected = isAdjacent || isConnectedByFriendlyPath(game, selectedFromId, selectedToId, myPlayerId);
+    if (isConnected) {
       if (selectedUnitTotal < 1) return;
       sendAction({
         type: "maneuver",
@@ -1146,8 +1166,10 @@
       onJoinRoom={() => joinOrCreateRoom(false)}
       onLeaveRoom={leaveCurrentRoom}
       onChooseColor={(color) => connectedRoom?.send("choose_color", { color })}
+      onChooseDoctrine={(doctrineId) => connectedRoom?.send("choose_doctrine", { doctrineId })}
       onAddBot={() => connectedRoom?.send("add_bot")}
       onRemoveBot={(token) => connectedRoom?.send("remove_bot", { token })}
+      onSetReady={(ready) => connectedRoom?.send("set_ready", { ready })}
       onStartGame={() => connectedRoom?.send("start_game")}
     />
   {:else if game}
