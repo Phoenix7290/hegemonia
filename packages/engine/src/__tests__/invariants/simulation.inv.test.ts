@@ -260,6 +260,12 @@ describe("QA Layer 1: Headless Simulation & Invariant Testing", () => {
 
     // Manually encircle Alpha's frontline territories in Round 2
     state.round = 2;
+    state.players[0].objective = {
+      id: "obj_test_prevent_instant_win",
+      descriptionPt: "Objetivo de Teste",
+      descriptionEn: "Test Objective",
+      rule: { type: "specific_territories", territoryIds: ["japao", "vietna", "india"] },
+    };
     state.players[0].capitalTerritoryId = "brasil";
     state.players[0].unplacedArmies = 5;
     state.phase = "deploy";

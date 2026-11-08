@@ -269,3 +269,72 @@ describe("HEGEM-97: Maneuver Redesign with Visual Route & Agile Fast Actions", (
     expect(code).toContain(".maneuver-dest-pulse");
   });
 });
+
+describe("Left Slide-Over Territory Command & Military Engineering Dossier", () => {
+  it("verifies ReconInspector slides in from the left overlaying the top-left panel with structured wargame cards", () => {
+    const reconPath = resolve(__dirname, "../components/ReconInspector.svelte");
+    const code = readFileSync(reconPath, "utf-8");
+
+    expect(code).toContain('class="recon-slide-drawer"');
+    expect(code).toContain('data-testid="territory-command-panel"');
+    expect(code).toContain("grid-row: 1 / span 3;");
+    expect(code).toContain("reconSlideInLeft");
+    expect(code).toContain('class="btn-recon-close"');
+    expect(code).toContain('class="recon-treasury-bar"');
+    expect(code).toContain('class="recon-empty-slot"');
+  });
+
+  it("verifies TopBar and WarJournal use structured wargame cards, icon-backed telemetry, and brass corner brackets", () => {
+    const topBarPath = resolve(__dirname, "../components/TopBar.svelte");
+    const topBarCode = readFileSync(topBarPath, "utf-8");
+
+    // Top-left structured header, icon-backed commander stats, and brass brackets
+    expect(topBarCode).toContain('class="brand-emblem-frame"');
+    expect(topBarCode).toContain('class="generals-roster-box"');
+    expect(topBarCode).toContain('class="stat-pill stat-terr"');
+    expect(topBarCode).toContain('class="stat-pill stat-div"');
+    expect(topBarCode).toContain('class="stat-pill stat-cards"');
+
+    // Top-right structured HQ header, 2-row command deck, and 3-row map mode bar without dangling dividers
+    expect(topBarCode).toContain('class="hq-header-bar"');
+    expect(topBarCode).toContain('class="hq-command-grid"');
+    expect(topBarCode).toContain('class="hq-primary-row"');
+    expect(topBarCode).toContain('class="hq-secondary-row"');
+    expect(topBarCode).toContain('class="econ-icon-box"');
+    expect(topBarCode).toContain('class="mode-row camera-row"');
+    expect(topBarCode).not.toContain('class="mode-divider"');
+
+    // WarJournal structured dispatch entries and brass corner brackets
+    const journalPath = resolve(__dirname, "../components/WarJournal.svelte");
+    const journalCode = readFileSync(journalPath, "utf-8");
+    expect(journalCode).toContain('class="card-corner tl"');
+    expect(journalCode).toContain('class="j-tab-icon"');
+    expect(journalCode).toContain("scrollerEl.scrollTop = scrollerEl.scrollHeight");
+
+    // TopBar doctrine crest in generals table and TacticalAlerts action popups in top-center (HEGEM-130)
+    expect(topBarCode).toContain("<DoctrineCrest");
+    expect(topBarCode).toContain('class="top-center-banner"');
+    expect(topBarCode).toContain("<TacticalAlerts");
+    expect(topBarCode).not.toContain('class="btn-tc-mobilization"');
+  });
+
+  it("verifies ObjectiveSelectionModal renders as a floating, collapsible, non-blocking tactical HUD toast", () => {
+    const objModalPath = resolve(__dirname, "../components/ObjectiveSelectionModal.svelte");
+    const objCode = readFileSync(objModalPath, "utf-8");
+
+    // Floating non-blocking toast architecture (no screen-dimming fixed backdrop)
+    expect(objCode).toContain('class="objective-toast-wrapper"');
+    expect(objCode).toContain('class="objective-toast-card"');
+    expect(objCode).toContain('class="objective-toast-pill-bar"');
+    expect(objCode).toContain("pointer-events: none;");
+    expect(objCode).toContain("pointer-events: auto;");
+    expect(objCode).not.toContain("objective-modal-backdrop");
+
+    // Collapsible inspection and expansion controls
+    expect(objCode).toContain('class="btn-minimize-toast"');
+    expect(objCode).toContain('class="pill-expand-btn"');
+    expect(objCode).toContain('class="confirm-objective-btn"');
+    expect(objCode).toContain('class="card-corner tl"');
+    expect(objCode).toContain("Compatibilidade Tática Aprovada");
+  });
+});

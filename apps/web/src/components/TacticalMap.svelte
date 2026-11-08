@@ -91,7 +91,11 @@
     blue: "#3b82f6",
     red: "#ef4444",
     green: "#10b981",
-    yellow: "#f59e0b",
+    dark_green: "#15803d",
+    yellow: "#facc15",
+    orange: "#f97316",
+    pink: "#ec4899",
+    purple: "#a855f7",
     black: "#21262B",
     white: "#F0F0F5",
   };
@@ -1024,11 +1028,23 @@
                         <rect width="13" height="12" fill="#b91c1c" />
                         <polygon points="6.5,2.5 9.5,6 6.5,9.5 3.5,6" fill="#facc15" />
                       {:else if owner.color === "green"}
-                        <rect width="13" height="12" fill="#047857" />
+                        <rect width="13" height="12" fill="#10b981" />
                         <polygon points="0,0 6,6 0,12" fill="#fcd34d" />
+                      {:else if owner.color === "dark_green"}
+                        <rect width="13" height="12" fill="#14532d" />
+                        <polygon points="6.5,2 9.5,6 6.5,10 3.5,6" fill="#86efac" />
                       {:else if owner.color === "yellow"}
-                        <rect width="13" height="12" fill="#d97706" />
+                        <rect width="13" height="12" fill="#eab308" />
                         <circle cx="6.5" cy="6" r="2.8" fill="#fef08a" />
+                      {:else if owner.color === "orange"}
+                        <rect width="13" height="12" fill="#ea580c" />
+                        <circle cx="6.5" cy="6" r="2.8" fill="#ffedd5" />
+                      {:else if owner.color === "pink"}
+                        <rect width="13" height="12" fill="#db2777" />
+                        <polygon points="6.5,2.5 9.5,6 6.5,9.5 3.5,6" fill="#fdf2f8" />
+                      {:else if owner.color === "purple"}
+                        <rect width="13" height="12" fill="#7e22ce" />
+                        <circle cx="6.5" cy="6" r="2.8" fill="#f3e8ff" />
                       {:else if owner.color === "black"}
                         <rect width="13" height="12" fill="#21262B" />
                         <path d="M0,6 H13 M6.5,0 V12" stroke="#e2e8f0" stroke-width="2" />

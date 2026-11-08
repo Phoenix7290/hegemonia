@@ -263,76 +263,109 @@ export const ICON_CATALOG: Record<IconName, readonly IconShape[]> = {
   ],
 
   // --- Military Units & Doctrines ---
+  // Infantry: Combat helmet dome with rim + tactical division chevron badge
   infantry: [
-    { tag: "circle", attrs: { cx: 12, cy: 5, r: 2.5 } },
-    { tag: "path", attrs: { d: "M8 21v-5l-2-3 2-5h8l2 5-2 3v5M10 21l2-7 2 7M7 11h10" } },
+    { tag: "path", attrs: { d: "M4 13a8 8 0 0 1 16 0c0 1.2-.8 2-2 2H6c-1.2 0-2-.8-2-2z" } },
+    { tag: "path", attrs: { d: "M2.5 13h19" } },
+    { tag: "path", attrs: { d: "M7 15l2 4.5h6L17 15" } },
+    { tag: "polyline", attrs: { points: "9.5 10 12 7.5 14.5 10" } },
   ],
+  // Tank: Armored battle tank with sloped hull, road wheels inside track, turret & heavy barrel
   tank: [
-    { tag: "path", attrs: { d: "M3 15h18v4H3zM5 15l2-5h8l3 5M9 10V7h5v3M14 8h7" } },
-    { tag: "circle", attrs: { cx: 7, cy: 19, r: 2 } },
-    { tag: "circle", attrs: { cx: 17, cy: 19, r: 2 } },
+    { tag: "rect", attrs: { x: 2.5, y: 14, width: 19, height: 5.5, rx: 2.75 } },
+    { tag: "path", attrs: { d: "M5.5 14l2-4.5h8l2.5 4.5" } },
+    { tag: "path", attrs: { d: "M8.5 9.5V7h4.5v2.5" } },
+    { tag: "line", attrs: { x1: 13, y1: 8.2, x2: 22, y2: 8.2 } },
+    { tag: "circle", attrs: { cx: 6.5, cy: 16.75, r: 1.1 } },
+    { tag: "circle", attrs: { cx: 12, cy: 16.75, r: 1.1 } },
+    { tag: "circle", attrs: { cx: 17.5, cy: 16.75, r: 1.1 } },
   ],
+  // Artillery: Field howitzer cannon with gun shield, elevated barrel, recoil cradle & carriage wheel
   artillery: [
-    { tag: "circle", attrs: { cx: 8, cy: 18, r: 3 } },
-    { tag: "path", attrs: { d: "M8 15l5-7 8 3-1 3-8-2M3 21h18M13 8l2-4 5 2" } },
+    { tag: "circle", attrs: { cx: 8.5, cy: 17, r: 3.5 } },
+    { tag: "circle", attrs: { cx: 8.5, cy: 17, r: 1 } },
+    { tag: "path", attrs: { d: "M2 20.5h6.5" } },
+    { tag: "path", attrs: { d: "M10.5 14.5 20.5 6.5l1.5 2-9.5 8" } },
+    { tag: "path", attrs: { d: "M7 13.5l3-4.5 2.5 1.5" } },
+    { tag: "line", attrs: { x1: 2, y1: 20.5, x2: 22, y2: 20.5 } },
   ],
+  // Aircraft: Supersonic swept-wing tactical fighter jet silhouette
   aircraft: [
     {
       tag: "path",
       attrs: {
-        d: "M17.8 19.2 16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2z",
+        d: "M12 2.5 14 8l7.5 4.5v2L14 12.5l-.5 5 3 2v1.5L12 19.5 7.5 21v-1.5l3-2-.5-5L2.5 14.5v-2L10 8 12 2.5z",
       },
     },
   ],
+  // Airfield: Military airbase runway perspective with control tower & radar beacon
   airfield: [
-    {
-      tag: "path",
-      attrs: {
-        d: "M17.8 19.2 16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2z",
-      },
-    },
+    { tag: "path", attrs: { d: "M3 20 7.5 9h9L21 20" } },
+    { tag: "line", attrs: { x1: 12, y1: 11, x2: 12, y2: 13.5 } },
+    { tag: "line", attrs: { x1: 12, y1: 16, x2: 12, y2: 19 } },
+    { tag: "path", attrs: { d: "M9 9V5.5h6V9" } },
+    { tag: "line", attrs: { x1: 8, y1: 5.5, x2: 16, y2: 5.5 } },
+    { tag: "line", attrs: { x1: 12, y1: 3, x2: 12, y2: 5.5 } },
   ],
+  // Navy: Armored naval destroyer / battleship profile with hull, bridge mast & gun turret
   navy: [
-    { tag: "circle", attrs: { cx: 12, cy: 5, r: 3 } },
-    { tag: "line", attrs: { x1: 12, y1: 22, x2: 12, y2: 8 } },
-    { tag: "path", attrs: { d: "M5 12H2a10 10 0 0 0 20 0h-3" } },
+    { tag: "path", attrs: { d: "M2 15h20l-2.5 4.5H4.5L2 15z" } },
+    { tag: "path", attrs: { d: "M6 15v-3.5h8V15" } },
+    { tag: "path", attrs: { d: "M9 11.5V8h3v3.5" } },
+    { tag: "line", attrs: { x1: 10.5, y1: 5.5, x2: 10.5, y2: 8 } },
+    { tag: "line", attrs: { x1: 14, y1: 13, x2: 18.5, y2: 11.5 } },
   ],
+  // Port: Naval dockyard with harbor pier, gantry crane & maritime wave
   port: [
-    { tag: "circle", attrs: { cx: 12, cy: 5, r: 3 } },
-    { tag: "line", attrs: { x1: 12, y1: 22, x2: 12, y2: 8 } },
-    { tag: "path", attrs: { d: "M5 12H2a10 10 0 0 0 20 0h-3" } },
+    { tag: "path", attrs: { d: "M3 19c2-1.5 4-1.5 6 0s4 1.5 6 0 4-1.5 6 0" } },
+    { tag: "path", attrs: { d: "M5 16V5h11l-3 4H5" } },
+    { tag: "line", attrs: { x1: 14, y1: 5, x2: 14, y2: 12 } },
+    { tag: "rect", attrs: { x: 11.5, y: 12, width: 5, height: 3.5, rx: 0.8 } },
+    { tag: "line", attrs: { x1: 3, y1: 16, x2: 10, y2: 16 } },
   ],
+  // Anchor: Classic naval maritime anchor
   anchor: [
-    { tag: "circle", attrs: { cx: 12, cy: 5, r: 3 } },
-    { tag: "line", attrs: { x1: 12, y1: 22, x2: 12, y2: 8 } },
-    { tag: "path", attrs: { d: "M5 12H2a10 10 0 0 0 20 0h-3" } },
+    { tag: "circle", attrs: { cx: 12, cy: 5, r: 2.5 } },
+    { tag: "line", attrs: { x1: 12, y1: 21, x2: 12, y2: 7.5 } },
+    { tag: "line", attrs: { x1: 8.5, y1: 10.5, x2: 15.5, y2: 10.5 } },
+    { tag: "path", attrs: { d: "M5 14H3a9 9 0 0 0 18 0h-2" } },
   ],
 
   // --- Territorial Buildings & Fortifications ---
+  // Market: Classical financial exchange facade with pediment & columns
   market: [
-    { tag: "path", attrs: { d: "M3 9l1.8-5h14.4L21 9" } },
-    { tag: "path", attrs: { d: "M3 9c0 1.7 1.3 3 3 3s3-1.3 3-3c0 1.7 1.3 3 3 3s3-1.3 3-3c0 1.7 1.3 3 3 3s3-1.3 3-3" } },
-    { tag: "path", attrs: { d: "M5 12v8h14v-8" } },
-    { tag: "line", attrs: { x1: 9, y1: 20, x2: 9, y2: 15 } },
-    { tag: "line", attrs: { x1: 15, y1: 20, x2: 15, y2: 15 } },
+    { tag: "polygon", attrs: { points: "12 3 21 8 3 8 12 3" } },
+    { tag: "line", attrs: { x1: 3, y1: 20, x2: 21, y2: 20 } },
+    { tag: "line", attrs: { x1: 6, y1: 8, x2: 6, y2: 17 } },
+    { tag: "line", attrs: { x1: 10, y1: 8, x2: 10, y2: 17 } },
+    { tag: "line", attrs: { x1: 14, y1: 8, x2: 14, y2: 17 } },
+    { tag: "line", attrs: { x1: 18, y1: 8, x2: 18, y2: 17 } },
+    { tag: "line", attrs: { x1: 4, y1: 17, x2: 20, y2: 17 } },
   ],
+  // Industry: Heavy military-industrial factory with twin smokestacks & sawtooth roof
   industry: [
     { tag: "path", attrs: { d: "M2 20h20" } },
-    { tag: "path", attrs: { d: "M4 20V10l5 3V10l5 3V6h5v14" } },
-    { tag: "line", attrs: { x1: 16, y1: 10, x2: 16, y2: 10.01 } },
-    { tag: "line", attrs: { x1: 16, y1: 14, x2: 16, y2: 14.01 } },
+    { tag: "path", attrs: { d: "M3 20V11l4.5 3V11l4.5 3V9h9v11" } },
+    { tag: "path", attrs: { d: "M14.5 9V4.5h2.5V9M18.5 9V6h2V9" } },
+    { tag: "rect", attrs: { x: 6, y: 16, width: 3, height: 4 } },
+    { tag: "line", attrs: { x1: 14.5, y1: 13.5, x2: 18.5, y2: 13.5 } },
+    { tag: "line", attrs: { x1: 14.5, y1: 16.5, x2: 18.5, y2: 16.5 } },
   ],
+  // Fortification (Nv. 1 Casamata): Reinforced concrete military bunker with firing embrasure
   fortification: [
-    { tag: "path", attrs: { d: "M3 20h18v-8l-3-2V5h-3v3h-2V5h-2v3H9V5H6v5l-3 2z" } },
-    { tag: "path", attrs: { d: "M10 20v-4a2 2 0 0 1 4 0v4" } },
+    { tag: "path", attrs: { d: "M2 19h20" } },
+    { tag: "path", attrs: { d: "M3.5 19v-6.5L7 8h10l3.5 4.5V19" } },
+    { tag: "rect", attrs: { x: 7.5, y: 12, width: 9, height: 2.8, rx: 0.8 } },
+    { tag: "path", attrs: { d: "M6 8V6h3v2M15 8V6h3v2" } },
   ],
   fortress: [
     { tag: "path", attrs: { d: "M3 20h18v-8l-3-2V5h-3v3h-2V5h-2v3H9V5H6v5l-3 2z" } },
     { tag: "path", attrs: { d: "M10 20v-4a2 2 0 0 1 4 0v4" } },
   ],
+  // Fortification L2 (Nv. 2 Fortaleza): Bastion citadel with crenellated twin towers & defense shield
   "fortification-l2": [
-    { tag: "path", attrs: { d: "M3 20h18v-8l-3-2V5h-3v3h-2V5h-2v3H9V5H6v5l-3 2z" } },
-    { tag: "path", attrs: { d: "M9 14l3-2.5 3 2.5v6H9z" } },
+    { tag: "path", attrs: { d: "M2.5 20h19v-8.5l-2.5-2V4.5h-3.5v3h-2v-3h-3v3h-2v-3H5v5l-2.5 2z" } },
+    { tag: "path", attrs: { d: "M12 11.5l3.5 1.5v2.5c0 2.2-3.5 3.5-3.5 3.5s-3.5-1.3-3.5-3.5V13l3.5-1.5z" } },
   ],
   military_factory: [
     { tag: "path", attrs: { d: "M2 20h20" } },

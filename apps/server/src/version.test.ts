@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { HEGEMONIA_VERSION, MATCHMAKING_RULESET_VERSION } from "@hegemonia/shared";
-import { createApp } from "./app.js";
+
+const hasDatabase = Boolean(process.env.TEST_DATABASE_URL || process.env.DATABASE_URL);
 
 describe("version handshake and cache busting API", () => {
   it("exports valid semantic version", () => {
@@ -8,7 +9,11 @@ describe("version handshake and cache busting API", () => {
     expect(MATCHMAKING_RULESET_VERSION).toMatch(/^\d+\.\d+\.\d+$/);
   });
 
-  it("serves /api/version with no-cache headers and current version payload", async () => {
+  it.skipIf(!hasDatabase)("serves /api/version with no-cache headers and current version payload", async () => {
+    if (!process.env.DATABASE_URL && process.env.TEST_DATABASE_URL) {
+      process.env.DATABASE_URL = process.env.TEST_DATABASE_URL;
+    }
+    const { createApp } = await import("./app.js");
     const app = await createApp();
     const server = app.listen(0);
     const address = server.address();

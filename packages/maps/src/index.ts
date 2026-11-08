@@ -1389,6 +1389,19 @@ export const V06_ASYMMETRIC_OBJECTIVES: ObjectiveCard[] = [
     allowedDoctrines: ["tall_sovereign", "defense_in_depth"],
   },
   {
+    id: "obj_sovereign_citadel",
+    descriptionPt:
+      "Cidadela Soberana (Bastião de Defesa): Manter pelo menos 3 territórios fortificados (com Fortaleza/Casamata) sem invasão durante 4 rodadas.",
+    descriptionEn:
+      "Sovereign Citadel (Defense Bastion): Maintain at least 3 fortified territories with Fortresses/Casemates unbreached for 4 rounds.",
+    rule: {
+      type: "fortified_bastion",
+      bastionTerritoryCount: 3,
+      roundsRequired: 4,
+    },
+    allowedDoctrines: ["tall_sovereign", "defense_in_depth"],
+  },
+  {
     id: "obj_pax_hegemonica",
     descriptionPt:
       "Pax Hegemonica (Pacificação Diplomática): Manter 1 Aliança Militar ativa e Pactos de Não-Agressão (NAP) com todos os outros generais vivos (ou sobreviver até a Rodada 30).",
@@ -1401,6 +1414,58 @@ export const V06_ASYMMETRIC_OBJECTIVES: ObjectiveCard[] = [
       fallbackRoundsSurvival: 30,
     },
     disallowedDoctrines: ["extermination"],
+  },
+  {
+    id: "obj_extermination_annihilation",
+    descriptionPt:
+      "Aniquilação Total (Doutrina de Extermínio): Eliminar no mínimo 2 generais adversários diretamente no campo de batalha (ou todos caso haja menos de 2 oponentes).",
+    descriptionEn:
+      "Total Annihilation (Extermination Doctrine): Directly eliminate at least 2 enemy generals on the battlefield (or all opponents if fewer than 2).",
+    rule: {
+      type: "eliminate_players",
+      minEliminations: 2,
+    },
+    allowedDoctrines: ["extermination"],
+  },
+  {
+    id: "obj_extermination_world_chaos",
+    descriptionPt:
+      "Apocalipse & Caos Global (Doutrina de Extermínio): Eliminar no mínimo 2 generais adversários e escalar a Tensão Mundial a 100%.",
+    descriptionEn:
+      "World Chaos & Apocalypse (Extermination Doctrine): Eliminate at least 2 enemy generals and escalate World Tension to 100%.",
+    rule: {
+      type: "eliminate_players",
+      minEliminations: 2,
+      requireWorldTension: 100,
+    },
+    allowedDoctrines: ["extermination"],
+  },
+  {
+    id: "obj_extermination_capital_scourge",
+    descriptionPt:
+      "Flagelo dos Continentes (Doutrina de Extermínio): Eliminar diretamente no mínimo 2 generais adversários e ocupar pelo menos 18 territórios devastados.",
+    descriptionEn:
+      "Continent Scourge (Extermination Doctrine): Directly eliminate at least 2 enemy generals and occupy at least 18 devastated territories.",
+    rule: {
+      type: "eliminate_players",
+      minEliminations: 2,
+      minTerritoriesHeld: 18,
+    },
+    allowedDoctrines: ["extermination"],
+  },
+  {
+    id: "obj_extermination_warmonger_hegemony",
+    descriptionPt:
+      "Senhor da Guerra Supremo (Doutrina de Extermínio): Atingir 100% de Infâmia, eliminar no mínimo 2 generais adversários e controlar 15 territórios.",
+    descriptionEn:
+      "Supreme Warmonger (Extermination Doctrine): Reach 100% Infamy, eliminate at least 2 enemy generals, and control 15 territories.",
+    rule: {
+      type: "eliminate_players",
+      minEliminations: 2,
+      requireInfamy: 100,
+      minTerritoriesHeld: 15,
+    },
+    allowedDoctrines: ["extermination"],
   },
 ];
 

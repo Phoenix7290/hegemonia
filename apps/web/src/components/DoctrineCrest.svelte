@@ -6,21 +6,97 @@
     doctrineId,
     size = 24,
     showLabel = false,
+    variant = "default",
   }: {
     doctrineId?: DoctrineId | null;
     size?: number;
     showLabel?: boolean;
+    variant?: "default" | "blank" | "confidential";
   } = $props();
 
   let def = $derived(doctrineId ? DOCTRINES[doctrineId] : null);
   let titleText = $derived(
-    def
-      ? `${i18n.locale === "en" ? def.nameEn : def.namePt} — ${i18n.locale === "en" ? def.summaryEn : def.summaryPt}`
-      : "",
+    variant === "blank"
+      ? "Sem Doutrina — Selecione sua Doutrina Militar Nacional abaixo"
+      : variant === "confidential"
+        ? "Doutrina Militar Confidencial (Oculta no Lobby)"
+        : def
+          ? `${i18n.locale === "en" ? def.nameEn : def.namePt} — ${i18n.locale === "en" ? def.summaryEn : def.summaryPt}`
+          : "",
   );
 </script>
 
-{#if def}
+{#if variant === "blank"}
+  <span
+    class="doctrine-crest-wrap"
+    style="--doc-color: #64748b;"
+    title={titleText}
+  >
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 32 32"
+      class="doctrine-crest-svg"
+      aria-label="Sem Doutrina"
+    >
+      <path
+        d="M16 2 L28 6 V15 C28 22.5 22.8 27.8 16 30 C9.2 27.8 4 22.5 4 15 V6 Z"
+        fill="#050912"
+        stroke="#475569"
+        stroke-width="2"
+        stroke-dasharray="3 2"
+      />
+      <path
+        d="M16 4.5 L25.5 7.8 V14.8 C25.5 20.8 21.3 25.2 16 27.2 C10.7 25.2 6.5 20.8 6.5 14.8 V7.8 Z"
+        fill="#0f172a"
+        fill-opacity="0.35"
+      />
+    </svg>
+  </span>
+{:else if variant === "confidential"}
+  <span
+    class="doctrine-crest-wrap"
+    style="--doc-color: #334155;"
+    title={titleText}
+  >
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 32 32"
+      class="doctrine-crest-svg"
+      aria-label="Doutrina Confidencial"
+    >
+      <path
+        d="M16 2 L28 6 V15 C28 22.5 22.8 27.8 16 30 C9.2 27.8 4 22.5 4 15 V6 Z"
+        fill="#02040a"
+        stroke="#334155"
+        stroke-width="2"
+      />
+      <path
+        d="M16 4.5 L25.5 7.8 V14.8 C25.5 20.8 21.3 25.2 16 27.2 C10.7 25.2 6.5 20.8 6.5 14.8 V7.8 Z"
+        fill="#1e293b"
+        fill-opacity="0.28"
+      />
+      <!-- Cadeado Tático Central -->
+      <path
+        d="M13 14 V11.5 C13 9.8 14.3 8.5 16 8.5 C17.7 8.5 19 9.8 19 11.5 V14"
+        fill="none"
+        stroke="#64748b"
+        stroke-width="1.8"
+        stroke-linecap="round"
+      />
+      <rect
+        x="11.5"
+        y="14"
+        width="9"
+        height="7.5"
+        rx="1.5"
+        fill="#475569"
+      />
+      <circle cx="16" cy="17.5" r="1.1" fill="#02040a" />
+    </svg>
+  </span>
+{:else if def}
   <span
     class="doctrine-crest-wrap"
     style="--doc-color: {def.accentColor};"

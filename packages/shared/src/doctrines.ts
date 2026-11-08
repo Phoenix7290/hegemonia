@@ -116,17 +116,24 @@ export const DOCTRINES: Record<DoctrineId, DoctrineDef> = {
     maxPerLobby: 2,
     orderIndex: 6,
   },
+  // NOTE FOR FUTURE DEVELOPERS (HEGEM-125):
+  // We intentionally retain the `superior_firepower` enum ID so existing database records,
+  // analytics, and historical match logs remain 100% compatible.
+  // The original Artillery-focused "Superior Firepower / Grande Batalhão" doctrine (2 barrages/turn,
+  // +1 die with artillery saturation) may be re-introduced as an 8th doctrine or scenario preset in the future.
+  // Currently, `superior_firepower` serves as the "Classic / Standard Command" (Comando Clássico)
+  // baseline doctrine: 0 buffs, 0 debuffs, pure classic War experience, prioritizing classic conquest objectives.
   superior_firepower: {
     id: "superior_firepower",
-    icon: "artillery",
-    accentColor: "#8b5cf6",
-    badgeCode: "SFP",
-    namePt: "Grande Batalhão (Fogo Concentrado)",
-    nameEn: "Superior Firepower (Massive Barrage)",
+    icon: "swords",
+    accentColor: "#94a3b8",
+    badgeCode: "CLS",
+    namePt: "Comando Clássico (Doutrina Padrão)",
+    nameEn: "Classic Command (Standard Doctrine)",
     summaryPt:
-      "Permite 2 barragens de artilharia por turno (Barragem Dupla) e saturação de artilharia no assalto (+1 no maior dado de ataque com 6+ artilharias).",
+      "Experiência neutra e equilibrada (sem bônus e sem penalidades). Acesso irrestrito a todas as unidades e estruturas, priorizando objetivos clássicos de conquista.",
     summaryEn:
-      "Allows 2 artillery barrages per turn (Double Barrage) and artillery saturation in assaults (+1 highest attack die with 6+ artillery).",
+      "Neutral, balanced baseline experience (no buffs, no debuffs). Full access to all units and structures, prioritizing classic War conquest objectives.",
     maxPerLobby: 2,
     orderIndex: 7,
   },
@@ -181,9 +188,9 @@ export const CORE_DOCTRINE_LIST: DoctrineDef[] = [
   DOCTRINES.tall_sovereign,
   DOCTRINES.naval_supremacy,
   DOCTRINES.blitzkrieg,
-  DOCTRINES.extermination,
   DOCTRINES.guerrilla,
   DOCTRINES.superior_firepower,
+  DOCTRINES.extermination,
 ];
 
 export const DOCTRINE_LIST: DoctrineDef[] = CORE_DOCTRINE_LIST;

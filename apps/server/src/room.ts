@@ -47,6 +47,8 @@ interface LobbyPlayer {
   username?: string;
   avatarUrl?: string | null;
   level?: number | null;
+  disconnectedTurns?: number;
+  botTakeoverMode?: "immediate" | "after_2_turns";
 }
 
 interface HegemoniaRoomOptions {
@@ -61,7 +63,18 @@ interface HegemoniaRoomOptions {
   turnTimerSeconds?: number;
 }
 
-const ALL_COLORS: PlayerColor[] = ["blue", "red", "green", "yellow", "black", "white"];
+const ALL_COLORS: PlayerColor[] = [
+  "blue",
+  "red",
+  "green",
+  "dark_green",
+  "yellow",
+  "orange",
+  "pink",
+  "purple",
+  "black",
+  "white",
+];
 
 export class HegemoniaRoom extends Room {
   maxClients = 12;
@@ -78,6 +91,7 @@ export class HegemoniaRoom extends Room {
   private timerInterval: NodeJS.Timeout | null = null;
   private disconnectTimeouts = new Map<string, NodeJS.Timeout>();
   private disposeTimeout: NodeJS.Timeout | null = null;
+  private recentObjectivesByUser = new Map<string, string[]>();
   private communications!: RoomCommunications;
   private competitionMode: CompetitionMode = "custom";
   private matchOrigin: MatchOrigin = "lobby";
@@ -142,6 +156,10 @@ export class HegemoniaRoom extends Room {
           .filter((p) => p.sessionId !== client.sessionId)
           .map((p) => p.doctrineId);
         if (!isDoctrineAvailableInLobby(parsed.data, otherDoctrines)) {
+          const limit = parsed.data === "extermination" ? 1 : 2;
+          client.send("error_msg", {
+            message: `Limite atingido: esta doutrina permite no máximo ${limit} general(is) por partida.`,
+          });
           return;
         }
         player.doctrineId = parsed.data;
@@ -206,10 +224,44 @@ export class HegemoniaRoom extends Room {
       if (this.gameState) return;
       const player = this.lobbyPlayers.find((p) => p.sessionId === client.sessionId);
       if (player && !player.isBot) {
+        if (payload?.ready && !player.doctrineId) {
+          client.send("error_msg", {
+            message: "Selecione uma Doutrina Militar Nacional antes de confirmar prontidão.",
+          });
+          return;
+        }
         player.isReady = Boolean(payload?.ready);
         this.broadcastRoomState();
       }
     });
+
+    this.onMessage(
+      "leave_match",
+      (client, payload: { botTakeoverMode?: "immediate" | "after_2_turns" }) => {
+        const player = this.lobbyPlayers.find((p) => p.sessionId === client.sessionId);
+        if (!player) return;
+        const mode = payload?.botTakeoverMode === "immediate" ? "immediate" : "after_2_turns";
+        player.botTakeoverMode = mode;
+        if (this.gameState && this.gameState.phase !== "game_over") {
+          if (mode === "immediate") {
+            player.isBot = true;
+            player.connected = false;
+            this.gameState.log.push(
+              `🤖 COMANDO TRANSFERIDO: ${player.name} retirou-se da campanha e delegou controle imediato ao General IA.`
+            );
+            this.purgePlayer(player);
+            this.checkAndRunBotTurn();
+            return;
+          } else {
+            player.disconnectedTurns = 0;
+            this.gameState.log.push(
+              `⚠️ AUSÊNCIA DE COMANDO: ${player.name} deixou a sala. Um General IA assumirá após 2 rodadas caso não retorne.`
+            );
+          }
+        }
+        this.purgePlayer(player);
+      }
+    );
 
     this.onMessage("start_game", (client) => {
       this.enqueueAction(async () => {
@@ -221,6 +273,13 @@ export class HegemoniaRoom extends Room {
         }
         if (this.lobbyPlayers.length < 2) {
           client.send("error_msg", { message: "São necessários pelo menos 2 jogadores." });
+          return;
+        }
+        const missingDoctrine = this.lobbyPlayers.filter((p) => !p.isBot && !p.doctrineId);
+        if (missingDoctrine.length > 0) {
+          client.send("error_msg", {
+            message: "Todos os generais devem selecionar uma Doutrina Militar Nacional antes do início.",
+          });
           return;
         }
         const unready = this.lobbyPlayers.filter((p) => !p.isHost && !p.isBot && !p.isReady);
@@ -246,6 +305,7 @@ export class HegemoniaRoom extends Room {
             doctrineId:
               p.doctrineId ??
               (p.isBot ? DOCTRINE_LIST[idx % DOCTRINE_LIST.length].id : null),
+            recentObjectiveIds: this.recentObjectivesByUser.get(p.userId ?? p.token),
           }));
           const provisional = createGame({ id: "pending", seed: this.secretSeed, players });
           this.matchId = await createMatch({
@@ -261,6 +321,10 @@ export class HegemoniaRoom extends Room {
             const lobbyEntry = players.find((lp) => lp.id === gp.id);
             if (lobbyEntry?.doctrineId) {
               gp.doctrineId = lobbyEntry.doctrineId;
+            }
+            const fullLobbyEntry = this.lobbyPlayers.find((lp) => lp.token === gp.id);
+            if (fullLobbyEntry && !fullLobbyEntry.isBot) {
+              gp.pendingObjectiveChoice = true;
             }
           }
           await startMatch(
@@ -439,7 +503,7 @@ export class HegemoniaRoom extends Room {
       sessionId: client.sessionId,
       name,
       color: freeColor,
-      doctrineId: parsedDoc.success ? parsedDoc.data : "blitzkrieg",
+      doctrineId: parsedDoc.success ? parsedDoc.data : null,
       isHost: this.lobbyPlayers.length === 0,
       isBot: false,
       connected: true,
@@ -552,7 +616,9 @@ export class HegemoniaRoom extends Room {
   }
 
   private resetTurnTimer() {
-    this.turnDeadline = Date.now() + this.turnTimerSeconds * 1000;
+    const isFirstRound = this.gameState ? this.gameState.round === 1 : true;
+    const durationSeconds = isFirstRound ? 60 : this.turnTimerSeconds;
+    this.turnDeadline = Date.now() + durationSeconds * 1000;
   }
 
   private async executePlayerAction(playerId: string, action: GameAction): Promise<void> {
@@ -563,6 +629,16 @@ export class HegemoniaRoom extends Room {
 
     if (nextState.phase === "game_over") {
       nextState.revealedSeed = this.secretSeed;
+    }
+    if (action.type === "choose_objective") {
+      const lobbyEntry = this.lobbyPlayers.find((entry) => entry.token === playerId);
+      const userKey = lobbyEntry?.userId ?? playerId;
+      const history = this.recentObjectivesByUser.get(userKey) ?? [];
+      const updated = [
+        action.objectiveId,
+        ...history.filter((id) => id !== action.objectiveId),
+      ].slice(0, 4);
+      this.recentObjectivesByUser.set(userKey, updated);
     }
     for (const player of nextState.players) {
       const lobbyEntry = this.lobbyPlayers.find((entry) => entry.token === player.id);
@@ -613,6 +689,14 @@ export class HegemoniaRoom extends Room {
       if (!active || active.id !== timedOutPlayerId) break;
 
       try {
+        if (active.pendingObjectiveChoice && active.availableObjectives?.length) {
+          await this.executePlayerAction(timedOutPlayerId, {
+            type: "choose_objective",
+            objectiveId: active.availableObjectives[0].id,
+          });
+          continue;
+        }
+
         if (active.cards.length >= 5) {
           const triplet = findValidTradeTriplet(active.cards);
           if (triplet) {
@@ -662,7 +746,22 @@ export class HegemoniaRoom extends Room {
       }
     }
 
+    const timedOutLobbyEntry = this.lobbyPlayers.find((p) => p.token === timedOutPlayerId);
+    if (timedOutLobbyEntry && !timedOutLobbyEntry.connected && !timedOutLobbyEntry.isBot) {
+      timedOutLobbyEntry.disconnectedTurns = (timedOutLobbyEntry.disconnectedTurns ?? 0) + 1;
+      if (timedOutLobbyEntry.disconnectedTurns >= 2) {
+        timedOutLobbyEntry.isBot = true;
+        if (this.gameState) {
+          this.gameState.log.push(
+            `🤖 CONTROLE IA ATIVADO: Após 2 rodadas ausente, a IA assumiu o comando de ${timedOutLobbyEntry.name}!`
+          );
+        }
+        this.broadcastRoomState();
+      }
+    }
+
     this.resetTurnTimer();
+    this.checkAndRunBotTurn();
   }
 
   private checkAndRunBotTurn() {
@@ -687,6 +786,14 @@ export class HegemoniaRoom extends Room {
     const mapById = new Map(CLASSIC_MAP.territories.map((t) => [t.id, t]));
 
     try {
+      if (player.pendingObjectiveChoice && player.availableObjectives?.length) {
+        await this.executePlayerAction(playerId, {
+          type: "choose_objective",
+          objectiveId: player.availableObjectives[0].id,
+        });
+        return;
+      }
+
       const triplet = findValidTradeTriplet(player.cards);
       if (triplet && (this.gameState.phase === "deploy" || player.cards.length >= 5)) {
         await this.executePlayerAction(playerId, { type: "trade_cards", cardIds: triplet });
@@ -790,17 +897,18 @@ export class HegemoniaRoom extends Room {
       competitionMode: this.competitionMode,
       matchOrigin: this.matchOrigin,
       turnDeadline: this.turnDeadline,
-      turnTimerSeconds: this.turnTimerSeconds,
+      turnTimerSeconds: this.gameState?.round === 1 ? 60 : this.turnTimerSeconds,
       myPlayerId: viewerToken,
       lobbyPlayers: this.lobbyPlayers.map((p) => ({
         token: p.token,
         name: p.name,
         color: p.color,
-        doctrineId: p.doctrineId ?? null,
+        doctrineId: this.gameState || p.token === viewerToken ? (p.doctrineId ?? null) : null,
+        hasChosenDoctrine: Boolean(p.doctrineId),
         isHost: p.isHost,
         isBot: p.isBot,
         connected: p.connected,
-        isReady: Boolean(p.isHost || p.isReady),
+        isReady: Boolean((p.isHost && p.doctrineId) || p.isReady),
         userId: p.userId ?? null,
         username: p.username ?? null,
         avatarUrl: p.avatarUrl ?? null,

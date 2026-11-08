@@ -21,24 +21,45 @@
     onFocusTerritory,
   }: Props = $props();
 
+  let deployIndex = $state(0);
   let artilleryIndex = $state(0);
   let aircraftIndex = $state(0);
   let encircledIndex = $state(0);
   let enemyEncircledIndex = $state(0);
 
-  // 1. Territories with ready Artillery during attack phase
+  // 0. Unplaced Armies to Deploy during deploy phase
+  const unplacedArmiesCount = $derived.by(() => {
+    if (!myPlayerId || !isMyTurn || game.phase !== "deploy") return 0;
+    return myPlayerState?.unplacedArmies ?? 0;
+  });
+
+  const deployableTerritories = $derived.by(() => {
+    if (!myPlayerId) return [];
+    const owned = CLASSIC_MAP.territories
+      .filter((t) => game.territories[t.id]?.ownerId === myPlayerId && !game.territories[t.id]?.isEncircled)
+      .map((t) => t.id);
+    if (myPlayerState?.capitalTerritoryId && owned.includes(myPlayerState.capitalTerritoryId)) {
+      return [
+        myPlayerState.capitalTerritoryId,
+        ...owned.filter((id) => id !== myPlayerState.capitalTerritoryId),
+      ];
+    }
+    return owned;
+  });
+
+  // 1. Territories with ready Artillery during attack phase (Barrage takes 0 Oil!)
   const readyArtilleryTerritories = $derived.by(() => {
-    if (!myPlayerId || !isMyTurn || game.phase !== "attack") return [];
+    if (!myPlayerId || !isMyTurn || game.phase !== "attack" || game.round === 1) return [];
     return CLASSIC_MAP.territories
       .filter((t) => {
         const terrState = game.territories[t.id];
-        if (!terrState || terrState.occupierId !== myPlayerId) return false;
-        const artCount = terrState.units.artillery ?? 0;
+        if (!terrState || terrState.ownerId !== myPlayerId) return false;
+        if (terrState.artilleryBarrageFiredThisTurn) return false;
+        const artCount = terrState.units?.artillery ?? 0;
         if (artCount <= 0) return false;
-        // Check for adjacent enemy territories
         return t.neighbors.some((nId) => {
           const neighbor = game.territories[nId];
-          return neighbor && neighbor.occupierId !== myPlayerId;
+          return neighbor && neighbor.ownerId !== myPlayerId;
         });
       })
       .map((t) => t.id);
@@ -46,12 +67,15 @@
 
   // 2. Territories with ready Aircraft during attack phase
   const readyAircraftTerritories = $derived.by(() => {
-    if (!myPlayerId || !isMyTurn || game.phase !== "attack") return [];
+    if (!myPlayerId || !isMyTurn || game.phase !== "attack" || game.round === 1) return [];
+    if ((myPlayerState?.resources?.oil ?? 0) < 1) return [];
     return CLASSIC_MAP.territories
       .filter((t) => {
         const terrState = game.territories[t.id];
-        if (!terrState || terrState.occupierId !== myPlayerId) return false;
-        return (terrState.units.fighter ?? 0) > 0;
+        if (!terrState || terrState.ownerId !== myPlayerId) return false;
+        if (terrState.airMissionFlownThisTurn) return false;
+        const hasAirfield = terrState.buildings?.some((b) => b.type === "airfield");
+        return Boolean(hasAirfield && (terrState.units?.aircraft ?? 0) > 0);
       })
       .map((t) => t.id);
   });
@@ -62,7 +86,7 @@
     return CLASSIC_MAP.territories
       .filter((t) => {
         const terrState = game.territories[t.id];
-        return terrState?.occupierId === myPlayerId && Boolean(terrState.isEncircled);
+        return terrState?.ownerId === myPlayerId && Boolean(terrState.isEncircled);
       })
       .map((t) => t.id);
   });
@@ -72,13 +96,13 @@
     if (!myPlayerId) return [];
     const myTerrIds = new Set(
       Object.entries(game.territories)
-        .filter(([_, st]) => st.occupierId === myPlayerId)
+        .filter(([_, st]) => st.ownerId === myPlayerId)
         .map(([id]) => id)
     );
     return CLASSIC_MAP.territories
       .filter((t) => {
         const terrState = game.territories[t.id];
-        if (!terrState || terrState.occupierId === myPlayerId || !terrState.isEncircled) {
+        if (!terrState || terrState.ownerId === myPlayerId || !terrState.isEncircled) {
           return false;
         }
         return t.neighbors.some((nId) => myTerrIds.has(nId));
@@ -92,10 +116,26 @@
     const oil = myPlayerState.resources?.oil ?? 0;
     if (oil > 0) return false;
     return Object.values(game.territories).some((t) => {
-      if (t.occupierId !== myPlayerId) return false;
-      return (t.units.tank ?? 0) > 0 || (t.units.fighter ?? 0) > 0;
+      if (t.ownerId !== myPlayerId) return false;
+      return (t.units?.tank ?? 0) > 0 || (t.units?.aircraft ?? 0) > 0 || (t.units?.navy ?? 0) > 0;
     });
   });
+
+  const hasAnyAlert = $derived(
+    unplacedArmiesCount > 0 ||
+      readyArtilleryTerritories.length > 0 ||
+      readyAircraftTerritories.length > 0 ||
+      myEncircledTerritories.length > 0 ||
+      enemyEncircledTerritories.length > 0 ||
+      isOutOfFuelWithMechanized
+  );
+
+  function focusNextDeploy() {
+    if (deployableTerritories.length === 0) return;
+    const target = deployableTerritories[deployIndex % deployableTerritories.length];
+    deployIndex += 1;
+    onFocusTerritory(target);
+  }
 
   function focusNextArtillery() {
     if (readyArtilleryTerritories.length === 0) return;
@@ -126,7 +166,23 @@
   }
 </script>
 
+{#if hasAnyAlert}
 <div class="tactical-alerts-bar" aria-label="Alertas Táticos da Campanha">
+  {#if unplacedArmiesCount > 0}
+    <button
+      class="alert-pill alert-action deploy"
+      onclick={focusNextDeploy}
+      use:tooltip={{
+        title: `Posicionar Tropas (+${unplacedArmiesCount})`,
+        content: "Você possui reservas prontas para posicionamento imediato no mapa. Clique para focar em seus territórios controlados."
+      }}
+    >
+      <Icon name="shield" size={13} />
+      <span>Posicionar Tropas</span>
+      <span class="count-badge">+{unplacedArmiesCount}</span>
+    </button>
+  {/if}
+
   {#if readyArtilleryTerritories.length > 0}
     <button
       class="alert-pill alert-action artillery"
@@ -200,13 +256,25 @@
     </div>
   {/if}
 </div>
+{/if}
 
 <style>
   .tactical-alerts-bar {
     display: inline-flex;
     align-items: center;
+    justify-content: center;
+    flex-wrap: wrap;
     gap: 0.4rem;
     pointer-events: auto;
+  }
+
+  .alert-action.deploy {
+    background: rgba(202, 138, 4, 0.28);
+    border-color: rgba(250, 204, 21, 0.75);
+    color: #fef08a;
+  }
+  .alert-action.deploy:hover {
+    box-shadow: 0 0 10px rgba(250, 204, 21, 0.45);
   }
 
   .alert-pill {

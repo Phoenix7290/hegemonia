@@ -29,9 +29,27 @@ try {
 
 export async function createApp(): Promise<express.Express> {
   const app = express();
-  const allowedOrigin = process.env.WEB_ORIGIN ?? "http://localhost:5173";
+  const configuredOrigin = process.env.WEB_ORIGIN;
+  const isDev = process.env.NODE_ENV !== "production";
   app.disable("x-powered-by");
-  app.use(cors({ origin: allowedOrigin, credentials: true }));
+  app.use(
+    cors({
+      origin: (origin, callback) => {
+        if (!origin) return callback(null, true);
+        if (configuredOrigin && origin === configuredOrigin) return callback(null, true);
+        if (
+          isDev &&
+          (/^http:\/\/(localhost|127\.0\.0\.1|\[::1\]|192\.168\.\d+\.\d+|172\.(1[6-9]|2\d|3[0-1])\.\d+\.\d+|10\.\d+\.\d+\.\d+)(:\d+)?$/.test(
+            origin
+          ) || !configuredOrigin)
+        ) {
+          return callback(null, true);
+        }
+        callback(new Error(`CORS origin blocked: ${origin}`));
+      },
+      credentials: true,
+    })
+  );
   app.use(express.json({ limit: "64kb" }));
 
   app.get("/health", async (_req, res, next) => {

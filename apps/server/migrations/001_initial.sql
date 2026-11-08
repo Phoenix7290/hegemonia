@@ -134,7 +134,7 @@ CREATE TABLE match_participants (
   updated_at timestamptz NOT NULL DEFAULT now(),
   CONSTRAINT match_participants_match_engine_unique UNIQUE (match_id, engine_player_id),
   CONSTRAINT match_participants_match_seat_unique UNIQUE (match_id, seat_index),
-  CONSTRAINT match_participants_color_valid CHECK (color IN ('blue', 'red', 'green', 'yellow', 'black', 'white')),
+  CONSTRAINT match_participants_color_valid CHECK (color IN ('blue', 'red', 'green', 'dark_green', 'yellow', 'orange', 'pink', 'purple', 'black', 'white')),
   CONSTRAINT match_participants_seat_valid CHECK (seat_index BETWEEN 0 AND 5),
   CONSTRAINT match_participants_bot_has_no_user CHECK (NOT is_bot OR user_id IS NULL),
   CONSTRAINT match_participants_result_valid CHECK (result IN ('pending', 'win', 'loss', 'draw', 'abandoned')),

@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { CombatRollResult, PlayerState } from "@hegemonia/shared";
   import type { CommunicationsController } from "../lib/communications.svelte";
+  import type { IconName } from "../lib/icons";
   import { t } from "../i18n/index.svelte";
   import { getTerritoryName } from "../i18n/content.svelte";
   import CommunicationsCenter from "./CommunicationsCenter.svelte";
@@ -20,19 +21,38 @@
 
   let collapsed = $state(false);
   let activeTab = $state<"log" | "chat">("log");
+  let scrollerEl = $state<HTMLDivElement | null>(null);
 
   const COLOR_HEX: Record<string, string> = {
     blue: "#3b82f6",
     red: "#ef4444",
     green: "#10b981",
-    yellow: "#f59e0b",
+    dark_green: "#15803d",
+    yellow: "#facc15",
+    orange: "#f97316",
+    pink: "#ec4899",
+    purple: "#a855f7",
     black: "#cbd5e1",
     white: "#F0F0F5",
   };
 
   interface ParsedLogEntry {
     raw: string;
-    kind: "combat" | "conquest" | "deploy" | "trade" | "round" | "timeout" | "comms" | "victory" | "info";
+    kind:
+      | "combat"
+      | "conquest"
+      | "deploy"
+      | "trade"
+      | "round"
+      | "timeout"
+      | "comms"
+      | "victory"
+      | "economy"
+      | "construction"
+      | "doctrine"
+      | "treaty"
+      | "info";
+    icon: IconName;
     tag: string;
     playerColor: string | null;
     text: string;
@@ -53,6 +73,7 @@
       return {
         raw,
         kind: "comms",
+        icon: "radio",
         tag: t("tag_radio"),
         playerColor,
         text: raw.replace(/^\[COMMS\]\s*/, ""),
@@ -63,16 +84,18 @@
       return {
         raw,
         kind: "timeout",
+        icon: "alert",
         tag: t("tag_timeout"),
         playerColor,
         text: raw.replace(/^\[TEMPO\]\s*/, ""),
       };
     }
 
-    if (/HEGEMONIA|venceu|Vitória/i.test(raw)) {
+    if (/HEGEMONIA|venceu|Vitória|VITÓRIA/i.test(raw)) {
       return {
         raw,
         kind: "victory",
+        icon: "crown",
         tag: t("tag_victory"),
         playerColor,
         text: raw,
@@ -84,6 +107,7 @@
       return {
         raw,
         kind: "conquest",
+        icon: "flag",
         tag: t("tag_conquest"),
         playerColor,
         text: raw,
@@ -92,11 +116,12 @@
       };
     }
 
-    if (/Atacou|Ataque|Combate|\bvs\b/i.test(raw)) {
+    if (/Atacou|Ataque|Combate|\bvs\b|BARRAGEM|BOMBARDEIO/i.test(raw)) {
       const diceMatch = raw.match(/\[([\d,\s•]+)\]\s*vs\s*\[([\d,\s•]+)\]/i);
       return {
         raw,
         kind: "combat",
+        icon: "swords",
         tag: t("tag_combat"),
         playerColor,
         text: raw,
@@ -105,30 +130,77 @@
       };
     }
 
+    if (/DOUTRINA|SAQUE TOTAL|adotou a doutrina/i.test(raw)) {
+      return {
+        raw,
+        kind: "doctrine",
+        icon: "shield",
+        tag: t("tag_doctrine"),
+        playerColor,
+        text: raw,
+      };
+    }
+
+    if (/TRATADO|Tratado|proposta de|Aliança|Pacto|Coalizão|fronteira cancelada/i.test(raw)) {
+      return {
+        raw,
+        kind: "treaty",
+        icon: "handshake",
+        tag: t("tag_treaty"),
+        playerColor,
+        text: raw,
+      };
+    }
+
+    if (/construiu|demoliu|expandiu a infraestrutura|evoluiu a Casamata/i.test(raw)) {
+      return {
+        raw,
+        kind: "construction",
+        icon: "industry",
+        tag: t("tag_construction"),
+        playerColor,
+        text: raw,
+      };
+    }
+
+    if (/Economia de|MERCADO GLOBAL|investimento/i.test(raw)) {
+      return {
+        raw,
+        kind: "economy",
+        icon: "coins",
+        tag: t("tag_economy"),
+        playerColor,
+        text: raw,
+      };
+    }
+
     if (/trocou|cartas|suprimento/i.test(raw)) {
       return {
         raw,
         kind: "trade",
+        icon: "coins",
         tag: t("tag_trade"),
         playerColor,
         text: raw,
       };
     }
 
-    if (/posicionou|reforço|divisões|remanejou|manobra|avançou/i.test(raw)) {
+    if (/posicionou|reforço|divisões|exércitos|remanejou|manobra|avançou/i.test(raw)) {
       return {
         raw,
         kind: "deploy",
+        icon: "phase-deploy",
         tag: t("tag_order"),
         playerColor,
         text: raw,
       };
     }
 
-    if (/Rodada|Turno|Início/i.test(raw)) {
+    if (/Rodada|Turno|Início|Partida iniciada/i.test(raw)) {
       return {
         raw,
         kind: "round",
+        icon: "clock",
         tag: t("tag_phase"),
         playerColor,
         text: raw,
@@ -138,6 +210,7 @@
     return {
       raw,
       kind: "info",
+      icon: "compass",
       tag: t("tag_intel"),
       playerColor,
       text: raw,
@@ -150,6 +223,17 @@
       .slice(-35)
       .map(parseLogEntry)
   );
+
+  $effect(() => {
+    const _len = combatLogs.length;
+    if (scrollerEl && activeTab === "log" && !collapsed && _len >= 0) {
+      queueMicrotask(() => {
+        if (scrollerEl) {
+          scrollerEl.scrollTop = scrollerEl.scrollHeight;
+        }
+      });
+    }
+  });
 </script>
 
 <aside
@@ -158,6 +242,11 @@
   class:collapsed
   class:communications-open={activeTab === "chat" && !collapsed}
 >
+  <span class="card-corner tl"></span>
+  <span class="card-corner tr"></span>
+  <span class="card-corner bl"></span>
+  <span class="card-corner br"></span>
+
   <div class="journal-header">
     <div class="journal-tabs">
       <button
@@ -168,7 +257,7 @@
           collapsed = false;
         }}
       >
-        <Icon name="log" size={13} />
+        <span class="j-tab-icon"><Icon name="log" size={13} /></span>
         <span>{t("war_journal_title")}</span>
         <small class="j-count">{combatLogs.length}</small>
       </button>
@@ -181,7 +270,7 @@
           collapsed = false;
         }}
       >
-        <Icon name="chat" size={13} />
+        <span class="j-tab-icon"><Icon name="chat" size={13} /></span>
         <span>{t("radio_comms_title")}</span>
         {#if communications.totalUnread > 0}
           <small class="j-count comms-count">{communications.totalUnread}</small>
@@ -204,9 +293,10 @@
       <div class="combat-telemetry-card" class:conquered={lastCombat.conquered}>
         <div class="telemetry-top">
           <span class="telemetry-route">
-            {getTerritoryName(lastCombat.fromTerritoryId)}
+            <Icon name="swords" size={12} />
+            <span>{getTerritoryName(lastCombat.fromTerritoryId)}</span>
             <strong><Icon name="arrow-right" size={12} /></strong>
-            {getTerritoryName(lastCombat.toTerritoryId)}
+            <span>{getTerritoryName(lastCombat.toTerritoryId)}</span>
           </span>
           {#if lastCombat.conquered}
             <span class="conquered-pill">{t("conquest_taken")}</span>
@@ -255,7 +345,7 @@
     {/if}
 
     {#if activeTab === "log"}
-      <div class="journal-scroller">
+      <div class="journal-scroller" bind:this={scrollerEl}>
         {#each combatLogs as entry}
           <div
             class="journal-entry kind-{entry.kind}"
@@ -263,7 +353,10 @@
             style={entry.playerColor ? `border-left-color: ${entry.playerColor};` : ""}
           >
             <div class="entry-top">
-              <span class="entry-tag tag-{entry.kind}">{entry.tag}</span>
+              <span class="entry-tag tag-{entry.kind}">
+                <Icon name={entry.icon} size={10} />
+                <span>{entry.tag}</span>
+              </span>
               {#if entry.attDice && entry.defDice}
                 <div class="inline-dice-badges">
                   <span class="mini-att">{t("att_short")} [{entry.attDice}]</span>
@@ -288,267 +381,391 @@
 <style>
   .war-journal-panel {
     pointer-events: auto;
+    position: relative;
     grid-column: 3;
     grid-row: 3;
     align-self: end;
     justify-self: end;
     width: 100%;
-    max-height: 280px;
-    background: linear-gradient(180deg, rgba(11, 18, 33, 0.95) 0%, rgba(6, 11, 21, 0.97) 100%);
-    border: 1px solid rgba(212, 175, 55, 0.44);
-    border-radius: 7px;
-    box-shadow: 0 16px 38px rgba(0, 0, 0, 0.8), inset 0 1px 0 rgba(255, 255, 255, 0.06);
-    padding: 0.65rem 0.75rem;
+    max-height: 315px;
+    background: linear-gradient(
+      180deg,
+      rgba(9, 15, 29, 0.97) 0%,
+      rgba(5, 9, 18, 0.99) 100%
+    );
+    border: 1px solid rgba(234, 179, 8, 0.38);
+    border-radius: 10px;
+    box-shadow:
+      0 20px 44px rgba(0, 0, 0, 0.88),
+      0 0 24px rgba(234, 179, 8, 0.08),
+      inset 0 1px 0 rgba(255, 255, 255, 0.08);
     display: flex;
     flex-direction: column;
-    gap: 0.45rem;
-    backdrop-filter: blur(14px);
-    transition: width 0.2s ease, max-height 0.2s ease;
+    padding: 0.55rem 0.65rem;
+    box-sizing: border-box;
+    transition: all 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+    z-index: 25;
   }
   .war-journal-panel.collapsed {
-    max-height: 46px;
-    padding: 0.35rem 0.55rem;
-    overflow: hidden;
+    max-height: 48px;
+    padding: 0.38rem 0.65rem;
   }
-  .war-journal-panel.communications-open {
-    max-height: calc(100vh - 96px);
-    z-index: 30;
+
+  /* Brass brackets */
+  .card-corner {
+    position: absolute;
+    width: 9px;
+    height: 9px;
+    pointer-events: none;
+    z-index: 2;
   }
-  .war-journal-panel:not(.collapsed).chat-size-large {
-    width: min(490px, calc(100vw - 24px));
-    max-height: 360px;
+  .card-corner.tl {
+    top: -1px;
+    left: -1px;
+    border-top: 2px solid #facc15;
+    border-left: 2px solid #facc15;
+    border-top-left-radius: 10px;
   }
-  .war-journal-panel.communications-open.chat-size-large {
-    max-height: calc(100vh - 96px);
+  .card-corner.tr {
+    top: -1px;
+    right: -1px;
+    border-top: 2px solid #facc15;
+    border-right: 2px solid #facc15;
+    border-top-right-radius: 10px;
   }
-  .war-journal-panel:not(.collapsed).chat-size-expanded {
-    width: min(640px, calc(100vw - 24px));
-    max-height: 440px;
-    z-index: 35;
+  .card-corner.bl {
+    bottom: -1px;
+    left: -1px;
+    border-bottom: 2px solid #facc15;
+    border-left: 2px solid #facc15;
+    border-bottom-left-radius: 10px;
   }
-  .war-journal-panel.communications-open.chat-size-expanded {
-    max-height: calc(100vh - 88px);
+  .card-corner.br {
+    bottom: -1px;
+    right: -1px;
+    border-bottom: 2px solid #facc15;
+    border-right: 2px solid #facc15;
+    border-bottom-right-radius: 10px;
   }
 
   .journal-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    gap: 0.35rem;
-    width: 100%;
-    min-width: 0;
-    overflow: hidden;
+    border-bottom: 1px solid rgba(234, 179, 8, 0.22);
+    padding-bottom: 0.42rem;
+    margin-bottom: 0.42rem;
   }
   .journal-tabs {
     display: flex;
-    gap: 0.25rem;
-    min-width: 0;
-    flex: 1;
-    overflow: hidden;
+    gap: 0.35rem;
   }
   .j-tab {
-    background: rgba(15, 23, 42, 0.65);
-    border: 1px solid rgba(148, 163, 184, 0.2);
+    background: transparent;
+    border: 1px solid transparent;
     color: #94a3b8;
-    font-family: var(--font-tactical);
-    font-size: 0.72rem;
-    font-weight: 700;
-    letter-spacing: 0.05em;
-    text-transform: uppercase;
-    padding: 0.22rem 0.45rem;
-    border-radius: 4px;
+    padding: 0.28rem 0.55rem;
+    border-radius: 6px;
     display: inline-flex;
     align-items: center;
-    gap: 0.3rem;
-    min-width: 0;
-    flex-shrink: 1;
-    overflow: hidden;
+    gap: 0.36rem;
+    font-family: var(--font-tactical);
+    font-size: 0.74rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    cursor: pointer;
+    transition: all 0.15s ease;
   }
-  .j-tab span {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+  .j-tab-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0.85;
+  }
+  .j-tab:hover {
+    color: #f8fafc;
+    background: rgba(30, 41, 59, 0.5);
   }
   .j-tab.active {
-    background: linear-gradient(135deg, rgba(202, 138, 4, 0.24), rgba(161, 98, 7, 0.12));
-    border-color: rgba(234, 179, 8, 0.6);
+    background: linear-gradient(
+      180deg,
+      rgba(234, 179, 8, 0.18) 0%,
+      rgba(234, 179, 8, 0.06) 100%
+    );
+    border-color: rgba(234, 179, 8, 0.45);
     color: #fef08a;
+    box-shadow: 0 0 10px rgba(234, 179, 8, 0.15);
+  }
+  .j-tab.active .j-tab-icon {
+    opacity: 1;
   }
   .j-count {
-    font-family: var(--font-mono);
+    background: rgba(15, 23, 42, 0.85);
+    border: 1px solid rgba(148, 163, 184, 0.3);
+    padding: 0.05rem 0.32rem;
+    border-radius: 999px;
     font-size: 0.62rem;
-    background: rgba(5, 9, 18, 0.8);
-    padding: 1px 5px;
-    border-radius: 3px;
-    color: #cbd5e1;
-    flex-shrink: 0;
+    font-weight: 800;
   }
-  .comms-count {
-    color: #38bdf8;
+  .j-count.comms-count {
+    background: #ef4444;
+    border-color: #fca5a5;
+    color: #ffffff;
+    animation: comms-badge-pulse 1.8s infinite;
   }
-  .j-collapse-btn {
-    background: transparent;
-    border: 1px solid rgba(148, 163, 184, 0.2);
-    color: #94a3b8;
-    width: 24px;
-    height: 24px;
-    padding: 0;
-    display: grid;
-    place-items: center;
-    border-radius: 4px;
-    font-size: 0.7rem;
-    flex-shrink: 0;
+  @keyframes comms-badge-pulse {
+    0%,
+    100% {
+      transform: scale(1);
+    }
+    50% {
+      transform: scale(1.1);
+    }
   }
 
-  /* Telemetry Box */
-  .combat-telemetry-card {
-    background: rgba(6, 10, 19, 0.92);
+  .j-collapse-btn {
+    background: rgba(15, 23, 42, 0.6);
     border: 1px solid rgba(148, 163, 184, 0.25);
-    border-left: 3px solid #ef4444;
+    color: #94a3b8;
+    padding: 0.25rem;
     border-radius: 5px;
-    padding: 0.42rem 0.55rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+  .j-collapse-btn:hover {
+    background: rgba(30, 41, 59, 0.9);
+    border-color: #facc15;
+    color: #fef08a;
+  }
+
+  /* Combat Telemetry Card */
+  .combat-telemetry-card {
+    background: linear-gradient(
+      180deg,
+      rgba(15, 23, 42, 0.92) 0%,
+      rgba(10, 16, 30, 0.96) 100%
+    );
+    border: 1px solid rgba(239, 68, 68, 0.38);
+    border-radius: 7px;
+    padding: 0.38rem 0.5rem;
+    margin-bottom: 0.42rem;
     display: flex;
     flex-direction: column;
-    gap: 0.32rem;
+    gap: 0.28rem;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.45);
   }
   .combat-telemetry-card.conquered {
-    border-left-color: #10b981;
-    border-color: rgba(16, 185, 129, 0.4);
+    border-color: rgba(16, 185, 129, 0.45);
   }
   .telemetry-top {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    gap: 0.4rem;
     font-size: 0.72rem;
+    gap: 0.4rem;
   }
   .telemetry-route {
-    font-family: var(--font-tactical);
+    color: #f8fafc;
     font-weight: 700;
-    color: #f1f5f9;
-    letter-spacing: 0.03em;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.32rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   .telemetry-route strong {
-    color: #eab308;
-    margin: 0 3px;
+    color: #ef4444;
+    display: inline-flex;
+    align-items: center;
   }
   .conquered-pill {
     background: rgba(16, 185, 129, 0.22);
     border: 1px solid #10b981;
     color: #6ee7b7;
     font-family: var(--font-tactical);
-    font-size: 0.64rem;
+    font-size: 0.6rem;
     font-weight: 800;
-    letter-spacing: 0.08em;
-    padding: 1px 6px;
-    border-radius: 3px;
+    letter-spacing: 0.06em;
+    padding: 0.1rem 0.4rem;
+    border-radius: 4px;
+    text-transform: uppercase;
+    white-space: nowrap;
   }
   .losses-pill {
-    font-family: var(--font-mono);
-    font-size: 0.63rem;
-    color: #94a3b8;
+    color: #fca5a5;
+    font-family: var(--font-tactical);
+    font-size: 0.64rem;
+    font-weight: 700;
+    white-space: nowrap;
   }
 
   .dice-comparison-row {
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    gap: 0.4rem;
+    justify-content: center;
+    gap: 0.55rem;
   }
   .dice-group {
-    display: flex;
+    display: inline-flex;
     align-items: center;
-    gap: 0.28rem;
+    gap: 0.24rem;
   }
   .dice-side-label {
     font-family: var(--font-tactical);
-    font-size: 0.66rem;
+    font-size: 0.58rem;
     font-weight: 800;
     letter-spacing: 0.08em;
     color: #94a3b8;
+    text-transform: uppercase;
   }
   .die-pip {
-    width: 21px;
-    height: 21px;
-    border-radius: 4px;
-    font-family: var(--font-mono);
-    font-size: 0.74rem;
-    font-weight: 800;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    opacity: 0.65;
+    width: 20px;
+    height: 20px;
+    border-radius: 4px;
+    font-family: var(--font-tactical);
+    font-weight: 900;
+    font-size: 0.74rem;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.4);
   }
-  .att-pip {
-    background: rgba(127, 29, 29, 0.55);
-    border: 1px solid rgba(248, 113, 113, 0.45);
-    color: #fecaca;
+  .die-pip.att-pip {
+    background: linear-gradient(180deg, #dc2626, #991b1b);
+    border: 1px solid #f87171;
+    color: #ffffff;
   }
-  .def-pip {
-    background: rgba(30, 58, 138, 0.55);
-    border: 1px solid rgba(147, 197, 253, 0.45);
-    color: #bfdbfe;
+  .die-pip.def-pip {
+    background: linear-gradient(180deg, #2563eb, #1e40af);
+    border: 1px solid #60a5fa;
+    color: #ffffff;
   }
   .die-pip.die-win {
-    opacity: 1;
-    box-shadow: 0 0 8px rgba(250, 204, 21, 0.35);
-    border-color: #fde047;
+    box-shadow: 0 0 8px #facc15;
+    border-color: #fef08a;
   }
   .dice-vs {
     font-family: var(--font-tactical);
-    font-size: 0.65rem;
-    font-weight: 800;
+    font-size: 0.62rem;
+    font-weight: 900;
     color: #64748b;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
   }
-
   .last-stand-badge {
-    margin-top: 0.35rem;
-    padding: 0.2rem 0.5rem;
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0.22rem 0.5rem;
     background: linear-gradient(90deg, rgba(245, 158, 11, 0.25), rgba(239, 68, 68, 0.25));
     border: 1px solid #f59e0b;
-    border-radius: 4px;
+    border-radius: 5px;
     font-family: var(--font-tactical);
     font-size: 0.66rem;
     font-weight: 800;
-    letter-spacing: 0.06em;
-    color: #fde047;
-    text-align: center;
-    text-transform: uppercase;
-    box-shadow: 0 0 10px rgba(245, 158, 11, 0.2);
+    color: #fef08a;
+    letter-spacing: 0.04em;
+    margin-top: 0.15rem;
+    box-shadow: 0 2px 6px rgba(245, 158, 11, 0.2);
+  }
+  .journal-communications {
+    overflow-y: auto;
+    height: 172px;
     display: flex;
-    align-items: center;
-    justify-content: center;
+    flex-direction: column;
     gap: 0.35rem;
   }
 
-  /* Log Scroller */
+  /* Log Scroller & Structured Dispatch Cards */
   .journal-scroller {
     overflow-y: auto;
-    height: 138px;
+    height: 172px;
     display: flex;
     flex-direction: column;
-    gap: 0.28rem;
+    gap: 0.34rem;
     padding-right: 0.2rem;
   }
   .journal-entry {
-    padding: 0.28rem 0.45rem;
-    background: rgba(15, 23, 42, 0.55);
-    border-left: 3px solid #475569;
-    border-radius: 3px;
+    padding: 0.36rem 0.55rem;
+    background: linear-gradient(
+      90deg,
+      rgba(15, 23, 42, 0.78) 0%,
+      rgba(8, 13, 25, 0.88) 100%
+    );
+    border: 1px solid rgba(148, 163, 184, 0.16);
+    border-left: 3.5px solid #475569;
+    border-radius: 6px;
     display: flex;
     flex-direction: column;
-    gap: 0.14rem;
+    gap: 0.18rem;
   }
   .journal-entry.kind-conquest {
-    background: rgba(6, 78, 59, 0.28);
+    background: linear-gradient(
+      90deg,
+      rgba(6, 78, 59, 0.34) 0%,
+      rgba(8, 13, 25, 0.88) 100%
+    );
+    border-color: rgba(16, 185, 129, 0.28);
+    border-left-color: #10b981;
   }
   .journal-entry.kind-round {
-    background: rgba(202, 138, 4, 0.12);
+    background: linear-gradient(
+      90deg,
+      rgba(202, 138, 4, 0.18) 0%,
+      rgba(8, 13, 25, 0.88) 100%
+    );
+    border-color: rgba(234, 179, 8, 0.28);
     border-left-color: #eab308;
   }
   .journal-entry.kind-timeout {
-    background: rgba(127, 29, 29, 0.28);
+    background: linear-gradient(
+      90deg,
+      rgba(127, 29, 29, 0.32) 0%,
+      rgba(8, 13, 25, 0.88) 100%
+    );
+    border-color: rgba(239, 68, 68, 0.3);
     border-left-color: #ef4444;
+  }
+  .journal-entry.kind-economy {
+    background: linear-gradient(
+      90deg,
+      rgba(16, 185, 129, 0.2) 0%,
+      rgba(8, 13, 25, 0.88) 100%
+    );
+    border-color: rgba(16, 185, 129, 0.28);
+    border-left-color: #10b981;
+  }
+  .journal-entry.kind-construction {
+    background: linear-gradient(
+      90deg,
+      rgba(245, 158, 11, 0.18) 0%,
+      rgba(8, 13, 25, 0.88) 100%
+    );
+    border-color: rgba(245, 158, 11, 0.28);
+    border-left-color: #f59e0b;
+  }
+  .journal-entry.kind-doctrine {
+    background: linear-gradient(
+      90deg,
+      rgba(168, 85, 247, 0.18) 0%,
+      rgba(8, 13, 25, 0.88) 100%
+    );
+    border-color: rgba(168, 85, 247, 0.28);
+    border-left-color: #a855f7;
+  }
+  .journal-entry.kind-treaty {
+    background: linear-gradient(
+      90deg,
+      rgba(56, 189, 248, 0.18) 0%,
+      rgba(8, 13, 25, 0.88) 100%
+    );
+    border-color: rgba(56, 189, 248, 0.28);
+    border-left-color: #38bdf8;
   }
   .entry-top {
     display: flex;
@@ -557,37 +774,70 @@
     gap: 0.35rem;
   }
   .entry-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.24rem;
     font-family: var(--font-tactical);
-    font-size: 0.6rem;
+    font-size: 0.58rem;
     font-weight: 800;
-    letter-spacing: 0.1em;
-    padding: 0px 5px;
-    border-radius: 2px;
-    background: rgba(30, 41, 59, 0.9);
+    letter-spacing: 0.08em;
+    padding: 0.08rem 0.38rem;
+    border-radius: 4px;
+    background: rgba(30, 41, 59, 0.92);
+    border: 1px solid rgba(148, 163, 184, 0.22);
     color: #cbd5e1;
   }
   .tag-conquest {
-    background: rgba(16, 185, 129, 0.25);
+    background: rgba(16, 185, 129, 0.22);
+    border-color: rgba(52, 211, 153, 0.4);
     color: #6ee7b7;
   }
   .tag-combat {
     background: rgba(239, 68, 68, 0.22);
+    border-color: rgba(248, 113, 113, 0.4);
     color: #fca5a5;
   }
   .tag-trade,
   .tag-round {
     background: rgba(234, 179, 8, 0.22);
+    border-color: rgba(250, 204, 21, 0.4);
     color: #fef08a;
+  }
+  .tag-deploy {
+    background: rgba(59, 130, 246, 0.2);
+    border-color: rgba(96, 165, 250, 0.38);
+    color: #93c5fd;
   }
   .tag-comms {
     background: rgba(56, 189, 248, 0.2);
+    border-color: rgba(56, 189, 248, 0.38);
     color: #7dd3fc;
     width: fit-content;
+  }
+  .tag-economy {
+    background: rgba(16, 185, 129, 0.25);
+    border-color: rgba(52, 211, 153, 0.4);
+    color: #6ee7b7;
+  }
+  .tag-construction {
+    background: rgba(245, 158, 11, 0.25);
+    border-color: rgba(250, 204, 21, 0.4);
+    color: #fde047;
+  }
+  .tag-doctrine {
+    background: rgba(168, 85, 247, 0.25);
+    border-color: rgba(192, 132, 252, 0.4);
+    color: #d8b4fe;
+  }
+  .tag-treaty {
+    background: rgba(56, 189, 248, 0.25);
+    border-color: rgba(56, 189, 248, 0.4);
+    color: #7dd3fc;
   }
   .inline-dice-badges {
     display: flex;
     gap: 0.25rem;
-    font-family: var(--font-mono);
+    font-family: var(--font-tactical);
     font-size: 0.62rem;
     font-weight: 700;
   }
@@ -598,35 +848,38 @@
     color: #93c5fd;
   }
   .entry-text {
+    margin: 0;
     font-size: 0.72rem;
-    line-height: 1.32;
+    line-height: 1.38;
     color: #e2e8f0;
+    word-break: break-word;
   }
   .journal-empty {
     color: #64748b;
-    font-size: 0.74rem;
+    font-size: 0.72rem;
     text-align: center;
-    padding: 1.5rem 0.5rem;
+    padding: 1.2rem 0.5rem;
+    font-style: italic;
   }
 
-  .journal-communications {
-    display: flex;
-    min-height: 260px;
-    height: min(380px, calc(100vh - 190px));
-    transition: height 0.2s ease;
+  /* Chat size variations */
+  .war-journal-panel.chat-size-compact.communications-open {
+    max-height: 250px;
   }
-  .war-journal-panel.chat-size-large .journal-communications {
-    min-height: 360px;
-    height: min(500px, calc(100vh - 150px));
+  .war-journal-panel.chat-size-default.communications-open {
+    max-height: 380px;
   }
-  .war-journal-panel.chat-size-expanded .journal-communications {
-    min-height: 460px;
+  .war-journal-panel.chat-size-large.communications-open {
+    max-height: 500px;
+  }
+  .war-journal-panel.chat-size-expanded.communications-open {
+    max-height: 600px;
     height: min(640px, calc(100vh - 135px));
   }
   .war-journal-panel.chat-size-large .journal-scroller {
-    height: 210px;
+    height: 215px;
   }
   .war-journal-panel.chat-size-expanded .journal-scroller {
-    height: 280px;
+    height: 285px;
   }
 </style>

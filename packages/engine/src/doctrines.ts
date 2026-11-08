@@ -147,15 +147,12 @@ export function applyDoctrineCombatDiceModifiers(params: {
     attackerBonusApplied = true;
   }
 
-  // 3. Grande Batalhão (Superior Firepower): Artilharia acoplada concede +1 no 2.º maior dado
-  if (
-    attacker.doctrineId === "superior_firepower" &&
-    committedAttackerUnits.artillery >= 1 &&
-    attackerDice.length >= 2
-  ) {
-    attackerDice[1] = Math.min(6, attackerDice[1] + 1);
-    attackerBonusApplied = true;
-  }
+  // 3. Comando Clássico (Standard Doctrine — ID mantido como superior_firepower por compatibilidade):
+  // NOTE FOR FUTURE DEVELOPERS (HEGEM-125):
+  // Previously "Grande Batalhão / Superior Firepower" granted +1 on 2nd attack die with artillery.
+  // Now acts as the neutral, zero-buff / zero-debuff Classic Command doctrine.
+  // (Legacy artillery logic preserved in comment in case an 8th Artillery doctrine is added later:
+  //  if (attacker.doctrineId === "artillery_doctrine" && committedAttackerUnits.artillery >= 1 && attackerDice.length >= 2) ...)
 
   // 4. Fortaleza Soberana (Tall) & Defesa em Profundidade:
   if (

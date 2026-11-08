@@ -64,9 +64,17 @@ import {
 export * from "./rng.js";
 export * from "./units.js";
 
+export interface CreateGamePlayerInput {
+  id: string;
+  name: string;
+  color: PlayerColor;
+  doctrineId?: DoctrineId | null;
+  recentObjectiveIds?: string[];
+}
+
 export interface CreateGameOptions {
   id: string;
-  players: { id: string; name: string; color: PlayerColor; doctrineId?: DoctrineId | null }[];
+  players: CreateGamePlayerInput[];
   seed: string;
   map?: GameMapDef;
   objectives?: ObjectiveCard[];
@@ -75,14 +83,16 @@ export interface CreateGameOptions {
 export * from "./doctrines.js";
 
 /**
- * Classic Grow War trade progression: 4, 6, 8, 10, 12, 15, then +5 per subsequent exchange
+ * Card trade progression with a linear cap at trade 6 (max 15 base armies) to prevent exponential late-game explosion (HEGEM-126):
+ * Progression: 4, 6, 8, 10, 12, 15 (capped at 15 for all subsequent exchanges).
  */
 export function getTradeBonusArmies(tradeIndexZeroBased: number): number {
   const table = [4, 6, 8, 10, 12, 15];
+  if (tradeIndexZeroBased < 0) return table[0];
   if (tradeIndexZeroBased < table.length) {
     return table[tradeIndexZeroBased];
   }
-  return 15 + (tradeIndexZeroBased - (table.length - 1)) * 5;
+  return table[table.length - 1];
 }
 
 /**
@@ -219,9 +229,9 @@ export interface MarketPriceConfig {
 }
 
 export const DEFAULT_MARKET_CONFIG: Record<ResourceType, MarketPriceConfig> = {
-  steel: { baseBuy: 4, baseSell: 3, step: 1, minSell: 1, maxBuy: 12 },
-  oil: { baseBuy: 5, baseSell: 4, step: 1, minSell: 2, maxBuy: 14 },
-  gold: { baseBuy: 8, baseSell: 6, step: 2, minSell: 4, maxBuy: 18 },
+  steel: { baseBuy: 4, baseSell: 3, step: 1, minSell: 1, maxBuy: 9999 },
+  oil: { baseBuy: 5, baseSell: 4, step: 1, minSell: 1, maxBuy: 9999 },
+  gold: { baseBuy: 8, baseSell: 6, step: 2, minSell: 1, maxBuy: 9999 },
 };
 
 export const INITIAL_MARKET_PRICES: MarketPrices = {
@@ -257,6 +267,10 @@ export function getTerritoryMaxBuildingSlots(
   }
   // HEGEM-107: Fábrica Civil expande capacidade de obras em +1 slot
   if (hasTerritoryBuilding(terr, "civilian_factory")) {
+    slots += 1;
+  }
+  // Expansão Territorial de uso único (+1 slot por fora)
+  if (terr.infrastructureExpanded) {
     slots += 1;
   }
   return slots;
@@ -330,14 +344,24 @@ export function checkNavalBlockade(
 
   const attackerHasOil = (attackerPlayer?.resources?.oil ?? 0) > 0;
   const defenderHasOil = (defenderPlayer?.resources?.oil ?? 0) > 0;
+  const attackerExterm = attackerPlayer?.doctrineId === "extermination";
+  const defenderExterm = defenderPlayer?.doctrineId === "extermination";
 
   let attackerNavy = 0;
-  if (fromTerr.ownerId === actingPlayerId && hasTerritoryBuilding(fromTerr, "port") && attackerHasOil) {
+  if (
+    fromTerr.ownerId === actingPlayerId &&
+    (hasTerritoryBuilding(fromTerr, "port") || attackerExterm) &&
+    attackerHasOil
+  ) {
     attackerNavy = getTerritoryUnits(fromTerr).navy;
   }
 
   let defenderNavy = 0;
-  if (toTerr.ownerId !== actingPlayerId && hasTerritoryBuilding(toTerr, "port") && defenderHasOil) {
+  if (
+    toTerr.ownerId !== actingPlayerId &&
+    (hasTerritoryBuilding(toTerr, "port") || defenderExterm) &&
+    defenderHasOil
+  ) {
     defenderNavy = getTerritoryUnits(toTerr).navy;
   }
 
@@ -373,6 +397,15 @@ export function updateSupplyAndEncirclement(
       const units = getTerritoryUnits(t);
       const hasMechanized = units.tank > 0 || units.aircraft > 0 || units.navy > 0;
       t.outOfFuel = !playerHasOil && hasMechanized;
+    }
+
+    // HEGEM-125: Partisan / Guerrilla doctrine is 100% immune to supply line encirclement everywhere
+    if (player.doctrineId === "guerrilla" || player.doctrineId === "guerrilla_warfare") {
+      for (const t of playerTerritories) {
+        t.isEncircled = false;
+        t.encircledRounds = 0;
+      }
+      continue;
     }
 
     const capId = player.capitalTerritoryId;
@@ -648,6 +681,12 @@ export function calculateTurnEconomy(
     }
   }
 
+  // HEGEM-128: Central Bank Gold Reserve Interest (+$2 base income for every 3 Gold held in reserve, starting Round 2+)
+  const heldGold = player?.resources?.gold ?? 0;
+  if (state.round > 1 && heldGold >= 3) {
+    goldPassiveMoney += Math.floor(heldGold / 3) * 2;
+  }
+
   if (state.investmentRoutes && state.investmentRoutes.length > 0) {
     for (const route of state.investmentRoutes) {
       if (
@@ -785,7 +824,7 @@ export function createGame(opts: CreateGameOptions): GameState {
   const assignedObjectiveIds = new Set<string>();
 
   const players: PlayerState[] = shuffledPlayers.map((p) => {
-    let chosenObjective: ObjectiveCard | undefined;
+    const recentSet = new Set(p.recentObjectiveIds ?? []);
     const startingTerrs = playerOwnedTerritoryIds[p.id] ?? [];
 
     const isObjEligible = (obj: ObjectiveCard): boolean => {
@@ -801,7 +840,37 @@ export function createGame(opts: CreateGameOptions): GameState {
       return true;
     };
 
-    if (!opts.objectives) {
+    const hasAffinity = (obj: ObjectiveCard): boolean => {
+      if (!p.doctrineId) return false;
+      if (obj.allowedDoctrines && obj.allowedDoctrines.includes(p.doctrineId)) return true;
+      if (p.doctrineId === "tall_sovereign" || p.doctrineId === "defense_in_depth") {
+        return (
+          obj.rule.type === "fortified_bastion" ||
+          obj.rule.type === "economic_hegemony" ||
+          obj.rule.type === "diplomatic_pax"
+        );
+      }
+      if (p.doctrineId === "extermination") {
+        return obj.rule.type === "eliminate_players";
+      }
+      // HEGEM-125: Classic Command (superior_firepower ID) prioritizes Classic War conquest objectives
+      if (p.doctrineId === "superior_firepower") {
+        return CLASSIC_OBJECTIVES.some((co) => co.id === obj.id);
+      }
+      return false;
+    };
+
+    const eligible = shuffledObjectives.filter(isObjEligible);
+    const freshEligible = eligible.filter((o) => !recentSet.has(o.id));
+    const recentEligible = eligible.filter((o) => recentSet.has(o.id));
+    const prioritizedPool = [...freshEligible, ...recentEligible];
+
+    let chosenObjective: ObjectiveCard | undefined;
+    if (p.doctrineId) {
+      chosenObjective = prioritizedPool.find(hasAffinity);
+    }
+
+    if (!chosenObjective && !opts.objectives) {
       const matchingRoleplay = ROLEPLAY_OBJECTIVES.filter(
         (obj) =>
           isObjEligible(obj) &&
@@ -814,8 +883,7 @@ export function createGame(opts: CreateGameOptions): GameState {
     }
 
     if (!chosenObjective) {
-      chosenObjective = shuffledObjectives.find((obj) => {
-        if (!isObjEligible(obj)) return false;
+      chosenObjective = prioritizedPool.find((obj) => {
         if (!obj.coreTerritoryIds || obj.coreTerritoryIds.length === 0) {
           return true;
         }
@@ -825,11 +893,23 @@ export function createGame(opts: CreateGameOptions): GameState {
 
     if (!chosenObjective) {
       chosenObjective =
+        prioritizedPool[0] ??
         rng.shuffle([...CLASSIC_OBJECTIVES]).find((obj) => isObjEligible(obj)) ??
         shuffledObjectives.find((obj) => isObjEligible(obj)) ??
         shuffledObjectives[0];
     }
     assignedObjectiveIds.add(chosenObjective.id);
+
+    const remainingPrioritized = prioritizedPool.filter((o) => o.id !== chosenObjective.id);
+    let candidateChoices = [chosenObjective, ...remainingPrioritized.slice(0, 2)];
+    if (candidateChoices.length < 3) {
+      const fallbackExtra = pool.filter(
+        (o) =>
+          isObjectiveCompatibleWithDoctrine(o, p.doctrineId) &&
+          !candidateChoices.some((c) => c.id === o.id)
+      );
+      candidateChoices = [...candidateChoices, ...fallbackExtra].slice(0, 3);
+    }
 
     return {
       id: p.id,
@@ -841,6 +921,8 @@ export function createGame(opts: CreateGameOptions): GameState {
       assaultedTargetsThisTurn: [],
       eliminated: false,
       objective: chosenObjective,
+      availableObjectives: candidateChoices,
+      pendingObjectiveChoice: false,
       cards: [],
       unplacedArmies: 0,
       conqueredThisTurn: false,
@@ -1014,6 +1096,26 @@ export function checkPlayerVictory(
     return hasAlliance && hasNapWithAll;
   }
 
+  if (rule.type === "eliminate_players") {
+    const eliminatedByMe = state.players.filter(
+      (p) => p.eliminated && p.eliminatedBy === player.id
+    ).length;
+    const totalOpponents = state.players.filter((p) => p.id !== player.id).length;
+    const required = Math.min(rule.minEliminations, Math.max(1, totalOpponents));
+    if (eliminatedByMe < required) return false;
+
+    if (rule.requireWorldTension !== undefined && (state.worldTension ?? 0) < rule.requireWorldTension) {
+      return false;
+    }
+    if (rule.requireInfamy !== undefined && (player.infamy ?? 0) < rule.requireInfamy) {
+      return false;
+    }
+    if (rule.minTerritoriesHeld !== undefined && ownedTerritories.length < rule.minTerritoriesHeld) {
+      return false;
+    }
+    return true;
+  }
+
   return false;
 }
 
@@ -1179,6 +1281,37 @@ export function calculateObjectiveProgress(
     };
   }
 
+  if (rule.type === "eliminate_players") {
+    const eliminatedByMe = state.players.filter(
+      (p) => p.eliminated && p.eliminatedBy === player.id
+    ).length;
+    const totalOpponents = state.players.filter((p) => p.id !== player.id).length;
+    const required = Math.min(rule.minEliminations, Math.max(1, totalOpponents));
+    let totalFactors = 1;
+    let factorSum = Math.min(1, eliminatedByMe / required);
+
+    if (rule.requireWorldTension !== undefined) {
+      totalFactors++;
+      factorSum += Math.min(1, (state.worldTension ?? 0) / rule.requireWorldTension);
+    }
+    if (rule.requireInfamy !== undefined) {
+      totalFactors++;
+      factorSum += Math.min(1, (player.infamy ?? 0) / rule.requireInfamy);
+    }
+    if (rule.minTerritoriesHeld !== undefined) {
+      totalFactors++;
+      factorSum += Math.min(1, ownedTerritories.length / rule.minTerritoriesHeld);
+    }
+
+    const completionPct = Math.min(100, Math.round((factorSum / totalFactors) * 100));
+    return {
+      completionPct,
+      held: eliminatedByMe,
+      total: required,
+      description: player.objective.descriptionPt,
+    };
+  }
+
   return { completionPct: 0, held: 0, total: 1, description: player.objective.descriptionPt };
 }
 
@@ -1217,7 +1350,9 @@ export function applyAction(
     action.type === "reject_investment" ||
     action.type === "propose_border_trade" ||
     action.type === "accept_border_trade" ||
-    action.type === "reject_border_trade";
+    action.type === "reject_border_trade" ||
+    action.type === "send_alliance_aid" ||
+    action.type === "send_coalition_aircraft";
 
   if (!isOutOfTurnAction && (!currentPlayer || currentPlayer.id !== playerId)) {
     throw new Error("Não é o seu turno.");
@@ -1291,12 +1426,100 @@ export function applyAction(
       }
 
       let bonus = getTradeBonusArmies(state.tradeCount);
-      // HEGEM-116: Ataque em Massa recebe +2 infantarias adicionais na troca
-      if (currentPlayer.doctrineId === "mass_assault") {
-        bonus += 2;
-      }
       state.tradeCount += 1;
-      currentPlayer.unplacedArmies += bonus;
+
+      const placeBonusUnitsOnEmpire = (unitType: UnitType, qty: number): number => {
+        if (qty <= 0) return 0;
+        const ownedTerrs = Object.values(state.territories).filter((t) => t.ownerId === playerId);
+        if (ownedTerrs.length === 0) return 0;
+        let target =
+          (currentPlayer.capitalTerritoryId
+            ? state.territories[currentPlayer.capitalTerritoryId]
+            : undefined) ?? ownedTerrs[0];
+        if (!target || target.ownerId !== playerId) {
+          target = ownedTerrs[0];
+        }
+        if (unitType === "navy") {
+          const coastal = ownedTerrs.find((t) => mapById.get(t.id)?.isCoastal !== false);
+          if (!coastal) return 0;
+          target = coastal;
+        } else if (unitType === "aircraft") {
+          const withAirfield = ownedTerrs.find((t) => hasTerritoryBuilding(t, "airfield"));
+          if (withAirfield) target = withAirfield;
+        }
+        setTerritoryUnits(
+          target,
+          addUnits(getTerritoryUnits(target), singleUnitCount(unitType, qty))
+        );
+        return qty;
+      };
+
+      const docId = currentPlayer.doctrineId;
+      let tradeRewardSummary = "";
+
+      if (docId === "mass_assault") {
+        // HEGEM-126: Mass Assault receives only Infantry (bonus + 2), capped at 50 total infantry units
+        const rawInf = bonus + 2;
+        const currentTotalInf =
+          currentPlayer.unplacedArmies +
+          Object.values(state.territories)
+            .filter((t) => t.ownerId === playerId)
+            .reduce((acc, t) => acc + getTerritoryUnits(t).infantry, 0);
+        const allowedInf = Math.max(0, Math.min(rawInf, 50 - currentTotalInf));
+        currentPlayer.unplacedArmies += allowedInf;
+        tradeRewardSummary = `+${allowedInf} Infantarias (Assalto em Massa, limite máx. 50)`;
+      } else if (docId === "blitzkrieg") {
+        // HEGEM-126: Blitzkrieg receives only Tanks on card trade
+        const tankCount = Math.max(2, Math.floor(bonus / 2));
+        placeBonusUnitsOnEmpire("tank", tankCount);
+        tradeRewardSummary = `+${tankCount} Blindados (Blitzkrieg)`;
+      } else if (docId === "naval_supremacy" || docId === "fleet_in_being") {
+        // HEGEM-126: AeroNaval receives equal amount of Aircraft and Navy
+        const pairCount = Math.max(1, Math.floor(bonus / 4));
+        const airPlaced = placeBonusUnitsOnEmpire("aircraft", pairCount);
+        const navyPlaced = placeBonusUnitsOnEmpire("navy", pairCount);
+        tradeRewardSummary = `+${airPlaced} Aeronave(s) e +${navyPlaced} Marinha(s) (Supremacia Aeronaval)`;
+      } else if (docId === "extermination") {
+        // HEGEM-126: Extermination receives a combined-arms package of every unit
+        const infQty = Math.max(2, Math.floor(bonus / 3));
+        const heavyQty = bonus >= 10 ? 2 : 1;
+        currentPlayer.unplacedArmies += infQty;
+        placeBonusUnitsOnEmpire("tank", heavyQty);
+        placeBonusUnitsOnEmpire("artillery", heavyQty);
+        placeBonusUnitsOnEmpire("aircraft", 1);
+        placeBonusUnitsOnEmpire("navy", 1);
+        tradeRewardSummary = `+${infQty} Inf, +${heavyQty} Blindado(s), +${heavyQty} Art, +1 Caça, +1 Frota (Extermínio)`;
+      } else if (docId === "guerrilla" || docId === "guerrilla_warfare") {
+        // HEGEM-126: Partisan receives a small amount of Infantry and Navy
+        const infQty = Math.max(2, Math.floor(bonus / 2));
+        const navyQty = bonus >= 10 ? 2 : 1;
+        currentPlayer.unplacedArmies += infQty;
+        const nPlaced = placeBonusUnitsOnEmpire("navy", navyQty);
+        tradeRewardSummary = `+${infQty} Infantarias e +${nPlaced} Marinha(s) (Partisan)`;
+      } else if (docId === "tall_sovereign" || docId === "defense_in_depth") {
+        // HEGEM-126: Tall receives large Money and Resources, but NO army units
+        const moneyGrant = bonus * 3;
+        const steelGrant = Math.max(2, Math.floor(bonus / 3));
+        const oilGrant = Math.max(2, Math.floor(bonus / 3));
+        const goldGrant = Math.max(1, Math.floor(bonus / 5));
+        currentPlayer.resources.money += moneyGrant;
+        currentPlayer.resources.steel += steelGrant;
+        currentPlayer.resources.oil += oilGrant;
+        currentPlayer.resources.gold += goldGrant;
+        tradeRewardSummary = `+$${moneyGrant}, +${steelGrant} Aço, +${oilGrant} Petróleo, +${goldGrant} Ouro (Fortaleza Soberana — 0 exércitos)`;
+      } else if (docId === "superior_firepower") {
+        // HEGEM-126: Classic / Normal doctrine receives small Infantry + Money + Resources
+        const infQty = Math.max(3, Math.floor(bonus * 0.75));
+        const moneyGrant = Math.max(4, bonus);
+        currentPlayer.unplacedArmies += infQty;
+        currentPlayer.resources.money += moneyGrant;
+        currentPlayer.resources.steel += 1;
+        currentPlayer.resources.oil += 1;
+        tradeRewardSummary = `+${infQty} exércitos, +$${moneyGrant}, +1 Aço, +1 Petróleo (Comando Clássico)`;
+      } else {
+        currentPlayer.unplacedArmies += bonus;
+        tradeRewardSummary = `+${bonus} exércitos`;
+      }
 
       currentPlayer.cards = currentPlayer.cards.filter(
         (c) => !action.cardIds.includes(c.id)
@@ -1316,7 +1539,7 @@ export function applyAction(
       }
 
       state.log.push(
-        `${currentPlayer.name} trocou cartas (+${bonus} exércitos)${
+        `${currentPlayer.name} trocou cartas (${tradeRewardSummary})${
           territoryBonuses.length ? ` e ganhou +2 em: ${territoryBonuses.join(", ")}` : ""
         }.`
       );
@@ -1599,6 +1822,10 @@ export function applyAction(
         if (action.unitType === "tank" || action.unitType === "artillery") {
           hasReq = hasReq || hasTerritoryBuilding(terr, "military_factory");
         }
+        // HEGEM-125: Extermination doctrine can recruit and operate Navy on any coastal territory without needing a Naval Port
+        if (action.unitType === "navy" && currentPlayer.doctrineId === "extermination") {
+          hasReq = true;
+        }
         if (!hasReq) {
           const requirementNames: Record<BuildingType, string> = {
             market: "Mercado",
@@ -1623,15 +1850,12 @@ export function applyAction(
 
       const unitCost = { ...UNIT_COSTS[action.unitType] };
 
-      // HEGEM-116: Modificadores das Doutrinas HoI4
+      // HEGEM-116 & HEGEM-125: Modificadores das Doutrinas HoI4 (superior_firepower = Comando Clássico sem penalidades)
       if (currentPlayer.doctrineId === "mass_assault" && action.unitType === "infantry") {
         unitCost.money = 2;
       }
       if (currentPlayer.doctrineId === "blitzkrieg" && action.unitType === "tank") {
         unitCost.steel = Math.max(1, unitCost.steel - 1);
-      }
-      if (currentPlayer.doctrineId === "superior_firepower" && action.unitType === "tank") {
-        unitCost.steel += 1;
       }
 
       // HEGEM-107: Arsenal Bélico (military_factory) reduz o custo de recrutamento em aço/ouro
@@ -1831,14 +2055,70 @@ export function applyAction(
       state.log.push(`${currentPlayer.name} posicionou +${action.armies} em ${tName}.`);
 
       if (currentPlayer.unplacedArmies === 0 && state.round === 1) {
+        if (!currentPlayer.pendingObjectiveChoice) {
+          advanceTurn(state, rng, map);
+        }
+      }
+      break;
+    }
+
+    case "choose_objective": {
+      if (state.phase !== "deploy") {
+        throw new Error("A escolha do objetivo secreto deve ser realizada na fase de posicionamento.");
+      }
+      const targetObj = currentPlayer.availableObjectives?.find((o) => o.id === action.objectiveId);
+      if (!targetObj) {
+        throw new Error("Objetivo secreto não disponível para escolha.");
+      }
+      currentPlayer.objective = targetObj;
+      currentPlayer.pendingObjectiveChoice = false;
+      state.log.push(`🎯 ${currentPlayer.name} confirmou seu Objetivo Secreto da campanha.`);
+      if (currentPlayer.unplacedArmies === 0 && state.round === 1) {
         advanceTurn(state, rng, map);
       }
+      break;
+    }
+
+    case "expand_infrastructure": {
+      if (state.phase !== "deploy") {
+        throw new Error("A expansão de infraestrutura só é permitida na fase de posicionamento.");
+      }
+      const terr = state.territories[action.territoryId];
+      if (!terr || terr.ownerId !== playerId) {
+        throw new Error("Você só pode expandir a infraestrutura em um território sob seu controle.");
+      }
+      if (terr.infrastructureExpanded) {
+        throw new Error("Este território já recebeu uma expansão de infraestrutura.");
+      }
+      currentPlayer.resources = currentPlayer.resources ?? { money: 0, steel: 0, oil: 0, gold: 0 };
+      const cost = { money: 4, steel: 1 };
+      if (
+        (currentPlayer.resources?.money ?? 0) < cost.money ||
+        (currentPlayer.resources?.steel ?? 0) < cost.steel
+      ) {
+        throw new Error(
+          `Recursos insuficientes: a expansão territorial custa $${cost.money} e ${cost.steel} Aço.`
+        );
+      }
+      currentPlayer.resources.money -= cost.money;
+      currentPlayer.resources.steel -= cost.steel;
+      terr.infrastructureExpanded = true;
+      const def = mapById.get(terr.id);
+      const tName = def?.namePt ?? terr.id;
+      state.log.push(
+        `🏗️ ${currentPlayer.name} expandiu a infraestrutura territorial de ${tName} (+1 slot de construção permanente)!`
+      );
       break;
     }
 
     case "end_deploy": {
       if (state.phase !== "deploy") {
         throw new Error("Você não está na fase de posicionamento.");
+      }
+      if (currentPlayer.pendingObjectiveChoice && currentPlayer.availableObjectives?.length) {
+        currentPlayer.objective = currentPlayer.availableObjectives[0];
+        currentPlayer.pendingObjectiveChoice = false;
+        state.log.push(`🎯 ${currentPlayer.name} teve seu Objetivo Secreto selecionado automaticamente.`);
       }
       if (state.round === 1) {
         throw new Error("Na primeira rodada, posicione todas as tropas para avançar automaticamente.");
@@ -1882,15 +2162,13 @@ export function applyAction(
         }
       }
 
-      const maxBarrages = currentPlayer.doctrineId === "superior_firepower" ? 2 : 1;
+      const maxBarrages = 1;
       const currentBarrages =
         fromTerr.artilleryBarragesCountThisTurn ??
         (fromTerr.artilleryBarrageFiredThisTurn ? 1 : 0);
       if (currentBarrages >= maxBarrages) {
         throw new Error(
-          maxBarrages > 1
-            ? "A artilharia desta base já realizou suas 2 barragens de saturação neste turno."
-            : "A artilharia desta base já realizou uma barragem de saturação neste turno."
+          "A artilharia desta base já realizou uma barragem de saturação neste turno."
         );
       }
 
@@ -2007,8 +2285,11 @@ export function applyAction(
         throw new Error("As esquadrilhas deste aeródromo já executaram uma surtida de combate neste turno.");
       }
 
-      if ((currentPlayer.resources?.oil ?? 0) < 1) {
-        throw new Error("Combustível insuficiente: surtidas aéreas exigem 1 Petróleo.");
+      const airOilCost = action.missionType === "bombardment" ? 2 : 1;
+      if ((currentPlayer.resources?.oil ?? 0) < airOilCost) {
+        throw new Error(
+          `Combustível insuficiente: esta missão aérea exige ${airOilCost} Petróleo.`
+        );
       }
 
       const fromDef = mapById.get(fromTerr.id)!;
@@ -2035,7 +2316,7 @@ export function applyAction(
         throw new Error("Você possui um tratado ativo com este general.");
       }
 
-      currentPlayer.resources.oil -= 1;
+      currentPlayer.resources.oil -= airOilCost;
       fromTerr.airMissionFlownThisTurn = true;
       state.worldTension = Math.min(100, Number(((state.worldTension ?? 0) + 0.3).toFixed(1)));
       state.lastStrike = {
@@ -2204,10 +2485,19 @@ export function applyAction(
         );
       }
 
+      const attackerHadFuel = (currentPlayer.resources?.oil ?? 0) > 0;
       if (isBlitzSpearheadAdvance) {
         const blitzOilCost = getEffectiveBlitzOilCost(currentPlayer, 1);
         currentPlayer.resources.oil = Math.max(0, (currentPlayer.resources?.oil ?? 0) - blitzOilCost);
         currentPlayer.blitzCountThisTurn = (currentPlayer.blitzCountThisTurn ?? 0) + 1;
+      } else if (attackingUnits.tank > 0 && attackerHadFuel) {
+        // HEGEM-128: Ofensivas blindadas consomem 1 Petróleo ao engajar com combustível
+        currentPlayer.resources.oil = Math.max(0, (currentPlayer.resources?.oil ?? 0) - 1);
+      }
+
+      if (coastalBombardment && (currentPlayer.resources?.oil ?? 0) > 0) {
+        // HEGEM-128: Bombardeio e assalto naval consomem 1 Petróleo da frota
+        currentPlayer.resources.oil = Math.max(0, (currentPlayer.resources?.oil ?? 0) - 1);
       }
 
       const defenderPlayer = state.players.find((p) => p.id === toTerr.ownerId);
@@ -2263,7 +2553,7 @@ export function applyAction(
       let blitzkriegBonus = false;
       let heavyArmorBonus = false;
       let tankSuperiorityBonus = false;
-      if (attackingUnits.tank > 0 && (currentPlayer.resources?.oil ?? 0) > 0) {
+      if (attackingUnits.tank > 0 && attackerHadFuel) {
         // 1-2 Tanques: re-rola 1s; 3+ Tanques: re-rola 1s e 2s (Ponta de Lança Pesada)
         const minRoll = attackingUnits.tank >= 3 ? 3 : 2;
         let reRolledAny = false;
@@ -3249,12 +3539,142 @@ export function applyAction(
       break;
     }
 
+    case "send_alliance_aid": {
+      if (action.targetPlayerId === playerId) {
+        throw new Error("Você não pode enviar remessas de aliança para si mesmo.");
+      }
+      const target = state.players.find((p) => p.id === action.targetPlayerId);
+      if (!target || target.eliminated) {
+        throw new Error("Destinatário inválido ou eliminado.");
+      }
+      const hasActiveAlliance = state.treaties?.some(
+        (t) =>
+          t.status === "active" &&
+          t.type === "alliance" &&
+          ((t.fromPlayerId === playerId && t.toPlayerId === target.id) ||
+            (t.fromPlayerId === target.id && t.toPlayerId === playerId))
+      );
+      const inSameCoalition = state.coalitions?.some(
+        (c) =>
+          c.memberPlayerIds.includes(playerId) && c.memberPlayerIds.includes(target.id)
+      );
+      if (!hasActiveAlliance && !inSameCoalition) {
+        throw new Error(
+          "Remessas Lend-Lease exigem uma Aliança Militar ativa ou participação na mesma Coalizão."
+        );
+      }
+
+      const moneyAmt = Math.max(0, Math.floor(action.money ?? 0));
+      const steelAmt = Math.max(0, Math.floor(action.steel ?? 0));
+      const oilAmt = Math.max(0, Math.floor(action.oil ?? 0));
+      const goldAmt = Math.max(0, Math.floor(action.gold ?? 0));
+      if (moneyAmt + steelAmt + oilAmt + goldAmt <= 0) {
+        throw new Error("Selecione ao menos um recurso ou valor monetário para enviar.");
+      }
+
+      actingPlayer.resources = actingPlayer.resources ?? { money: 0, steel: 0, oil: 0, gold: 0 };
+      target.resources = target.resources ?? { money: 0, steel: 0, oil: 0, gold: 0 };
+      if (
+        actingPlayer.resources.money < moneyAmt ||
+        actingPlayer.resources.steel < steelAmt ||
+        actingPlayer.resources.oil < oilAmt ||
+        actingPlayer.resources.gold < goldAmt
+      ) {
+        throw new Error("Recursos insuficientes no estoque nacional para enviar esta remessa.");
+      }
+
+      actingPlayer.resources.money -= moneyAmt;
+      actingPlayer.resources.steel -= steelAmt;
+      actingPlayer.resources.oil -= oilAmt;
+      actingPlayer.resources.gold -= goldAmt;
+
+      target.resources.money += moneyAmt;
+      target.resources.steel += steelAmt;
+      target.resources.oil += oilAmt;
+      target.resources.gold += goldAmt;
+
+      const parts: string[] = [];
+      if (moneyAmt > 0) parts.push(`$${moneyAmt}`);
+      if (steelAmt > 0) parts.push(`${steelAmt} Aço`);
+      if (oilAmt > 0) parts.push(`${oilAmt} Petróleo`);
+      if (goldAmt > 0) parts.push(`${goldAmt} Ouro`);
+      state.log.push(
+        `🤝 LEND-LEASE: ${actingPlayer.name} enviou ajuda estratégica (${parts.join(", ")}) para seu aliado ${target.name}!`
+      );
+      break;
+    }
+
+    case "send_coalition_aircraft": {
+      if (action.targetPlayerId === playerId) {
+        throw new Error("Você não pode transferir esquadrilhas de coalizão para si mesmo.");
+      }
+      const target = state.players.find((p) => p.id === action.targetPlayerId);
+      if (!target || target.eliminated) {
+        throw new Error("Aliado de coalizão inválido ou eliminado.");
+      }
+      const inSameCoalition = state.coalitions?.some(
+        (c) =>
+          c.memberPlayerIds.includes(playerId) && c.memberPlayerIds.includes(target.id)
+      );
+      if (!inSameCoalition) {
+        throw new Error(
+          "A transferência direta de aeronaves é exclusiva para membros da mesma Coalizão Militar."
+        );
+      }
+
+      const fromTerr = state.territories[action.fromTerritoryId];
+      if (!fromTerr || fromTerr.ownerId !== playerId) {
+        throw new Error("O território de origem das aeronaves não está sob seu controle.");
+      }
+      const fromUnits = getTerritoryUnits(fromTerr);
+      if (fromUnits.aircraft < action.quantity) {
+        throw new Error("Quantidade de aeronaves insuficiente no território de origem.");
+      }
+      if (fromTerr.armies - action.quantity < 1) {
+        throw new Error("O território de origem deve manter ao menos 1 divisão de guarnição.");
+      }
+
+      let destTerr = action.toTerritoryId ? state.territories[action.toTerritoryId] : undefined;
+      if (!destTerr || destTerr.ownerId !== target.id) {
+        destTerr =
+          (target.capitalTerritoryId &&
+          state.territories[target.capitalTerritoryId]?.ownerId === target.id
+            ? state.territories[target.capitalTerritoryId]
+            : undefined) ??
+          Object.values(state.territories).find((t) => t.ownerId === target.id);
+      }
+      if (!destTerr) {
+        throw new Error("O aliado destinatário não possui territórios válidos para receber as aeronaves.");
+      }
+
+      setTerritoryUnits(
+        fromTerr,
+        subtractUnits(fromUnits, singleUnitCount("aircraft", action.quantity))
+      );
+      setTerritoryUnits(
+        destTerr,
+        addUnits(getTerritoryUnits(destTerr), singleUnitCount("aircraft", action.quantity))
+      );
+
+      const fromName = mapById.get(fromTerr.id)?.namePt ?? fromTerr.id;
+      const toName = mapById.get(destTerr.id)?.namePt ?? destTerr.id;
+      state.log.push(
+        `✈️ ESQUADRILHA DE COALIZÃO: ${actingPlayer.name} transferiu ${action.quantity}x Aeronave(s) de ${fromName} para ${toName} (${target.name})!`
+      );
+      break;
+    }
+
     case "end_turn": {
       if (state.pendingConquest) {
         throw new Error("Conclua a ocupação do território conquistado antes de encerrar o turno.");
       }
       if (state.phase === "deploy" && currentPlayer.unplacedArmies > 0) {
         throw new Error("Posicione todos os seus exércitos antes de encerrar o turno.");
+      }
+      if (currentPlayer.pendingObjectiveChoice && currentPlayer.availableObjectives?.length) {
+        currentPlayer.objective = currentPlayer.availableObjectives[0];
+        currentPlayer.pendingObjectiveChoice = false;
+        state.log.push(`🎯 ${currentPlayer.name} teve seu Objetivo Secreto selecionado automaticamente.`);
       }
       advanceTurn(state, rng, map);
       break;
@@ -3406,6 +3826,91 @@ function advanceTurn(state: GameState, rng: SeededRng, map: GameMapDef): void {
       );
       collectTurnEconomy(state, candidate.id, map);
 
+      // HEGEM-127: Mobilização de Unidades Características por Turno (Rodada 2+)
+      if (state.round > 1 && candidate.doctrineId) {
+        const mapById = new Map(map.territories.map((t) => [t.id, t]));
+        const candTerrs = Object.values(state.territories).filter(
+          (t) => t.ownerId === candidate.id
+        );
+        const capTerr =
+          (candidate.capitalTerritoryId &&
+          state.territories[candidate.capitalTerritoryId]?.ownerId === candidate.id
+            ? state.territories[candidate.capitalTerritoryId]
+            : undefined) ?? candTerrs[0];
+        const coastalTerr =
+          candTerrs.find((t) => mapById.get(t.id)?.isCoastal !== false) ?? capTerr;
+
+        const spawnOnTerr = (
+          targetTerr: TerritoryState | undefined,
+          uType: UnitType,
+          qty: number
+        ) => {
+          if (!targetTerr || qty <= 0) return;
+          setTerritoryUnits(
+            targetTerr,
+            addUnits(getTerritoryUnits(targetTerr), singleUnitCount(uType, qty))
+          );
+        };
+
+        switch (candidate.doctrineId) {
+          case "extermination": {
+            candidate.unplacedArmies += 1;
+            spawnOnTerr(capTerr, "tank", 1);
+            spawnOnTerr(capTerr, "artillery", 1);
+            spawnOnTerr(capTerr, "aircraft", 1);
+            spawnOnTerr(coastalTerr, "navy", 1);
+            state.log.push(
+              `☠️ MOBILIZAÇÃO DE EXTERMÍNIO: ${candidate.name} mobilizou +1 Infantaria, +1 Tanque, +1 Artilharia, +1 Avião e +1 Navio!`
+            );
+            break;
+          }
+          case "mass_assault": {
+            const totalInf =
+              candTerrs.reduce((sum, t) => sum + getTerritoryUnits(t).infantry, 0) +
+              candidate.unplacedArmies;
+            const addInf = Math.max(0, Math.min(2, 50 - totalInf));
+            if (addInf > 0) {
+              candidate.unplacedArmies += addInf;
+              state.log.push(
+                `🚩 LEVA EM MASSA: ${candidate.name} recebeu +${addInf} Infantaria(s) de mobilização doutrinária (Teto: 50).`
+              );
+            }
+            break;
+          }
+          case "blitzkrieg": {
+            if (capTerr) {
+              spawnOnTerr(capTerr, "tank", 1);
+              candidate.unplacedArmies = Math.max(1, candidate.unplacedArmies - 2);
+              state.log.push(
+                `⚡ LINHA DE MONTAGEM BLINDADA: ${candidate.name} mobilizou +1 Tanque na Capital (-2 recrutas de infantaria).`
+              );
+            }
+            break;
+          }
+          case "naval_supremacy":
+          case "fleet_in_being": {
+            spawnOnTerr(capTerr, "aircraft", 1);
+            spawnOnTerr(coastalTerr, "navy", 1);
+            state.log.push(
+              `⚓ ESTALEIROS & ESQUADRILHAS: ${candidate.name} mobilizou +1 Aeronave e +1 Esquadra Naval!`
+            );
+            break;
+          }
+          case "guerrilla":
+          case "guerrilla_warfare": {
+            if (coastalTerr) {
+              spawnOnTerr(coastalTerr, "navy", 1);
+              state.log.push(
+                `🏴‍☠️ FLOTILHA PARTISAN: ${candidate.name} mobilizou +1 Navio de patrulha costeira!`
+              );
+            }
+            break;
+          }
+          default:
+            break;
+        }
+      }
+
       updateSupplyAndEncirclement(state, map);
 
       for (const p of state.players) {
@@ -3480,6 +3985,7 @@ export function createPlayerView(
         territoryId: null,
         symbol: "circle",
       }));
+      p.availableObjectives = undefined;
     }
   }
   return clone;

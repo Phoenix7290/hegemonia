@@ -6,7 +6,11 @@ export const PlayerColorSchema = z.enum([
   "blue",
   "red",
   "green",
+  "dark_green",
   "yellow",
+  "orange",
+  "pink",
+  "purple",
   "black",
   "white",
 ]);
@@ -217,6 +221,13 @@ export type ObjectiveKind =
       requiredAlliances: number;
       requireNapWithAllLiving: boolean;
       fallbackRoundsSurvival: number;
+    }
+  | {
+      type: "eliminate_players";
+      minEliminations: number;
+      requireWorldTension?: number;
+      requireInfamy?: number;
+      minTerritoriesHeld?: number;
     };
 
 export interface ObjectiveCard {
@@ -236,26 +247,55 @@ export function isObjectiveCompatibleWithDoctrine(
   objective: ObjectiveCard,
   doctrineId: DoctrineId | null | undefined
 ): boolean {
-  if (!doctrineId) return true;
+  if (!doctrineId) {
+    if (objective.allowedDoctrines && objective.allowedDoctrines.length > 0) {
+      return false;
+    }
+    if (objective.rule.type === "eliminate_players") {
+      return false;
+    }
+    return true;
+  }
   if (objective.allowedDoctrines && !objective.allowedDoctrines.includes(doctrineId)) {
     return false;
   }
   if (objective.disallowedDoctrines && objective.disallowedDoctrines.includes(doctrineId)) {
     return false;
   }
-  // Tall Sovereign is incompatible with wide conquest (>18 territories)
-  if (
-    (doctrineId === "tall_sovereign" || doctrineId === "defense_in_depth") &&
-    objective.rule.type === "territories" &&
-    objective.rule.count > 18
-  ) {
+
+  // Extermination is strictly and exclusively dedicated to eliminate_players objectives
+  if (doctrineId === "extermination") {
+    return (
+      objective.rule.type === "eliminate_players" &&
+      objective.rule.minEliminations >= 2
+    );
+  }
+
+  // Non-extermination doctrines cannot have eliminate_players objectives
+  if (objective.rule.type === "eliminate_players") {
     return false;
   }
-  // Extermination is forbidden from diplomatic pacification or purely economic non-combat objectives
-  if (doctrineId === "extermination") {
-    if (objective.rule.type === "diplomatic_pax") return false;
-    if (objective.rule.type === "economic_hegemony") return false;
+
+  // Tall Sovereign and Defense in Depth doctrines are strictly incompatible with wide expansion
+  if (doctrineId === "tall_sovereign" || doctrineId === "defense_in_depth") {
+    if (objective.rule.type === "territories") return false;
+    if (objective.rule.type === "destroy_color") return false;
+    if (
+      objective.rule.type === "specific_territories" &&
+      objective.rule.territoryIds.length > 10
+    ) {
+      return false;
+    }
+    if (
+      objective.rule.type === "continents" &&
+      (objective.rule.continents.includes("asia") ||
+        objective.rule.continents.includes("africa") ||
+        objective.rule.extraAnyContinent)
+    ) {
+      return false;
+    }
   }
+
   return true;
 }
 
@@ -321,6 +361,10 @@ export interface PlayerState {
   eliminated: boolean;
   eliminatedBy?: string;
   objective: ObjectiveCard;
+  /** Candidate objectives available for player selection in Round 1 (HEGEM-117) */
+  availableObjectives?: ObjectiveCard[];
+  /** Whether the player still needs to make their Round 1 secret objective choice */
+  pendingObjectiveChoice?: boolean;
   cards: TerritoryCard[];
   unplacedArmies: number;
   conqueredThisTurn: boolean;
@@ -376,6 +420,8 @@ export interface TerritoryState {
   movedInUnits?: UnitCounts;
   /** Constructed infrastructure buildings on this territory (max 2 regular, 3 in active capital) */
   buildings?: TerritoryBuilding[];
+  /** Whether infrastructure was permanently expanded on this territory (+1 building slot por fora) */
+  infrastructureExpanded?: boolean;
   /** Whether this territory's airfield has already performed all allowed strategic airlifts this turn */
   airliftedThisTurn?: boolean;
   /** Number of airlifts launched from this airfield during the current turn */
@@ -685,7 +731,40 @@ export const JoinCoalitionActionSchema = z.object({
   coalitionId: z.string(),
 });
 
+export const ChooseObjectiveActionSchema = z.object({
+  type: z.literal("choose_objective"),
+  objectiveId: z.string(),
+});
+
+export const ExpandInfrastructureActionSchema = z.object({
+  type: z.literal("expand_infrastructure"),
+  territoryId: z.string(),
+});
+
+export const SendAllianceAidActionSchema = z.object({
+  type: z.literal("send_alliance_aid"),
+  targetPlayerId: z.string(),
+  money: z.number().int().min(0).default(0),
+  steel: z.number().int().min(0).default(0),
+  oil: z.number().int().min(0).default(0),
+  gold: z.number().int().min(0).default(0),
+});
+export type SendAllianceAidAction = z.infer<typeof SendAllianceAidActionSchema>;
+
+export const SendCoalitionAircraftActionSchema = z.object({
+  type: z.literal("send_coalition_aircraft"),
+  targetPlayerId: z.string(),
+  fromTerritoryId: z.string(),
+  toTerritoryId: z.string().optional(),
+  quantity: z.number().int().min(1).default(1),
+});
+export type SendCoalitionAircraftAction = z.infer<typeof SendCoalitionAircraftActionSchema>;
+
 export const GameActionSchema = z.discriminatedUnion("type", [
+  ChooseObjectiveActionSchema,
+  ExpandInfrastructureActionSchema,
+  SendAllianceAidActionSchema,
+  SendCoalitionAircraftActionSchema,
   SelectDoctrineActionSchema,
   SelectCapitalActionSchema,
   DeployActionSchema,
