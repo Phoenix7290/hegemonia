@@ -19,6 +19,7 @@ describe("HEGEM-93: Tactical Audio & SFX Engine with User Audio Assets", () => {
       "navy",
       "turn_radio",
       "turn_chime",
+      "timer_tick",
       "market_sell",
       "market_buy",
       "treaty_broken",
@@ -49,6 +50,7 @@ describe("HEGEM-93: Tactical Audio & SFX Engine with User Audio Assets", () => {
     expect(SFX_ASSET_PATHS.aircraft).toContain("/sfx/combat/aircraft_strike.mp3");
     expect(SFX_ASSET_PATHS.navy).toContain("/sfx/combat/naval_salvo.mp3");
     expect(SFX_ASSET_PATHS.turn_radio).toContain("/sfx/turn/turn_start_radio.mp3");
+    expect(SFX_ASSET_PATHS.timer_tick).toContain("/sfx/turn/timer_tick.mp3");
     expect(SFX_ASSET_PATHS.market_sell).toContain("/sfx/economy/market_sell_coins.mp3");
     expect(SFX_ASSET_PATHS.market_buy).toContain("/sfx/economy/market_buy_cargo.mp3");
     expect(SFX_ASSET_PATHS.treaty_broken).toContain("/sfx/global/treaty_broken.mp3");
@@ -71,6 +73,8 @@ describe("HEGEM-93: Tactical Audio & SFX Engine with User Audio Assets", () => {
     expect(() => sound.playTroopCombat("aeronave")).not.toThrow();
     expect(() => sound.playTroopCombat("marinha")).not.toThrow();
     expect(() => sound.playTurnRadioAlert()).not.toThrow();
+    expect(() => sound.playTurnTimerTick(5)).not.toThrow();
+    expect(() => sound.playTurnTimerTick(1)).not.toThrow();
     expect(() => sound.playMarketSell()).not.toThrow();
     expect(() => sound.playMarketBuy()).not.toThrow();
     expect(() => sound.playTreatyBroken()).not.toThrow();
@@ -127,6 +131,7 @@ describe("HEGEM-93: Tactical Audio & SFX Engine with User Audio Assets", () => {
     expect(manifest.categories.combat.items.navy).toBeDefined();
 
     expect(manifest.categories.turn.items.turn_radio).toBeDefined();
+    expect(manifest.categories.turn.items.timer_tick).toBeDefined();
     expect(manifest.categories.economy.items.market_sell).toBeDefined();
     expect(manifest.categories.economy.items.market_buy).toBeDefined();
     expect(manifest.categories.global.items.treaty_broken).toBeDefined();

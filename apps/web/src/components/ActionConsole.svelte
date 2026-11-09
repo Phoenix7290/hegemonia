@@ -28,6 +28,7 @@
     myPlayerId: string | null;
     myPlayerState: PlayerState | undefined;
     isMyTurn: boolean;
+    remainingSeconds?: number;
     selectedFromId: string | null;
     selectedToId: string | null;
     sliderArmies: number;
@@ -56,6 +57,7 @@
     myPlayerId,
     myPlayerState,
     isMyTurn,
+    remainingSeconds,
     selectedFromId = $bindable(),
     selectedToId = $bindable(),
     sliderArmies = $bindable(),
@@ -195,6 +197,23 @@
 
 {#if !isImmersiveMode && hudVisible}
   <footer class="hud-panel bottom-center-dock">
+    <!-- HEGEM-95: Prominent Countdown Alert Badge in ActionConsole -->
+    {#if isMyTurn && !game.winnerId && remainingSeconds !== undefined && remainingSeconds <= 10}
+      <div
+        class="turn-timeout-badge"
+        class:danger-flash={remainingSeconds <= 5}
+        role="alert"
+        aria-live="assertive"
+      >
+        <div class="timeout-badge-icon">
+          <Icon name="clock" size={14} />
+        </div>
+        <div class="timeout-badge-content">
+          <span class="timeout-badge-label">FIM DE TURNO IMINENTE</span>
+          <span class="timeout-badge-counter">{remainingSeconds}s</span>
+        </div>
+      </div>
+    {/if}
 
     {#if isMyTurn && !game.winnerId}
       {#if game.pendingConquest}
@@ -732,6 +751,89 @@
 {/if}
 
 <style>
+  .turn-timeout-badge {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.55rem;
+    padding: 0.35rem 0.85rem;
+    margin-bottom: 0.45rem;
+    background: linear-gradient(90deg, rgba(185, 28, 28, 0.95), rgba(220, 38, 38, 0.95), rgba(185, 28, 28, 0.95));
+    border: 1px solid #f87171;
+    border-radius: 5px;
+    color: #ffffff;
+    box-shadow: 0 0 14px rgba(239, 68, 68, 0.75);
+    animation: badge-pulse 1s ease-in-out infinite alternate;
+  }
+
+  .turn-timeout-badge.danger-flash {
+    background: linear-gradient(90deg, rgba(220, 38, 38, 0.98), rgba(239, 68, 68, 1), rgba(220, 38, 38, 0.98));
+    border-color: #fca5a5;
+    box-shadow: 0 0 20px rgba(239, 68, 68, 0.95), 0 0 35px rgba(239, 68, 68, 0.5);
+    animation: badge-pulse-urgent 0.5s ease-in-out infinite alternate;
+  }
+
+  .timeout-badge-icon {
+    display: inline-flex;
+    align-items: center;
+    color: #fef08a;
+  }
+
+  .timeout-badge-content {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+  }
+
+  .timeout-badge-label {
+    font-size: 0.76rem;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #ffffff;
+  }
+
+  .timeout-badge-counter {
+    font-family: var(--font-mono, monospace);
+    font-size: 0.88rem;
+    font-weight: 900;
+    color: #fef08a;
+    background: rgba(0, 0, 0, 0.45);
+    padding: 0.08rem 0.4rem;
+    border-radius: 3px;
+    border: 1px solid rgba(254, 240, 138, 0.4);
+  }
+
+  @keyframes badge-pulse {
+    0% {
+      transform: scale(1);
+      box-shadow: 0 0 8px rgba(239, 68, 68, 0.5);
+    }
+    100% {
+      transform: scale(1.02);
+      box-shadow: 0 0 16px rgba(239, 68, 68, 0.9);
+    }
+  }
+
+  @keyframes badge-pulse-urgent {
+    0% {
+      transform: scale(1);
+      box-shadow: 0 0 12px rgba(239, 68, 68, 0.8);
+    }
+    100% {
+      transform: scale(1.035);
+      box-shadow: 0 0 24px rgba(255, 255, 255, 0.8), 0 0 36px rgba(239, 68, 68, 1);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .turn-timeout-badge,
+    .turn-timeout-badge.danger-flash {
+      animation: none;
+      transform: none;
+    }
+  }
+
   .bottom-center-dock {
     position: fixed;
     left: 50%;

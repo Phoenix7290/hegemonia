@@ -17,6 +17,7 @@ export const REPLAY_GAIN_CONFIG: Record<string, ReplayGainEntry> = {
   navy: { category: "combat", targetLufs: -15, gainDb: -1.5 },
   turn_radio: { category: "turn", targetLufs: -13, gainDb: -1.0 },
   turn_chime: { category: "turn", targetLufs: -15, gainDb: -3.0 },
+  timer_tick: { category: "turn", targetLufs: -14, gainDb: -1.5 },
   market_sell: { category: "economy", targetLufs: -18, gainDb: -3.0 },
   market_buy: { category: "economy", targetLufs: -16, gainDb: -2.0 },
   treaty_broken: { category: "global", targetLufs: -14, gainDb: -1.5 },
@@ -39,6 +40,7 @@ export const SFX_ASSET_PATHS: Record<string, string[]> = {
   navy: ["/sfx/combat/naval_salvo.mp3", "/sfx/combat/naval_salvo.wav"],
   turn_radio: ["/sfx/turn/turn_start_radio.mp3", "/sfx/turn/turn_start_radio.wav"],
   turn_chime: ["/sfx/turn/turn_chime.mp3", "/sfx/turn/turn_chime.wav"],
+  timer_tick: ["/sfx/turn/timer_tick.mp3", "/sfx/turn/timer_tick.wav"],
   market_sell: ["/sfx/economy/market_sell_coins.mp3", "/sfx/economy/market_sell_coins.wav"],
   market_buy: ["/sfx/economy/market_buy_cargo.mp3", "/sfx/economy/market_buy_cargo.wav"],
   treaty_broken: ["/sfx/global/treaty_broken.mp3", "/sfx/global/treaty_broken.wav"],
@@ -142,13 +144,16 @@ class SoundEngine {
     }
   }
 
-  private playBuffer(key: string, gainMultiplier = 1.0): boolean {
+  private playBuffer(key: string, gainMultiplier = 1.0, playbackRate = 1.0): boolean {
     if (!this.ctx || !this.sfxGain || !this.sfxBuffers[key] || this.isMuted || this.sfxVolume <= 0) {
       return false;
     }
     try {
       const src = this.ctx.createBufferSource();
       src.buffer = this.sfxBuffers[key];
+      if (playbackRate !== 1.0) {
+        src.playbackRate.setValueAtTime(playbackRate, this.ctx.currentTime);
+      }
 
       const nodeGain = this.ctx.createGain();
       const calib = REPLAY_GAIN_CONFIG[key]?.gainDb ?? 0;
@@ -481,6 +486,52 @@ class SoundEngine {
    * Rádio Militar / Toque Tático de Início de Turno:
    * Alerta sonoro proeminente para notificar o jogador imediatamente, inclusive em background tab.
    */
+  /**
+   * HEGEM-95: Tick Militar / Beep Tático de Fim de Turno (Últimos 5 Segundos)
+   * Toca um aviso sonoro (tick militar / beep sutil de cronômetro) a cada segundo
+   * dos últimos 5 segundos do turno do jogador.
+   * Respeita preferências de acessibilidade e volume.
+   */
+  public playTurnTimerTick(secondsRemaining = 5) {
+    if (this.isMuted || this.sfxVolume <= 0) return;
+    this.initContext();
+
+    const rate = 1.0 + Math.max(0, 5 - secondsRemaining) * 0.05;
+    if (this.playBuffer("timer_tick", 1.0, rate)) return;
+    if (!this.ctx || !this.sfxGain) return;
+
+    const now = this.ctx.currentTime;
+    const isFinalSecond = secondsRemaining <= 1;
+    const baseFreq = isFinalSecond ? 1320 : 880 + (5 - secondsRemaining) * 60;
+
+    // 1. Transient click
+    const clickOsc = this.ctx.createOscillator();
+    const clickGain = this.ctx.createGain();
+    clickOsc.type = "sine";
+    clickOsc.frequency.setValueAtTime(2600, now);
+    clickGain.gain.setValueAtTime(0.12, now);
+    clickGain.gain.exponentialRampToValueAtTime(0.001, now + 0.015);
+    clickOsc.connect(clickGain);
+    clickGain.connect(this.sfxGain);
+    clickOsc.start(now);
+    clickOsc.stop(now + 0.015);
+
+    // 2. Tonal acoustic body
+    const bodyOsc = this.ctx.createOscillator();
+    const bodyGain = this.ctx.createGain();
+    bodyOsc.type = "sine";
+    bodyOsc.frequency.setValueAtTime(baseFreq, now);
+
+    const dur = isFinalSecond ? 0.08 : 0.055;
+    bodyGain.gain.setValueAtTime(isFinalSecond ? 0.28 : 0.2, now);
+    bodyGain.gain.exponentialRampToValueAtTime(0.001, now + dur);
+
+    bodyOsc.connect(bodyGain);
+    bodyGain.connect(this.sfxGain);
+    bodyOsc.start(now);
+    bodyOsc.stop(now + dur);
+  }
+
   public playTurnRadioAlert() {
     if (this.isMuted || this.sfxVolume <= 0) return;
     this.initContext();

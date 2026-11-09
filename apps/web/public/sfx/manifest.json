@@ -22,7 +22,7 @@
           "style": "HOI4 Army Move / Clarion March Order",
           "file": "offensive_order.mp3",
           "fallback": "offensive_order.wav",
-          "durationSec": 2.50,
+          "durationSec": 2.5,
           "replayGainDb": -2.0,
           "peakDbfs": -0.4
         },
@@ -31,7 +31,7 @@
           "style": "HOI4 War Declaration / Air Raid Klaxon",
           "file": "defensive_alarm.mp3",
           "fallback": "defensive_alarm.wav",
-          "durationSec": 3.20,
+          "durationSec": 3.2,
           "replayGainDb": -1.5,
           "peakDbfs": -4.3
         },
@@ -40,7 +40,7 @@
           "style": "HOI4 Rifle Crack & Bolt-Action Volley",
           "file": "infantry_rifle.mp3",
           "fallback": "infantry_rifle.wav",
-          "durationSec": 2.20,
+          "durationSec": 2.2,
           "replayGainDb": -2.0,
           "peakDbfs": -7.2
         },
@@ -49,7 +49,7 @@
           "style": "HOI4 Heavy Tank 88mm Gun & Treads",
           "file": "armor_cannon.mp3",
           "fallback": "armor_cannon.wav",
-          "durationSec": 1.60,
+          "durationSec": 1.6,
           "replayGainDb": -1.5,
           "peakDbfs": -1.2
         },
@@ -58,7 +58,7 @@
           "style": "HOI4 Distant Heavy Artillery Barrage",
           "file": "artillery_barrage.mp3",
           "fallback": "artillery_barrage.wav",
-          "durationSec": 2.80,
+          "durationSec": 2.8,
           "replayGainDb": -1.5,
           "peakDbfs": -3.9
         },
@@ -67,7 +67,7 @@
           "style": "HOI4 Stuka / Fighter Dive & Aerial Blast",
           "file": "aircraft_strike.mp3",
           "fallback": "aircraft_strike.wav",
-          "durationSec": 4.60,
+          "durationSec": 4.6,
           "replayGainDb": -2.0,
           "peakDbfs": -0.1
         },
@@ -76,7 +76,7 @@
           "style": "HOI4 Battleship Broadside & Naval Horn",
           "file": "naval_salvo.mp3",
           "fallback": "naval_salvo.wav",
-          "durationSec": 3.50,
+          "durationSec": 3.5,
           "replayGainDb": -1.5,
           "peakDbfs": 0.0
         }
@@ -101,9 +101,18 @@
           "style": "HQ Console Chime",
           "file": "turn_chime.mp3",
           "fallback": "turn_chime.wav",
-          "durationSec": 0.80,
+          "durationSec": 0.8,
           "replayGainDb": -3.0,
           "peakDbfs": -4.0
+        },
+        "timer_tick": {
+          "title": "Aviso Sonoro de Fim de Turno (Tick Militar)",
+          "style": "Tactical Military HUD Chronometer Tick",
+          "file": "timer_tick.mp3",
+          "fallback": "timer_tick.wav",
+          "durationSec": 0.065,
+          "replayGainDb": -1.5,
+          "peakDbfs": -1.5
         }
       }
     },
@@ -117,7 +126,7 @@
           "style": "HOI4 Consumer Goods / Gold Specie Clink",
           "file": "market_sell_coins.mp3",
           "fallback": "market_sell_coins.wav",
-          "durationSec": 1.60,
+          "durationSec": 1.6,
           "replayGainDb": -3.0,
           "peakDbfs": 0.0
         },
@@ -142,7 +151,7 @@
           "style": "HOI4 Diplomatic Betrayal Bronze Gong",
           "file": "treaty_broken.mp3",
           "fallback": "treaty_broken.wav",
-          "durationSec": 1.80,
+          "durationSec": 1.8,
           "replayGainDb": -1.5,
           "peakDbfs": 0.0
         },
@@ -151,7 +160,7 @@
           "style": "HOI4 Strategic Nuclear Alert Klaxon",
           "file": "defcon1_crisis.mp3",
           "fallback": "defcon1_crisis.wav",
-          "durationSec": 3.20,
+          "durationSec": 3.2,
           "replayGainDb": -1.0,
           "peakDbfs": -5.0
         },
@@ -160,7 +169,7 @@
           "style": "HOI4 Capitulation / Martial Taps",
           "file": "faction_eliminated.mp3",
           "fallback": "faction_eliminated.wav",
-          "durationSec": 3.20,
+          "durationSec": 3.2,
           "replayGainDb": -2.0,
           "peakDbfs": -0.2
         },
@@ -203,7 +212,7 @@
           "style": "Territorial Annexation Fanfare",
           "file": "conquest.mp3",
           "fallback": "conquest.wav",
-          "durationSec": 1.20,
+          "durationSec": 1.2,
           "replayGainDb": -3.0,
           "peakDbfs": -3.0
         }
@@ -211,4 +220,3 @@
     }
   }
 }
-
