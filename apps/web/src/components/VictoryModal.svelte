@@ -10,6 +10,7 @@
   import { i18n, t } from "../i18n/index.svelte";
   import { getFactionName, getObjectiveDescription } from "../i18n/content.svelte";
   import { auth } from "../lib/auth.svelte";
+  import { sound } from "../audio.js";
   import FactionFlag from "./FactionFlag.svelte";
   import Icon from "./Icon.svelte";
 
@@ -73,6 +74,7 @@
     });
   });
 
+  let playedVictoryCue = false;
   let currentLevelProgress = $derived(
     calculateLevelProgress(auth.user?.totalXp ?? 0)
   );
@@ -80,6 +82,10 @@
   $effect(() => {
     if (auth.user) {
       auth.refresh();
+    }
+    if (isWinnerMe && !playedVictoryCue) {
+      playedVictoryCue = true;
+      sound.playVictoryMatch();
     }
   });
 </script>
@@ -93,10 +99,10 @@
       </span>
     </div>
     <div class="v-min-actions">
-      <button class="outline-button" onclick={() => (minimized = false)}>
+      <button class="outline-button" onclick={() => { sound.playClick(); minimized = false; }}>
         <Icon name="eye" size={14} /> {t("victory_btn_view_report")}
       </button>
-      <button class="gold-button" onclick={onReturnToLobby}>
+      <button class="gold-button" onclick={() => { sound.playClick(); onReturnToLobby(); }}>
         <Icon name="back" size={14} /> {t("victory_btn_return_hq")}
       </button>
     </div>
@@ -240,15 +246,15 @@
         </div>
 
         <div class="victory-footer-actions">
-          <button class="outline-button" onclick={() => (minimized = true)}>
+          <button class="outline-button" onclick={() => { sound.playClick(); minimized = true; }}>
             <Icon name="globe" size={15} /> {t("victory_btn_inspect_map")}
           </button>
           {#if amIHost && onReturnRoomToLobby}
-            <button class="outline-button" onclick={onReturnRoomToLobby}>
+            <button class="outline-button" onclick={() => { sound.playClick(); onReturnRoomToLobby(); }}>
               <Icon name="users" size={15} /> {t("victory_btn_reset_briefing")}
             </button>
           {/if}
-          <button class="gold-button" onclick={onReturnToLobby}>
+          <button class="gold-button" onclick={() => { sound.playClick(); onReturnToLobby(); }}>
             <Icon name="shield" size={15} /> {t("victory_btn_return_hq")}
           </button>
         </div>

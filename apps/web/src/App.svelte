@@ -373,8 +373,20 @@
       selectedFromId = null;
       selectedToId = null;
       if (currentTurnPlayer.id === myPlayerId) {
-        sound.playTurnChime();
+        sound.playTurnRadioAlert();
       }
+    }
+  });
+
+  // HEGEM-93: Global Tension Defcon 1 Alarm Tracking
+  let prevWorldTension = 0;
+  $effect(() => {
+    if (game && typeof game.worldTension === "number") {
+      const tensionVal = game.worldTension;
+      if (prevWorldTension < 66 && tensionVal >= 66) {
+        sound.playDefcon1Alert();
+      }
+      prevWorldTension = tensionVal;
     }
   });
 
@@ -734,15 +746,35 @@
             l.includes("RECONHECIMENTO AÉREO")
         );
 
+        // HEGEM-93: Tactical Audio & SFX Triangulation
+        const isDefendingMe =
+          game?.lastCombat &&
+          game.territories[game.lastCombat.toTerritoryId]?.occupierId === myPlayerId;
+        const isAttackingMe =
+          game?.lastCombat && game.lastCombat.attackerId === myPlayerId;
+
         if (hasNewCombatLog && game?.lastCombat) {
-          sound.playCombatAttack();
+          const isMaritime = isSeaLink(
+            game.lastCombat.fromTerritoryId,
+            game.lastCombat.toTerritoryId
+          );
+
+          if (isDefendingMe) {
+            sound.playDefensiveAlarm();
+          } else if (isAttackingMe) {
+            sound.playOffensiveOrder();
+          }
+
+          if (isMaritime) {
+            sound.playNavalSalvo();
+          } else {
+            sound.playInfantryRifle();
+          }
+
           sound.playDiceRoll();
           spawnCombatAnimation(
             createCombatAnimationFromRoll(game.lastCombat, ui.combatAnimationSpeed, {
-              isMaritime: isSeaLink(
-                game.lastCombat.fromTerritoryId,
-                game.lastCombat.toTerritoryId
-              ),
+              isMaritime,
             })
           );
           if (game.lastCombat.conquered) {
@@ -751,7 +783,12 @@
             }, 300);
           }
         } else if (hasNewStrikeLog && game?.lastStrike) {
-          sound.playCombatAttack();
+          const isBarrage = newLogs.some((l) => l.includes("BARRAGEM"));
+          if (isBarrage) {
+            sound.playArtilleryBarrage();
+          } else {
+            sound.playAircraftStrike();
+          }
           spawnCombatAnimation(
             createCombatAnimationFromStrike(game.lastStrike, ui.combatAnimationSpeed, {
               isMaritime: isSeaLink(
@@ -760,6 +797,14 @@
               ),
             })
           );
+        }
+
+        // Global triggers: treaty betrayal & faction elimination (Zero-emoji safe tokens)
+        if (newLogs.some((l) => l.includes("quebrou o tratado") || l.includes("traição") || l.includes("rompeu"))) {
+          sound.playTreatyBroken();
+        }
+        if (newLogs.some((l) => l.includes("ELIMINADO") || l.includes("eliminada") || l.includes("capitulou"))) {
+          sound.playFactionEliminated();
         }
       });
 
