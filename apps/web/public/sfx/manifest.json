@@ -1,0 +1,214 @@
+{
+  "$schema": "https://navidrome.org/schema/sfx-catalog.json",
+  "version": "1.0",
+  "name": "Hegemonia Tactical SFX Library",
+  "description": "Authentic military soundscapes inspired by Hearts of Iron IV with calibrated ReplayGain and studio anti-clipping dynamics.",
+  "masterLimiter": {
+    "enabled": true,
+    "thresholdDb": -12.0,
+    "kneeDb": 10.0,
+    "ratio": 12.0,
+    "attackSec": 0.003,
+    "releaseSec": 0.15
+  },
+  "categories": {
+    "combat": {
+      "name": "Tactical Confrontation & Military Forces",
+      "directory": "/sfx/combat",
+      "replayGainDb": -2.0,
+      "items": {
+        "offensive_order": {
+          "title": "Ordem de Avanço Tático (Ofensiva)",
+          "style": "HOI4 Army Move / Clarion March Order",
+          "file": "offensive_order.mp3",
+          "fallback": "offensive_order.wav",
+          "durationSec": 2.50,
+          "replayGainDb": -2.0,
+          "peakDbfs": -0.4
+        },
+        "defensive_alarm": {
+          "title": "Sirene de Combate / Alarme de Invasão (Defensiva)",
+          "style": "HOI4 War Declaration / Air Raid Klaxon",
+          "file": "defensive_alarm.mp3",
+          "fallback": "defensive_alarm.wav",
+          "durationSec": 3.20,
+          "replayGainDb": -1.5,
+          "peakDbfs": -4.3
+        },
+        "infantry": {
+          "title": "Fuzilaria & Salvas de Infantaria",
+          "style": "HOI4 Rifle Crack & Bolt-Action Volley",
+          "file": "infantry_rifle.mp3",
+          "fallback": "infantry_rifle.wav",
+          "durationSec": 2.20,
+          "replayGainDb": -2.0,
+          "peakDbfs": -7.2
+        },
+        "tank": {
+          "title": "Esteiras & Canhão Pesado de Blindados",
+          "style": "HOI4 Heavy Tank 88mm Gun & Treads",
+          "file": "armor_cannon.mp3",
+          "fallback": "armor_cannon.wav",
+          "durationSec": 1.60,
+          "replayGainDb": -1.5,
+          "peakDbfs": -1.2
+        },
+        "artillery": {
+          "title": "Barragem de Obuseiros Distantes",
+          "style": "HOI4 Distant Heavy Artillery Barrage",
+          "file": "artillery_barrage.mp3",
+          "fallback": "artillery_barrage.wav",
+          "durationSec": 2.80,
+          "replayGainDb": -1.5,
+          "peakDbfs": -3.9
+        },
+        "aircraft": {
+          "title": "Rasante Aéreo & Detonação Tática",
+          "style": "HOI4 Stuka / Fighter Dive & Aerial Blast",
+          "file": "aircraft_strike.mp3",
+          "fallback": "aircraft_strike.wav",
+          "durationSec": 4.60,
+          "replayGainDb": -2.0,
+          "peakDbfs": -0.1
+        },
+        "navy": {
+          "title": "Apito Naval & Salvas de Canhão",
+          "style": "HOI4 Battleship Broadside & Naval Horn",
+          "file": "naval_salvo.mp3",
+          "fallback": "naval_salvo.wav",
+          "durationSec": 3.50,
+          "replayGainDb": -1.5,
+          "peakDbfs": 0.0
+        }
+      }
+    },
+    "turn": {
+      "name": "Turn Notification & Comms",
+      "directory": "/sfx/turn",
+      "replayGainDb": -1.5,
+      "items": {
+        "turn_radio": {
+          "title": "Alerta de Início de Turno (Rádio Militar)",
+          "style": "HOI4 Radio Squelch & Command Ping",
+          "file": "turn_start_radio.mp3",
+          "fallback": "turn_start_radio.wav",
+          "durationSec": 0.33,
+          "replayGainDb": -1.0,
+          "peakDbfs": -1.9
+        },
+        "turn_chime": {
+          "title": "Toque Tático de Transição",
+          "style": "HQ Console Chime",
+          "file": "turn_chime.mp3",
+          "fallback": "turn_chime.wav",
+          "durationSec": 0.80,
+          "replayGainDb": -3.0,
+          "peakDbfs": -4.0
+        }
+      }
+    },
+    "economy": {
+      "name": "Global Market & Supply Logistics",
+      "directory": "/sfx/economy",
+      "replayGainDb": -3.0,
+      "items": {
+        "market_sell": {
+          "title": "Tilintar de Moedas / Venda de Commodities",
+          "style": "HOI4 Consumer Goods / Gold Specie Clink",
+          "file": "market_sell_coins.mp3",
+          "fallback": "market_sell_coins.wav",
+          "durationSec": 1.60,
+          "replayGainDb": -3.0,
+          "peakDbfs": 0.0
+        },
+        "market_buy": {
+          "title": "Estivamento & Carga / Compra de Insumos",
+          "style": "HOI4 Industrial Logistics Cargo Thud",
+          "file": "market_buy_cargo.mp3",
+          "fallback": "market_buy_cargo.wav",
+          "durationSec": 0.42,
+          "replayGainDb": -2.0,
+          "peakDbfs": -3.2
+        }
+      }
+    },
+    "global": {
+      "name": "Geopolitical Dramatic Triggers",
+      "directory": "/sfx/global",
+      "replayGainDb": -1.5,
+      "items": {
+        "treaty_broken": {
+          "title": "Quebra de Tratados & Violação de Fronteira",
+          "style": "HOI4 Diplomatic Betrayal Bronze Gong",
+          "file": "treaty_broken.mp3",
+          "fallback": "treaty_broken.wav",
+          "durationSec": 1.80,
+          "replayGainDb": -1.5,
+          "peakDbfs": 0.0
+        },
+        "defcon1_crisis": {
+          "title": "Escalada para Defcon 1 (Tensão Máxima)",
+          "style": "HOI4 Strategic Nuclear Alert Klaxon",
+          "file": "defcon1_crisis.mp3",
+          "fallback": "defcon1_crisis.wav",
+          "durationSec": 3.20,
+          "replayGainDb": -1.0,
+          "peakDbfs": -5.0
+        },
+        "faction_eliminated": {
+          "title": "Rendição & Eliminação de Facção",
+          "style": "HOI4 Capitulation / Martial Taps",
+          "file": "faction_eliminated.mp3",
+          "fallback": "faction_eliminated.wav",
+          "durationSec": 3.20,
+          "replayGainDb": -2.0,
+          "peakDbfs": -0.2
+        },
+        "victory_match": {
+          "title": "Triunfo Supremo / Vitória na Partida (Hegemonia Alcançada)",
+          "style": "HOI4 Grand Victory / Supreme Triumph Brass Fanfare",
+          "file": "victory_match.mp3",
+          "fallback": "victory_match.wav",
+          "durationSec": 2.85,
+          "replayGainDb": -1.5,
+          "peakDbfs": -3.6
+        }
+      }
+    },
+    "ui": {
+      "name": "Tactical UI Cues",
+      "directory": "/sfx/ui",
+      "replayGainDb": -4.0,
+      "items": {
+        "click": {
+          "title": "Clique de Botão Tático",
+          "style": "Military Switch Click",
+          "file": "click.mp3",
+          "fallback": "click.wav",
+          "durationSec": 0.05,
+          "replayGainDb": -6.0,
+          "peakDbfs": -6.0
+        },
+        "dice": {
+          "title": "Rolagem de Dados de Combate",
+          "style": "Tactical Dice Tumbling",
+          "file": "dice.mp3",
+          "fallback": "dice.wav",
+          "durationSec": 0.35,
+          "replayGainDb": -3.0,
+          "peakDbfs": -3.0
+        },
+        "conquest": {
+          "title": "Conquista de Território",
+          "style": "Territorial Annexation Fanfare",
+          "file": "conquest.mp3",
+          "fallback": "conquest.wav",
+          "durationSec": 1.20,
+          "replayGainDb": -3.0,
+          "peakDbfs": -3.0
+        }
+      }
+    }
+  }
+}
+

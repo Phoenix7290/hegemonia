@@ -313,6 +313,11 @@
     resource: ResourceType,
     operation: "buy" | "sell",
   ) {
+    if (operation === "buy") {
+      sound.playMarketBuy();
+    } else {
+      sound.playMarketSell();
+    }
     sendAction({
       type: "market_trade",
       resource,

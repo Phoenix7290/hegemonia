@@ -1,0 +1,28 @@
+{
+  "$schema": "https://navidrome.org/schema/library.json",
+  "version": "1.0",
+  "server": "Navidrome-Compatible Hegemonia Audio Catalog",
+  "genres": ["Military Tactical", "Orchestral Ambient", "War March"],
+  "albums": [
+    {
+      "id": "tactical_ambient",
+      "title": "Hegemonia: War Room & Strategic Tension",
+      "artist": "Hegemonia Sound Command",
+      "year": 2026,
+      "genre": "Orchestral Ambient",
+      "path": "/music/albums/tactical_ambient",
+      "tracks": [
+        {
+          "id": "track_ambient_procedural",
+          "title": "Strategic Tension (Ambient)",
+          "trackNumber": 1,
+          "durationSec": 120,
+          "replayGainTrackDb": -4.0,
+          "replayGainAlbumDb": -4.0,
+          "isProceduralFallback": true
+        }
+      ]
+    }
+  ]
+}
+
