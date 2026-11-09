@@ -1149,7 +1149,16 @@
             {/if}
           </strong>
         </div>
-        <div class="tc-timer" class:timer-danger={remainingSeconds <= 20}>
+        <div
+          class="tc-timer"
+          class:timer-warning={remainingSeconds <= 20 && remainingSeconds > 10}
+          class:timer-danger={remainingSeconds <= 20 && remainingSeconds > 10}
+          class:timer-critical={remainingSeconds <= 10}
+          class:timer-my-turn={isMyTurn}
+          role="timer"
+          aria-live={remainingSeconds <= 10 ? "assertive" : "off"}
+          aria-label={`Tempo restante de turno: ${remainingSeconds} segundos`}
+        >
           <Icon name="clock" size={14} />
           <span>{remainingSeconds}s</span>
         </div>
@@ -1673,6 +1682,32 @@
             <small class="combat-anim-hint"
               >{t("settings_auto_camera_hint")}</small
             >
+          </div>
+
+          <div class="combat-anim-settings" style="margin-top: 0.8rem;">
+            <span class="combat-anim-label">
+              <Icon name="clock" size={12} />
+              Alertas de Fim de Turno:
+            </span>
+            <div class="combat-anim-btn-group">
+              <button
+                class="combat-anim-opt"
+                class:selected={ui.turnTimerAlertsEnabled}
+                onclick={() => { if (!ui.turnTimerAlertsEnabled) ui.toggleTurnTimerAlerts(); }}
+              >
+                Ligado
+              </button>
+              <button
+                class="combat-anim-opt"
+                class:selected={!ui.turnTimerAlertsEnabled}
+                onclick={() => { if (ui.turnTimerAlertsEnabled) ui.toggleTurnTimerAlerts(); }}
+              >
+                Desligado
+              </button>
+            </div>
+            <small class="combat-anim-hint">
+              Sons táticos e avisos nos 10s finais do seu turno
+            </small>
           </div>
         </div>
       </div>
@@ -3576,6 +3611,31 @@
     color: #fca5a5;
     border-color: #ef4444;
     background: rgba(127, 29, 29, 0.45);
+  }
+  .tc-timer.timer-critical {
+    color: #ffffff;
+    border-color: #ef4444;
+    background: rgba(185, 28, 28, 0.88);
+    box-shadow: 0 0 14px rgba(239, 68, 68, 0.85), inset 0 0 8px rgba(239, 68, 68, 0.45);
+    animation: timer-pulse-glow 1s ease-in-out infinite alternate;
+  }
+  @keyframes timer-pulse-glow {
+    0% {
+      transform: scale(1);
+      box-shadow: 0 0 10px rgba(239, 68, 68, 0.6), inset 0 0 6px rgba(239, 68, 68, 0.3);
+      border-color: #dc2626;
+    }
+    100% {
+      transform: scale(1.06);
+      box-shadow: 0 0 20px rgba(239, 68, 68, 0.95), 0 0 32px rgba(220, 38, 38, 0.45), inset 0 0 12px rgba(239, 68, 68, 0.65);
+      border-color: #fca5a5;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .tc-timer.timer-critical {
+      animation: none;
+      box-shadow: 0 0 12px rgba(239, 68, 68, 0.8);
+    }
   }
 
   .g-doctrine-crest {

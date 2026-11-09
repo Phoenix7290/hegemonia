@@ -400,6 +400,25 @@
     return () => clearInterval(timer);
   });
 
+  // HEGEM-95: Tactical Audio & Ticks for Final 5 Seconds of Player's Turn
+  let lastTimerTickSecond = -1;
+  $effect(() => {
+    if (
+      isMyTurn &&
+      !game?.winnerId &&
+      remainingSeconds <= 5 &&
+      remainingSeconds > 0 &&
+      ui.turnTimerAlertsEnabled
+    ) {
+      if (lastTimerTickSecond !== remainingSeconds) {
+        lastTimerTickSecond = remainingSeconds;
+        sound.playTurnTimerTick(remainingSeconds);
+      }
+    } else if (remainingSeconds > 5 || !isMyTurn) {
+      lastTimerTickSecond = -1;
+    }
+  });
+
   // Smooth 60fps WASD + Arrow Key Camera Loop
   $effect(() => {
     let rafId = 0;
@@ -1305,6 +1324,15 @@
       />
     {/if}
 
+    <!-- HEGEM-95: Subtle Screen Edge Vignette on Imminent Turn Timeout -->
+    {#if isMyTurn && !game.winnerId && remainingSeconds <= 10 && ui.turnTimerAlertsEnabled}
+      <div
+        class="turn-critical-vignette"
+        class:extreme-urgency={remainingSeconds <= 3}
+        aria-hidden="true"
+      ></div>
+    {/if}
+
     <!-- FLOATING SUPREME COMMAND HUD LAYER -->
     <div class="hud-layer">
       <!-- ⬆ SUPREME COMMAND TOP HUD (TREATY TOASTS, BRANDING, TELEMETRY, ORDERS, CONTROLS) -->
@@ -1364,6 +1392,7 @@
         {myPlayerId}
         {myPlayerState}
         {isMyTurn}
+        {remainingSeconds}
         bind:selectedFromId
         bind:selectedToId
         bind:sliderArmies
@@ -1561,6 +1590,46 @@
       grid-template-columns: 220px 1fr 235px;
       padding: 0.4rem;
       gap: 0.35rem;
+    }
+  }
+  /* HEGEM-95: Subtle Screen Edge Vignette on Imminent Turn Timeout */
+  .turn-critical-vignette {
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 15;
+    box-shadow: inset 0 0 55px rgba(239, 68, 68, 0.28), inset 0 0 110px rgba(185, 28, 28, 0.18);
+    animation: vignette-pulse 1.4s ease-in-out infinite alternate;
+  }
+
+  .turn-critical-vignette.extreme-urgency {
+    box-shadow: inset 0 0 75px rgba(239, 68, 68, 0.45), inset 0 0 145px rgba(185, 28, 28, 0.3);
+    animation: vignette-pulse-fast 0.7s ease-in-out infinite alternate;
+  }
+
+  @keyframes vignette-pulse {
+    0% {
+      opacity: 0.55;
+    }
+    100% {
+      opacity: 0.95;
+    }
+  }
+
+  @keyframes vignette-pulse-fast {
+    0% {
+      opacity: 0.7;
+    }
+    100% {
+      opacity: 1;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .turn-critical-vignette,
+    .turn-critical-vignette.extreme-urgency {
+      animation: none;
+      opacity: 0.75;
     }
   }
 </style>
