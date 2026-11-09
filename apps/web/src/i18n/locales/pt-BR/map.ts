@@ -97,6 +97,24 @@ export const ptBRMap: TranslationCatalog = {
   obj_rp_mongol_empire: "Império Mongol: Controlar Mongólia, China, Cazaquistão, Omsk, Sibéria, Moscou e Polônia.",
   obj_rp_pan_african: "União Pan-Africana: Controlar a totalidade da África, além de Brasil e Venezuela.",
 
+  // Novas Diretrizes Estratégicas Assimétricas (v0.6.1)
+  obj_bretton_woods: "Hegemonia Econômica (Bretton Woods): Acumular $300 no Tesouro, 50 de Ouro de Reserva e manter 2 rotas de investimento ativas.",
+  obj_bretton_woods_title: "Hegemonia Econômica (Bretton Woods)",
+  obj_fortified_bastion: "Bastião Inexpugnável (Soberania Fortificada): Manter pelo menos 4 territórios fortificados (com Fortaleza/Casamata) sem invasão durante 5 rodadas.",
+  obj_fortified_bastion_title: "Bastião Inexpugnável (Soberania Fortificada)",
+  obj_sovereign_citadel: "Cidadela Soberana (Bastião de Defesa): Manter pelo menos 3 territórios fortificados (com Fortaleza/Casamata) sem invasão durante 4 rodadas.",
+  obj_sovereign_citadel_title: "Cidadela Soberana (Bastião de Defesa)",
+  obj_pax_hegemonica: "Pax Hegemonica (Pacificação Diplomática): Manter 1 Aliança Militar ativa e Pactos de Não-Agressão (NAP) com todos os outros generais vivos (ou sobreviver até a Rodada 30).",
+  obj_pax_hegemonica_title: "Pax Hegemonica (Pacificação Diplomática)",
+  obj_extermination_annihilation: "Aniquilação Total (Doutrina de Extermínio): Eliminar no mínimo 2 generais adversários diretamente no campo de batalha (ou todos caso haja menos de 2 oponentes).",
+  obj_extermination_annihilation_title: "Aniquilação Total (Extermínio)",
+  obj_extermination_world_chaos: "Apocalipse & Caos Global (Doutrina de Extermínio): Eliminar no mínimo 2 generais adversários e escalar a Tensão Mundial a 100%.",
+  obj_extermination_world_chaos_title: "Apocalipse & Caos Global",
+  obj_extermination_capital_scourge: "Flagelo dos Continentes (Doutrina de Extermínio): Eliminar diretamente no mínimo 2 generais adversários e ocupar pelo menos 18 territórios devastados.",
+  obj_extermination_capital_scourge_title: "Flagelo dos Continentes",
+  obj_extermination_warmonger_hegemony: "Senhor da Guerra Supremo (Doutrina de Extermínio): Atingir 100% de Infâmia, eliminar no mínimo 2 generais adversários e controlar 15 territórios.",
+  obj_extermination_warmonger_hegemony_title: "Senhor da Guerra Supremo",
+
   // Map Modes & Overlays (HEGEM-62)
   map_base_label: "Base",
   map_overlays_label: "Camadas",

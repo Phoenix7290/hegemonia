@@ -263,6 +263,12 @@ export const ICON_CATALOG: Record<IconName, readonly IconShape[]> = {
   ],
 
   // --- Military Units & Doctrines ---
+  // Helmet: Pure combat helmet silhouette for Classic / Standard Command doctrine
+  helmet: [
+    { tag: "path", attrs: { d: "M3.5 14.5c0-5 3.8-9 8.5-9s8.5 4 8.5 9c0 .6-.4 1-1 1h-1a3 3 0 0 1-2.5-1.3C16 12.8 14.2 12 12 12s-4 .8-5.5 2.2A3 3 0 0 1 4 15.5H3.5c-.6 0-1-.4-1-1z" } },
+    { tag: "path", attrs: { d: "M2.5 14.5h19" } },
+    { tag: "path", attrs: { d: "M8.5 15.5l1.5 3h4l1.5-3" } },
+  ],
   // Infantry: Combat helmet dome with rim + tactical division chevron badge
   infantry: [
     { tag: "path", attrs: { d: "M4 13a8 8 0 0 1 16 0c0 1.2-.8 2-2 2H6c-1.2 0-2-.8-2-2z" } },

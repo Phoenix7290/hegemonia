@@ -200,10 +200,19 @@
           fill="none"
         />
       {:else if def.id === "superior_firepower"}
-        <!-- Obuseiro / Canhao de Artilharia Pesada -->
-        <circle cx="11" cy="19" r="3" stroke={def.accentColor} stroke-width="1.8" fill="none" />
-        <line x1="11" y1="19" x2="22" y2="10" stroke={def.accentColor} stroke-width="2.4" stroke-linecap="round" />
-        <line x1="8" y1="22" x2="16" y2="22" stroke={def.accentColor} stroke-width="1.6" />
+        <!-- Capacete Militar de Soldado (Comando Clássico / Doutrina Padrão) -->
+        <path
+          d="M8.5 18 C8.5 12 11.5 8 16 8 C20.5 8 23.5 12 23.5 18 C23.5 18.6 23.1 19 22.5 19 H9.5 C8.9 19 8.5 18.6 8.5 18 Z"
+          fill={def.accentColor}
+        />
+        <line x1="6.5" y1="19" x2="25.5" y2="19" stroke={def.accentColor} stroke-width="2" stroke-linecap="round" />
+        <path
+          d="M12 20 L13.5 22.5 H18.5 L20 20"
+          stroke={def.accentColor}
+          stroke-width="1.5"
+          stroke-linecap="round"
+          fill="none"
+        />
       {:else if def.id === "extermination"}
         <!-- Caveira Tatica -->
         <path

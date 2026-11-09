@@ -99,9 +99,9 @@ describe("Classic Map Graph Integrity", () => {
 });
 
 describe("War Classic Rules Engine", () => {
-  it("computes card trade escalation capped at 15 (4, 6, 8, 10, 12, 15, 15...)", () => {
-    expect([0, 1, 2, 3, 4, 5, 6, 7].map(getTradeBonusArmies)).toEqual([
-      4, 6, 8, 10, 12, 15, 15, 15,
+  it("computes card trade escalation capped at trade 10 (4, 6, 8, 10, 12, 15, 20, 25, 30, 35, 35...)", () => {
+    expect([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(getTradeBonusArmies)).toEqual([
+      4, 6, 8, 10, 12, 15, 20, 25, 30, 35, 35,
     ]);
   });
 
@@ -774,7 +774,7 @@ describe("HEGEM-18: Core War Economy (Money, Steel, Oil, Scarce Gold)", () => {
     expect(updatedPlayer.resources.money).toBe(moneyBefore + 3);
   });
 
-  it("allows buying 1 supply card per turn with Gold (2 Gold OR 1 Gold + $4) during deploy phase", () => {
+  it("allows buying 1 supply card per turn with Gold (4 Gold) during deploy phase", () => {
     const rng = createSeededRng("gold-card-buy-seed");
     let state = createGame({
       id: "gold-card-test",
@@ -787,10 +787,10 @@ describe("HEGEM-18: Core War Economy (Money, Steel, Oil, Scarce Gold)", () => {
 
     const activeId = state.players[state.turnIndex].id;
     const activePlayer = state.players[state.turnIndex];
-    activePlayer.resources = { money: 10, steel: 0, oil: 0, gold: 3 };
+    activePlayer.resources = { money: 10, steel: 0, oil: 0, gold: 5 };
     const initialDeckCount = state.deck.length;
 
-    // Buy card with 2 Gold
+    // Buy card with 4 Gold (HEGEM-147)
     state = applyAction(
       state,
       activeId,
@@ -810,23 +810,21 @@ describe("HEGEM-18: Core War Economy (Money, Steel, Oil, Scarce Gold)", () => {
       applyAction(
         state,
         activeId,
-        { type: "buy_card_with_gold", paymentMode: "gold_and_money" },
+        { type: "buy_card_with_gold", paymentMode: "gold_only" },
         rng
       )
     ).toThrow(/1 carta de suprimento com Ouro por turno/);
 
-    // Reset flag to test gold_and_money mode (1 Gold + $4)
+    // Reset flag but with insufficient gold (< 4) must fail
     state.players[state.turnIndex].boughtCardWithGoldThisTurn = false;
-    state = applyAction(
-      state,
-      activeId,
-      { type: "buy_card_with_gold", paymentMode: "gold_and_money" },
-      rng
-    );
-    const afterSecondBuy = state.players.find((p) => p.id === activeId)!;
-    expect(afterSecondBuy.cards.length).toBe(2);
-    expect(afterSecondBuy.resources.gold).toBe(0);
-    expect(afterSecondBuy.resources.money).toBe(6);
+    expect(() =>
+      applyAction(
+        state,
+        activeId,
+        { type: "buy_card_with_gold", paymentMode: "gold_only" },
+        rng
+      )
+    ).toThrow(/Ouro insuficiente/);
   });
 });
 
@@ -1777,9 +1775,16 @@ describe("Combined Arms and Infantry Escort (HEGEM-27)", () => {
     expect(CLASSIC_MAP.territories.find((t) => t.id === "sao_paulo")!.neighbors).not.toContain("patagonia");
     expect(isConnectedByFriendlyPath(state, "sao_paulo", "patagonia", activeId, CLASSIC_MAP)).toBe(true);
 
-    const reachable = getReachableManeuverTargets(state, "sao_paulo", activeId, CLASSIC_MAP);
-    expect(reachable.has("patagonia")).toBe(true);
-    expect(reachable.has("argentina")).toBe(true);
+    // With infantry only, distance is capped at 1 tile (argentina only, HEGEM-138)
+    const reachableInf = getReachableManeuverTargets(state, "sao_paulo", activeId, CLASSIC_MAP);
+    expect(reachableInf.has("argentina")).toBe(true);
+    expect(reachableInf.has("patagonia")).toBe(false);
+
+    // With a tank present, reach extends to 2 tiles, allowing maneuver to patagonia (HEGEM-138)
+    state.territories["sao_paulo"].units = { infantry: 3, tank: 2, artillery: 0, aircraft: 0, navy: 0 };
+    const reachableTanks = getReachableManeuverTargets(state, "sao_paulo", activeId, CLASSIC_MAP);
+    expect(reachableTanks.has("argentina")).toBe(true);
+    expect(reachableTanks.has("patagonia")).toBe(true);
 
     state = applyAction(
       state,
@@ -1788,14 +1793,14 @@ describe("Combined Arms and Infantry Escort (HEGEM-27)", () => {
         type: "maneuver",
         fromTerritoryId: "sao_paulo",
         toTerritoryId: "patagonia",
-        armies: 3,
-        units: unitCounts(3),
+        armies: 2,
+        units: { infantry: 0, tank: 2, artillery: 0, aircraft: 0, navy: 0 },
       },
       createSeededRng("hegem-121-rng")
     );
 
-    expect(state.territories["sao_paulo"].armies).toBe(2);
-    expect(state.territories["patagonia"].armies).toBe(4);
+    expect(state.territories["sao_paulo"].armies).toBe(3);
+    expect(state.territories["patagonia"].armies).toBe(3);
 
     state.territories["argentina"].ownerId = otherId;
     expect(isConnectedByFriendlyPath(state, "sao_paulo", "patagonia", activeId, CLASSIC_MAP)).toBe(false);
@@ -3348,11 +3353,11 @@ describe("HEGEM-96: Manual Deploy Phase Transition (end_deploy)", () => {
         fakeRng
       );
 
-      // After conquest, extermination looted + $2 and + 1 steel
+      // After conquest under HEGEM-133, extermination receives 0 0 0 0 economy and converts plunder into recruit divisions
       expect(state.territories["argentina"].ownerId).toBe("p1");
       const updatedP1 = state.players.find((p) => p.id === "p1")!;
-      expect(updatedP1.resources.money).toBe(moneyBefore + 2);
-      expect(updatedP1.resources.steel).toBe(steelBefore + 1);
+      expect(updatedP1.resources.money).toBe(0);
+      expect(updatedP1.resources.steel).toBe(0);
       expect(state.log.some((l) => l.includes("SAQUE TOTAL"))).toBe(true);
     });
   });
@@ -3804,9 +3809,10 @@ describe("HEGEM-96: Manual Deploy Phase Transition (end_deploy)", () => {
       );
       expect(state.territories["brasil"].units?.navy).toBeGreaterThanOrEqual(1);
 
-      // 3. Gold Reserve Interest (+$2 per 3 Gold held in Round 2+)
-      const econP2 = calculateTurnEconomy(state, "p2", CLASSIC_MAP);
-      expect(econP2.goldPassiveMoney).toBeGreaterThanOrEqual(4); // 6 gold = +$4 interest
+      // 3. Gold Reserve Interest (+$2 per 3 Gold held in Round 2+, tested on sovereign p3)
+      state.players.find((p) => p.id === "p3")!.resources = { money: 50, steel: 10, oil: 10, gold: 6 };
+      const econP3 = calculateTurnEconomy(state, "p3", CLASSIC_MAP);
+      expect(econP3.goldPassiveMoney).toBeGreaterThanOrEqual(4); // 6 gold = +$4 interest
 
       // 4. Coalition Lend-Lease & Aircraft Transfer between p1 and p3
       state.territories["inglaterra"].ownerId = "p1";

@@ -83,11 +83,11 @@ export interface CreateGameOptions {
 export * from "./doctrines.js";
 
 /**
- * Card trade progression with a linear cap at trade 6 (max 15 base armies) to prevent exponential late-game explosion (HEGEM-126):
- * Progression: 4, 6, 8, 10, 12, 15 (capped at 15 for all subsequent exchanges).
+ * Card trade progression with a linear limit cap at trade 10 (max 35 base armies) to prevent exponential late-game explosion:
+ * Progression: 4, 6, 8, 10, 12, 15, 20, 25, 30, 35 (capped at 35 for all subsequent exchanges from the 10th trade).
  */
 export function getTradeBonusArmies(tradeIndexZeroBased: number): number {
-  const table = [4, 6, 8, 10, 12, 15];
+  const table = [4, 6, 8, 10, 12, 15, 20, 25, 30, 35];
   if (tradeIndexZeroBased < 0) return table[0];
   if (tradeIndexZeroBased < table.length) {
     return table[tradeIndexZeroBased];
@@ -199,10 +199,16 @@ export const BUILDING_COSTS: Record<BuildingType, BuildingCost> = {
   steel_mine: { money: 5, steel: 0 },
   oil_well: { money: 5, steel: 1 },
   refinery: { money: 6, steel: 1 },
+  wonder: { money: 12, steel: 4 },
 };
 
 export const FORTIFICATION_LEVEL_2_COST: BuildingCost = {
   money: 6,
+  steel: 2,
+};
+
+export const INDUSTRY_LEVEL_2_COST: BuildingCost = {
+  money: 4,
   steel: 2,
 };
 
@@ -459,22 +465,24 @@ export function updateSupplyAndEncirclement(
 }
 
 /**
- * Verifica se dois territórios aliados estão conectados por uma rota contígua de províncias aliadas.
+ * Retorna a menor distância de caminho contíguo entre dois territórios através de províncias aliadas.
+ * Retorna Infinity caso não haja conexão contígua desimpedida.
  */
-export function isConnectedByFriendlyPath(
+export function getFriendlyPathDistance(
   state: GameState,
   fromTerritoryId: string,
   toTerritoryId: string,
   playerId: string,
   map: GameMapDef = CLASSIC_MAP
-): boolean {
-  if (fromTerritoryId === toTerritoryId) return true;
+): number {
+  if (fromTerritoryId === toTerritoryId) return 0;
   const mapById = new Map(map.territories.map((t) => [t.id, t]));
-  const visited = new Set<string>([fromTerritoryId]);
-  const queue: string[] = [fromTerritoryId];
+  const visited = new Map<string, number>();
+  visited.set(fromTerritoryId, 0);
+  const queue: [string, number][] = [[fromTerritoryId, 0]];
 
   while (queue.length > 0) {
-    const currId = queue.shift()!;
+    const [currId, dist] = queue.shift()!;
     const currDef = mapById.get(currId);
     if (!currDef) continue;
 
@@ -484,7 +492,7 @@ export function isConnectedByFriendlyPath(
           const blockade = checkNavalBlockade(state, currId, nbrId, playerId);
           if (blockade.isBlockaded) continue;
         }
-        return true;
+        return dist + 1;
       }
       if (visited.has(nbrId)) continue;
       const nbrTerr = state.territories[nbrId];
@@ -495,53 +503,120 @@ export function isConnectedByFriendlyPath(
         if (blockade.isBlockaded) continue;
       }
 
-      visited.add(nbrId);
-      queue.push(nbrId);
+      visited.set(nbrId, dist + 1);
+      queue.push([nbrId, dist + 1]);
     }
   }
-  return false;
+  return Infinity;
 }
 
 /**
- * Retorna todos os territórios aliados alcançáveis para manobra a partir de uma origem aliada.
+ * Verifica se dois territórios aliados estão conectados por uma rota contígua de províncias aliadas
+ * opcionalmente limitada por uma distância máxima de deslocamento.
+ */
+export function isConnectedByFriendlyPath(
+  state: GameState,
+  fromTerritoryId: string,
+  toTerritoryId: string,
+  playerId: string,
+  map: GameMapDef = CLASSIC_MAP,
+  maxDistance?: number
+): boolean {
+  const dist = getFriendlyPathDistance(state, fromTerritoryId, toTerritoryId, playerId, map);
+  if (!Number.isFinite(dist)) return false;
+  if (maxDistance !== undefined && dist > maxDistance) return false;
+  return true;
+}
+
+/**
+ * Retorna todos os territórios aliados alcançáveis para manobra a partir de uma origem aliada,
+ * respeitando os alcances específicos por tipo de unidade (HEGEM-138):
+ * - Infantaria e Artilharia: 1 tile (vizinho direto)
+ * - Tanques (Blindados): até 2 tiles conectados
+ * - Força Naval: até 3 tiles conectados por rotas marítimas
+ * - Aeronaves: qualquer território aliado que possua Aeródromo (desde que a origem possua Aeródromo)
  */
 export function getReachableManeuverTargets(
   state: GameState,
   fromTerritoryId: string,
   playerId: string,
-  map: GameMapDef = CLASSIC_MAP
+  map: GameMapDef = CLASSIC_MAP,
+  unitsToMove?: UnitCounts
 ): Set<string> {
   const reachable = new Set<string>();
   const fromTerr = state.territories[fromTerritoryId];
   if (!fromTerr || fromTerr.ownerId !== playerId) return reachable;
 
   const mapById = new Map(map.territories.map((t) => [t.id, t]));
-  const visited = new Set<string>([fromTerritoryId]);
-  const queue: string[] = [fromTerritoryId];
+  const fromUnits = getTerritoryUnits(fromTerr);
+  const fromHasAirfield = hasTerritoryBuilding(fromTerr, "airfield");
 
-  while (queue.length > 0) {
-    const currId = queue.shift()!;
-    const currDef = mapById.get(currId);
-    if (!currDef) continue;
+  // Determina o alcance máximo permitido
+  let maxLandDistance = 1;
+  let canMoveAirfieldToAirfield = false;
 
-    for (const nbrId of currDef.neighbors) {
-      if (visited.has(nbrId)) continue;
-      const nbrTerr = state.territories[nbrId];
-      if (!nbrTerr || nbrTerr.ownerId !== playerId) continue;
+  if (unitsToMove) {
+    if (unitsToMove.infantry > 0 || unitsToMove.artillery > 0) {
+      maxLandDistance = 1;
+    } else if (unitsToMove.tank > 0) {
+      maxLandDistance = 2;
+    } else if (unitsToMove.navy > 0) {
+      maxLandDistance = 3;
+    } else if (unitsToMove.aircraft > 0) {
+      canMoveAirfieldToAirfield = fromHasAirfield;
+      maxLandDistance = 0; // Se apenas aviões, somente aeródromos
+    }
+  } else {
+    // Modo geral / seleção prévia: alcance máximo pelas unidades presentes no território
+    if (fromUnits.tank > 0) maxLandDistance = Math.max(maxLandDistance, 2);
+    if (fromUnits.navy > 0) maxLandDistance = Math.max(maxLandDistance, 3);
+    if (fromUnits.aircraft > 0 && fromHasAirfield) canMoveAirfieldToAirfield = true;
+  }
 
-      if (isSeaLink(currId, nbrId)) {
-        const blockade = checkNavalBlockade(state, currId, nbrId, playerId);
-        if (blockade.isBlockaded) continue;
+  // BFS com limite de distância maxLandDistance
+  if (maxLandDistance > 0) {
+    const visited = new Map<string, number>();
+    visited.set(fromTerritoryId, 0);
+    const queue: [string, number][] = [[fromTerritoryId, 0]];
+
+    while (queue.length > 0) {
+      const [currId, dist] = queue.shift()!;
+      if (dist >= maxLandDistance) continue;
+      const currDef = mapById.get(currId);
+      if (!currDef) continue;
+
+      for (const nbrId of currDef.neighbors) {
+        if (visited.has(nbrId)) continue;
+        const nbrTerr = state.territories[nbrId];
+        if (!nbrTerr || nbrTerr.ownerId !== playerId) continue;
+
+        if (isSeaLink(currId, nbrId)) {
+          const blockade = checkNavalBlockade(state, currId, nbrId, playerId);
+          if (blockade.isBlockaded) continue;
+        }
+
+        visited.set(nbrId, dist + 1);
+        reachable.add(nbrId);
+        queue.push([nbrId, dist + 1]);
       }
+    }
+  }
 
-      visited.add(nbrId);
-      reachable.add(nbrId);
-      queue.push(nbrId);
+  // Deslocamento de Aeronaves: entre aeródromos aliados em qualquer lugar do mapa
+  if (canMoveAirfieldToAirfield) {
+    for (const t of Object.values(state.territories)) {
+      if (
+        t.id !== fromTerritoryId &&
+        t.ownerId === playerId &&
+        hasTerritoryBuilding(t, "airfield")
+      ) {
+        reachable.add(t.id);
+      }
     }
   }
 
   // Airlift destination targets (se tiver aeródromo na origem e não tiver sido usado nesta rodada)
-  if (hasTerritoryBuilding(fromTerr, "airfield") && !fromTerr.airliftedThisTurn) {
+  if (fromHasAirfield && !fromTerr.airliftedThisTurn) {
     for (const t of Object.values(state.territories)) {
       if (
         t.id !== fromTerritoryId &&
@@ -621,6 +696,23 @@ export function calculateTurnEconomy(
   map: GameMapDef = CLASSIC_MAP
 ): TurnEconomyBreakdown {
   const player = state.players.find((p) => p.id === playerId);
+  if (player?.doctrineId === "extermination") {
+    return {
+      capitalMoney: 0,
+      tradeHubMoney: 0,
+      goldPassiveMoney: 0,
+      buildingMoney: 0,
+      investmentMoney: 0,
+      artilleryUpkeep: 0,
+      grossMoney: 0,
+      economicPenaltyMultiplier: 1.0,
+      netMoney: 0,
+      steel: 0,
+      oil: 0,
+      gold: 0,
+    };
+  }
+
   const mapById = new Map(map.territories.map((t) => [t.id, t]));
 
   const occupiedTerritories = Object.values(state.territories).filter(
@@ -641,6 +733,8 @@ export function calculateTurnEconomy(
     if (!def) continue;
     const hasMarket = hasTerritoryBuilding(terr, "market");
     const hasIndustry = hasTerritoryBuilding(terr, "industry");
+    const indBldg = (terr.buildings ?? []).find((b) => b.type === "industry");
+    const isIndLv2 = (indBldg?.level ?? 1) >= 2;
     const hasCivilianFactory = hasTerritoryBuilding(terr, "civilian_factory");
     const hasSteelMine = hasTerritoryBuilding(terr, "steel_mine");
     const hasOilWell = hasTerritoryBuilding(terr, "oil_well");
@@ -660,10 +754,10 @@ export function calculateTurnEconomy(
       buildingMoney += 3;
     }
     if (hasIndustry && !def.resource) {
-      buildingMoney += 2;
+      buildingMoney += isIndLv2 ? 4 : 2;
     }
 
-    const resourceYield = hasIndustry ? 2 : 1;
+    const resourceYield = hasIndustry ? (isIndLv2 ? 4 : 2) : 1;
     if (def.resource === "steel") {
       steel += resourceYield + (hasSteelMine ? 2 : 0);
     } else if (def.resource === "oil") {
@@ -756,6 +850,11 @@ function collectTurnEconomy(
   const player = state.players.find((p) => p.id === playerId);
   const econ = calculateTurnEconomy(state, playerId, map);
   if (!player) return econ;
+
+  if (player.doctrineId === "extermination") {
+    player.resources = { money: 0, steel: 0, oil: 0, gold: 0 };
+    return econ;
+  }
 
   player.resources = player.resources ?? { money: 0, steel: 0, oil: 0, gold: 0 };
   player.resources.money = Math.max(0, player.resources.money + econ.netMoney);
@@ -1119,11 +1218,20 @@ export function checkPlayerVictory(
   return false;
 }
 
+export interface ObjectiveMetric {
+  label: string;
+  current: number;
+  target: number;
+  unit?: string;
+  pct: number;
+}
+
 export interface ObjectiveProgress {
   completionPct: number;
   held: number;
   total: number;
   description: string;
+  metrics?: ObjectiveMetric[];
 }
 
 export function calculateObjectiveProgress(
@@ -1237,11 +1345,34 @@ export function calculateObjectiveProgress(
     ).length;
     const routeProgress = Math.min(100, Math.round((activeRoutes / rule.activeInvestmentRoutes) * 100));
     const completionPct = Math.round(moneyProgress * 0.4 + goldProgress * 0.4 + routeProgress * 0.2);
+    const metrics: ObjectiveMetric[] = [
+      {
+        label: "Dinheiro no Tesouro",
+        current: player.resources?.money ?? 0,
+        target: rule.targetMoney,
+        unit: "$",
+        pct: moneyProgress,
+      },
+      {
+        label: "Reserva de Ouro",
+        current: player.resources?.gold ?? 0,
+        target: rule.targetGold,
+        unit: "Ouro",
+        pct: goldProgress,
+      },
+      {
+        label: "Rotas de Investimento",
+        current: activeRoutes,
+        target: rule.activeInvestmentRoutes,
+        pct: routeProgress,
+      },
+    ];
     return {
       completionPct,
       held: player.resources?.money ?? 0,
       total: rule.targetMoney,
       description: player.objective.descriptionPt,
+      metrics,
     };
   }
 
@@ -1252,11 +1383,26 @@ export function calculateObjectiveProgress(
     const fortProgress = Math.min(100, Math.round((fortifiedCount / rule.bastionTerritoryCount) * 100));
     const roundProgress = Math.min(100, Math.round(((player.bastionRoundsHeld ?? 0) / rule.roundsRequired) * 100));
     const completionPct = Math.round(fortProgress * 0.5 + roundProgress * 0.5);
+    const metrics: ObjectiveMetric[] = [
+      {
+        label: "Territórios Fortificados",
+        current: fortifiedCount,
+        target: rule.bastionTerritoryCount,
+        pct: fortProgress,
+      },
+      {
+        label: "Rodadas Invicto",
+        current: player.bastionRoundsHeld ?? 0,
+        target: rule.roundsRequired,
+        pct: roundProgress,
+      },
+    ];
     return {
       completionPct,
       held: player.bastionRoundsHeld ?? 0,
       total: rule.roundsRequired,
       description: player.objective.descriptionPt,
+      metrics,
     };
   }
 
@@ -1290,17 +1436,46 @@ export function calculateObjectiveProgress(
     let totalFactors = 1;
     let factorSum = Math.min(1, eliminatedByMe / required);
 
+    const metrics: ObjectiveMetric[] = [
+      {
+        label: "Generais Eliminados",
+        current: eliminatedByMe,
+        target: required,
+        pct: Math.min(100, Math.round((eliminatedByMe / required) * 100)),
+      },
+    ];
+
     if (rule.requireWorldTension !== undefined) {
       totalFactors++;
       factorSum += Math.min(1, (state.worldTension ?? 0) / rule.requireWorldTension);
+      metrics.push({
+        label: "Tensão Mundial",
+        current: state.worldTension ?? 0,
+        target: rule.requireWorldTension,
+        unit: "%",
+        pct: Math.min(100, Math.round(((state.worldTension ?? 0) / rule.requireWorldTension) * 100)),
+      });
     }
     if (rule.requireInfamy !== undefined) {
       totalFactors++;
       factorSum += Math.min(1, (player.infamy ?? 0) / rule.requireInfamy);
+      metrics.push({
+        label: "Infâmia",
+        current: player.infamy ?? 0,
+        target: rule.requireInfamy,
+        unit: "%",
+        pct: Math.min(100, Math.round(((player.infamy ?? 0) / rule.requireInfamy) * 100)),
+      });
     }
     if (rule.minTerritoriesHeld !== undefined) {
       totalFactors++;
       factorSum += Math.min(1, ownedTerritories.length / rule.minTerritoriesHeld);
+      metrics.push({
+        label: "Territórios Ocupados",
+        current: ownedTerritories.length,
+        target: rule.minTerritoriesHeld,
+        pct: Math.min(100, Math.round((ownedTerritories.length / rule.minTerritoriesHeld) * 100)),
+      });
     }
 
     const completionPct = Math.min(100, Math.round((factorSum / totalFactors) * 100));
@@ -1309,6 +1484,7 @@ export function calculateObjectiveProgress(
       held: eliminatedByMe,
       total: required,
       description: player.objective.descriptionPt,
+      metrics,
     };
   }
 
@@ -1557,22 +1733,13 @@ export function applyAction(
         throw new Error("Só é permitido comprar 1 carta de suprimento com Ouro por turno.");
       }
 
-      const mode =
-        action.paymentMode ??
-        (currentPlayer.resources.gold >= 2 ? "gold_only" : "gold_and_money");
-
-      if (mode === "gold_only") {
-        if (currentPlayer.resources.gold < 2) {
-          throw new Error("Ouro insuficiente: são necessários 2 de Ouro para esta modalidade.");
-        }
-        currentPlayer.resources.gold -= 2;
-      } else {
-        if (currentPlayer.resources.gold < 1 || currentPlayer.resources.money < 4) {
-          throw new Error("Recursos insuficientes: são necessários 1 de Ouro e $4 de Dinheiro.");
-        }
-        currentPlayer.resources.gold -= 1;
-        currentPlayer.resources.money -= 4;
+      const GOLD_CARD_COST = 4;
+      if ((currentPlayer.resources?.gold ?? 0) < GOLD_CARD_COST) {
+        throw new Error(
+          `Ouro insuficiente: são necessários ${GOLD_CARD_COST} de Ouro para adquirir uma carta de suprimento estratégica.`
+        );
       }
+      currentPlayer.resources.gold -= GOLD_CARD_COST;
 
       if (state.deck.length === 0 && state.discardPile.length > 0) {
         state.deck = rng.shuffle(state.discardPile);
@@ -1585,9 +1752,8 @@ export function applyAction(
 
       currentPlayer.cards.push(drawnCard);
       currentPlayer.boughtCardWithGoldThisTurn = true;
-      const costTag = mode === "gold_only" ? "2 Ouro" : "1 Ouro + $4";
       state.log.push(
-        `${currentPlayer.name} adquiriu 1 carta de suprimento estratégica (${costTag}).`
+        `${currentPlayer.name} adquiriu 1 carta de suprimento estratégica (-${GOLD_CARD_COST} Ouro).`
       );
       break;
     }
@@ -1605,13 +1771,10 @@ export function applyAction(
         throw new Error("Território inválido.");
       }
 
-      // HEGEM-116: Doutrina de Extermínio é proibida de construir melhorias civis
-      if (
-        currentPlayer.doctrineId === "extermination" &&
-        (action.buildingType === "market" || action.buildingType === "civilian_factory")
-      ) {
+      // Doutrina de Extermínio possui economia zero e não pode construir nenhuma estrutura
+      if (currentPlayer.doctrineId === "extermination") {
         throw new Error(
-          "A Doutrina de Extermínio proíbe a construção de melhorias civis (Mercados e Fábricas Civis)."
+          "A Doutrina de Extermínio proíbe a construção de melhorias civis e estruturas (economia nula 0 0 0 0)."
         );
       }
 
@@ -1645,7 +1808,66 @@ export function applyAction(
           );
           break;
         }
+
+        if (action.buildingType === "industry") {
+          const isTallOrEconomic =
+            currentPlayer.doctrineId === "tall_sovereign" ||
+            currentPlayer.doctrineId === "defense_in_depth";
+          if (!isTallOrEconomic) {
+            throw new Error(
+              "Apenas generais com Doutrina de Desenvolvimento Tall (Fortaleza Soberana) podem expandir Indústria para o Nível 2."
+            );
+          }
+          if (existing.level >= 2) {
+            throw new Error(
+              "A indústria neste território já está no nível máximo (Complexo Industrial Nv. 2)."
+            );
+          }
+          const upgradeCost = INDUSTRY_LEVEL_2_COST;
+          if (
+            (currentPlayer.resources?.money ?? 0) < upgradeCost.money ||
+            (currentPlayer.resources?.steel ?? 0) < upgradeCost.steel
+          ) {
+            throw new Error(
+              `Recursos insuficientes para evoluir Complexo Industrial Nv. 2 (custo: $${upgradeCost.money} e ${upgradeCost.steel} Aço).`
+            );
+          }
+          currentPlayer.resources.money -= upgradeCost.money;
+          currentPlayer.resources.steel -= upgradeCost.steel;
+          existing.level = 2;
+          currentPlayer.analytics = currentPlayer.analytics ?? createInitialPlayerAnalytics();
+          currentPlayer.analytics.buildingsConstructed.industry =
+            (currentPlayer.analytics.buildingsConstructed.industry || 0) + 1;
+          state.log.push(
+            `🏭 ${currentPlayer.name} evoluiu a Indústria em ${def.namePt} para Complexo Industrial Nv. 2 (+100% produção) (-$${upgradeCost.money}, -${upgradeCost.steel} Aço).`
+          );
+          break;
+        }
+
         throw new Error("Este território já possui esta estrutura construída.");
+      }
+
+      if (action.buildingType === "wonder") {
+        const isBastion =
+          currentPlayer.objective?.rule.type === "fortified_bastion" ||
+          currentPlayer.doctrineId === "tall_sovereign" ||
+          currentPlayer.doctrineId === "defense_in_depth";
+        if (!isBastion) {
+          throw new Error(
+            "A construção da Maravilha é exclusiva para o objetivo de Bastião Inexpugnável ou Doutrina Tall."
+          );
+        }
+        if (!hasTerritoryBuilding(terr, "fortification")) {
+          throw new Error(
+            "A Maravilha deve ser construída em um território previamente protegido por uma Fortaleza."
+          );
+        }
+        const alreadyHasWonder = Object.values(state.territories).some(
+          (t) => t.ownerId === playerId && hasTerritoryBuilding(t, "wonder")
+        );
+        if (alreadyHasWonder) {
+          throw new Error("Você já possui uma Maravilha Soberana em construção.");
+        }
       }
 
       if (action.buildingType === "port" && def.isCoastal === false) {
@@ -1702,6 +1924,7 @@ export function applyAction(
         steel_mine: "Mina de Aço",
         oil_well: "Poço Petrolífero",
         refinery: "Refinaria",
+        wonder: "Maravilha Soberana",
       };
       const costSummary =
         baseCost.steel > 0
@@ -1710,6 +1933,13 @@ export function applyAction(
       state.log.push(
         `🏗️ ${currentPlayer.name} construiu ${buildingNamesPt[action.buildingType]} em ${def.namePt} (${costSummary}).`
       );
+
+      if (action.buildingType === "wonder") {
+        currentPlayer.wonderRoundsHeld = 0;
+        state.log.push(
+          `🌟 ALERTA GLOBAL — MARAVILHA DO BASTIÃO: ${currentPlayer.name} iniciou a construção da MARAVILHA SOBERANA em ${def.namePt}! As nações mundiais têm 3 rodadas para romper suas defesas antes da vitória absoluta!`
+        );
+      }
       break;
     }
 
@@ -1773,6 +2003,7 @@ export function applyAction(
         steel_mine: "Mina de Aço",
         oil_well: "Poço Petrolífero",
         refinery: "Refinaria Petroquímica",
+        wonder: "Maravilha do Bastião",
       };
       const bName = buildingNamesPt[action.buildingType] ?? action.buildingType;
       const refundSummary =
@@ -1838,6 +2069,7 @@ export function applyAction(
             steel_mine: "Mina de Aço",
             oil_well: "Poço Petrolífero",
             refinery: "Refinaria",
+            wonder: "Maravilha Estratégica",
           };
           throw new Error(
             `O recrutamento desta unidade exige ${requirementNames[requirement]} no território.`
@@ -1916,6 +2148,9 @@ export function applyAction(
     }
 
     case "market_trade": {
+      if (currentPlayer.doctrineId === "extermination") {
+        throw new Error("A Doutrina de Extermínio possui economia nula e não opera no Mercado.");
+      }
       if (state.pendingConquest) {
         throw new Error("Conclua a ocupação do território conquistado antes de negociar no mercado.");
       }
@@ -2360,6 +2595,7 @@ export function applyAction(
             steel_mine: "Mina de Aço",
             oil_well: "Poço Petrolífero",
             refinery: "Refinaria",
+            wonder: "Maravilha Estratégica",
           };
           if (targetBuilding.level > 1) {
             targetBuilding.level -= 1;
@@ -2789,6 +3025,7 @@ export function applyAction(
             steel_mine: "Mina de Aço",
             oil_well: "Poço Petrolífero",
             refinery: "Refinaria",
+            wonder: "Maravilha Estratégica",
           };
 
           const survivingBuildings: typeof toTerr.buildings = [];
@@ -2850,12 +3087,12 @@ export function applyAction(
 
         state.log.push(`${currentPlayer.name} conquistou ${toName}!`);
 
-        // HEGEM-116: Saque Total de Extermínio (+ $2, +1 Aço) na conquista
+        // Saque de Extermínio (+1 divisão de recrutas em troca de economia nula)
         if (currentPlayer.doctrineId === "extermination") {
-          currentPlayer.resources.money += 2;
-          currentPlayer.resources.steel += 1;
+          currentPlayer.resources = { money: 0, steel: 0, oil: 0, gold: 0 };
+          currentPlayer.unplacedArmies += 1;
           state.log.push(
-            `☠️ SAQUE TOTAL (Extermínio): ${currentPlayer.name} pilhou recursos da província de ${toName} (+ $2, +1 Aço)!`
+            `☠️ SAQUE TOTAL (Extermínio): ${currentPlayer.name} capturou recrutas e material bélico da província de ${toName} (+1 divisão de recrutas)!`
           );
         }
 
@@ -2933,6 +3170,9 @@ export function applyAction(
 
       let chosenUnits: UnitCounts;
       if (action.units) {
+        if (action.units.aircraft > 0) {
+          throw new Error("Aeronaves não podem avançar na ocupação de combate. Devem permanecer nos aeródromos.");
+        }
         if (totalUnits(action.units) !== action.armies) {
           throw new Error("A composição da ocupação deve corresponder ao total de divisões movidas.");
         }
@@ -2941,7 +3181,8 @@ export function applyAction(
         }
         chosenUnits = { ...action.units };
       } else {
-        chosenUnits = selectUnits(totalPool, action.armies);
+        const nonAirPool = { ...totalPool, aircraft: 0 };
+        chosenUnits = selectUnits(nonAirPool, action.armies);
       }
 
       const remainingForOrigin = subtractUnits(totalPool, chosenUnits);
@@ -3065,10 +3306,6 @@ export function applyAction(
       const fromDef = mapById.get(fromTerr.id)!;
       const toDef = mapById.get(toTerr.id)!;
       const isNeighbor = fromDef.neighbors.includes(toTerr.id);
-      const isConnected = isConnectedByFriendlyPath(state, fromTerr.id, toTerr.id, playerId, map);
-      if (!isNeighbor && !isConnected) {
-        throw new Error("O remanejamento só é permitido entre territórios conectados por rotas aliadas.");
-      }
 
       const availableUnits = subtractUnits(getTerritoryUnits(fromTerr), getMovedInUnits(fromTerr));
       const movableArmies = Math.max(0, totalUnits(availableUnits) - 1);
@@ -3081,6 +3318,52 @@ export function applyAction(
       }
       if (!canSubtractUnits(availableUnits, movedUnits)) {
         throw new Error("A composição inclui unidades indisponíveis ou que já se moveram neste turno.");
+      }
+
+      // HEGEM-138: Limites estritos de alcance por tipo de unidade na Fase 3
+      const dist = getFriendlyPathDistance(state, fromTerr.id, toTerr.id, playerId, map);
+      const fromHasAirfield = hasTerritoryBuilding(fromTerr, "airfield");
+      const toHasAirfield = hasTerritoryBuilding(toTerr, "airfield");
+
+      // 1. Aeronaves: precisam obrigatoriamente de Aeródromo na origem e no destino
+      if (movedUnits.aircraft > 0) {
+        if (!fromHasAirfield) {
+          throw new Error("Aeronaves só podem decolar de territórios que possuam Aeródromo.");
+        }
+        if (!toHasAirfield) {
+          throw new Error("Aeronaves só podem pousar em territórios que possuam Aeródromo.");
+        }
+      }
+
+      // 2. Infantaria e Artilharia: máximo 1 tile (vizinho direto)
+      if (movedUnits.infantry > 0 || movedUnits.artillery > 0) {
+        if (dist > 1 && !isNeighbor) {
+          throw new Error(
+            "Infantaria e Artilharia movem-se apenas entre territórios diretamente vizinhos (alcance de 1 território)."
+          );
+        }
+      }
+
+      // 3. Blindados (Tanques): máximo 2 tiles conectados sob seu controle
+      if (movedUnits.tank > 0) {
+        if (dist > 2) {
+          throw new Error(
+            "Blindados podem se mover por no máximo 2 territórios conectados sob seu controle."
+          );
+        }
+      }
+
+      // 4. Força Naval: máximo 3 conexões marítimas
+      if (movedUnits.navy > 0) {
+        if (dist > 3) {
+          throw new Error("Forças navais podem se mover por no máximo 3 conexões marítimas.");
+        }
+      }
+
+      // 5. Se move apenas Aeronaves entre aeródromos, o deslocamento é livre pelo mapa
+      const isOnlyAircraft = totalUnits(movedUnits) === movedUnits.aircraft && movedUnits.aircraft > 0;
+      if (!isOnlyAircraft && !Number.isFinite(dist) && !isNeighbor) {
+        throw new Error("O remanejamento só é permitido entre territórios conectados por rotas aliadas.");
       }
 
       let navalFuelSurcharge = 0;
@@ -3791,6 +4074,33 @@ function advanceTurn(state: GameState, rng: SeededRng, map: GameMapDef): void {
           }
         }
       }
+
+      // Verificação da MARAVILHA SOBERANA (Objetivo Bastião / Fim do Mundo)
+      for (const p of state.players) {
+        if (!p.eliminated) {
+          const wonderTerr = Object.values(state.territories).find(
+            (t) => t.ownerId === p.id && hasTerritoryBuilding(t, "wonder")
+          );
+          if (wonderTerr) {
+            p.wonderRoundsHeld = (p.wonderRoundsHeld ?? 0) + 1;
+            const wDef = map.territories.find((t) => t.id === wonderTerr.id);
+            const wName = wDef?.namePt ?? wonderTerr.id;
+            state.log.push(
+              `🌟 ALERTA GLOBAL — MARAVILHA SOBERANA: ${p.name} manteve a Maravilha em ${wName} (${p.wonderRoundsHeld}/3 rodadas)! Ao atingir 3 rodadas, a vitória será imediata!`
+            );
+            if (p.wonderRoundsHeld >= 3) {
+              state.winnerId = p.id;
+              state.phase = "game_over";
+              state.log.push(
+                `💥 O MUNDO ACABA: A Maravilha Soberana em ${wName} foi concluída! O Bastião triunfou e ${p.name} venceu a campanha mundial!`
+              );
+              return;
+            }
+          } else {
+            p.wonderRoundsHeld = 0;
+          }
+        }
+      }
     }
     const candidate = state.players[nextIdx];
     if (!candidate.eliminated) {
@@ -3854,13 +4164,13 @@ function advanceTurn(state: GameState, rng: SeededRng, map: GameMapDef): void {
 
         switch (candidate.doctrineId) {
           case "extermination": {
-            candidate.unplacedArmies += 1;
-            spawnOnTerr(capTerr, "tank", 1);
-            spawnOnTerr(capTerr, "artillery", 1);
+            candidate.unplacedArmies += 3;
+            spawnOnTerr(capTerr, "tank", 2);
+            spawnOnTerr(capTerr, "artillery", 2);
             spawnOnTerr(capTerr, "aircraft", 1);
             spawnOnTerr(coastalTerr, "navy", 1);
             state.log.push(
-              `☠️ MOBILIZAÇÃO DE EXTERMÍNIO: ${candidate.name} mobilizou +1 Infantaria, +1 Tanque, +1 Artilharia, +1 Avião e +1 Navio!`
+              `☠️ MOBILIZAÇÃO DE EXTERMÍNIO: ${candidate.name} mobilizou +3 Infantarias, +2 Tanques, +2 Artilharias, +1 Avião e +1 Navio!`
             );
             break;
           }

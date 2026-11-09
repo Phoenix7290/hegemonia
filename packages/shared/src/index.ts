@@ -110,6 +110,7 @@ export const BuildingTypeSchema = z.enum([
   "steel_mine",
   "oil_well",
   "refinery",
+  "wonder",
 ]);
 export type BuildingType = z.infer<typeof BuildingTypeSchema>;
 
@@ -327,6 +328,7 @@ export function createInitialPlayerAnalytics(capitalContinentId?: ContinentId): 
       steel_mine: 0,
       oil_well: 0,
       refinery: 0,
+      wonder: 0,
     },
     unitsRecruited: {
       infantry: 0,
@@ -383,6 +385,8 @@ export interface PlayerState {
   infamy: number;
   /** Number of consecutive rounds a player has held their fortified bastion (HEGEM-117) */
   bastionRoundsHeld?: number;
+  /** Number of consecutive rounds a player has held their Sovereign Wonder (MARAVILHA) */
+  wonderRoundsHeld?: number;
   /** National treasury ($) and strategic resource stockpiles (steel, oil, gold) */
   resources: PlayerResources;
   /** Whether this player has already purchased a supply card with gold on the current turn */
