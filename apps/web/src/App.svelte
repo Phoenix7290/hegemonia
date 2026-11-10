@@ -33,10 +33,12 @@
     AirMissionType,
     BuildingType,
     CompetitionMode,
+    DoctrineId,
     GameAction,
     GameState,
     MatchOrigin,
     MatchmakingStatus,
+    PlayerColor,
     PublicQueueMode,
     TacticalScenarioId,
     UnitCounts,
@@ -139,6 +141,8 @@
   let competitionMode = $state<CompetitionMode>("custom");
   let matchOrigin = $state<MatchOrigin>("lobby");
   let selectedScenarioId = $state<TacticalScenarioId>("standard");
+  let selectedDoctrineId = $state<DoctrineId>("superior_firepower");
+  let selectedPlayerColor = $state<PlayerColor>("blue");
   let showTutorialModal = $state<boolean>(false);
   let showInGameTutorial = $state<boolean>(false);
   let activeTutorialStep = $state<number>(0);
@@ -1035,78 +1039,87 @@
     inspectedTerritoryId = null;
     activeCombatAnimations = [];
 
-    const cleanName = (auth.user?.displayName || playerName).trim() || "Comandante";
-    const samplePlayers = [
-      {
-        id: "human",
-        name: `${cleanName} (Você)`,
-        color: "blue" as const,
-        doctrineId: selectedDoctrineId ?? "superior_firepower",
-      },
-      {
-        id: "bot1",
-        name: "General IA #1",
-        color: "red" as const,
-        doctrineId: "mass_assault",
-      },
-      {
-        id: "bot2",
-        name: "General IA #2",
-        color: "green" as const,
-        doctrineId: "tall_sovereign",
-      },
-    ];
-    const newGame = createGame({
-      id: "tutorial-practice",
-      seed: "practice-seed-123",
-      players: samplePlayers,
-      scenarioId: selectedScenarioId !== "standard" ? selectedScenarioId : "standard",
-    });
+    try {
+      const cleanName = (auth.user?.displayName || playerName).trim() || "Comandante";
+      const availableColors: PlayerColor[] = (
+        ["blue", "red", "green", "yellow", "black", "white"] as PlayerColor[]
+      ).filter((c) => c !== selectedPlayerColor);
+      const samplePlayers = [
+        {
+          id: "human",
+          name: `${cleanName} (Você)`,
+          color: selectedPlayerColor,
+          doctrineId: selectedDoctrineId,
+        },
+        {
+          id: "bot1",
+          name: "General IA #1",
+          color: availableColors[0] ?? "red",
+          doctrineId: "mass_assault" as const,
+        },
+        {
+          id: "bot2",
+          name: "General IA #2",
+          color: availableColors[1] ?? "green",
+          doctrineId: "tall_sovereign" as const,
+        },
+      ];
+      const newGame = createGame({
+        id: "tutorial-practice",
+        seed: "practice-seed-123",
+        players: samplePlayers,
+        scenarioId: selectedScenarioId !== "standard" ? selectedScenarioId : "standard",
+      });
 
-    // Ensure human player is ALWAYS first to play in tutorial practice
-    const humanIndex = newGame.players.findIndex((p) => p.id === "human");
-    if (humanIndex > 0) {
-      const [humanPlayer] = newGame.players.splice(humanIndex, 1);
-      newGame.players.unshift(humanPlayer);
-    }
-    newGame.turnIndex = 0;
-    // Set round 2 so full combat, deployment and all phases are immediately active for learning
-    newGame.round = 2;
-    newGame.phase = "deploy";
-    const activeHuman = newGame.players[0];
-    const reinf = calculateTurnReinforcements(newGame, activeHuman.id, CLASSIC_MAP);
-    activeHuman.unplacedArmies = Math.max(5, reinf.total);
-    // Provide plenty of resources so user can buy/sell in Market, build fortifications, industries and test units
-    activeHuman.resources = { money: 40, steel: 18, oil: 16, gold: 8 };
+      // Ensure human player is ALWAYS first to play in tutorial practice
+      const humanIndex = newGame.players.findIndex((p) => p.id === "human");
+      if (humanIndex > 0) {
+        const [humanPlayer] = newGame.players.splice(humanIndex, 1);
+        newGame.players.unshift(humanPlayer);
+      }
+      newGame.turnIndex = 0;
+      // Set round 2 so full combat, deployment and all phases are immediately active for learning
+      newGame.round = 2;
+      newGame.phase = "deploy";
+      const activeHuman = newGame.players[0];
+      const reinf = calculateTurnReinforcements(newGame, activeHuman.id, CLASSIC_MAP);
+      activeHuman.unplacedArmies = Math.max(5, reinf.total);
+      // Provide plenty of resources so user can buy/sell in Market, build fortifications, industries and test units
+      activeHuman.resources = { money: 40, steel: 18, oil: 16, gold: 8 };
 
-    // Ensure human owns at least 1 territory with a Market and a Capital
-    const humanTerrs = Object.values(newGame.territories).filter((t) => t.ownerId === "human");
-    if (humanTerrs.length > 0) {
-      activeHuman.capitalTerritoryId = humanTerrs[0].id;
-      humanTerrs[0].buildings = [{ type: "market", level: 1 }];
-      // Give human a frontline territory with combined arms ready to attack
-      for (const t of humanTerrs) {
-        const mapTerr = CLASSIC_MAP.territories.find((m) => m.id === t.id);
-        const hasEnemy = mapTerr?.neighbors.some(
-          (nId) => newGame.territories[nId] && newGame.territories[nId].ownerId !== "human"
-        );
-        if (hasEnemy) {
-          t.armies = 5;
-          t.units = { infantry: 2, tank: 2, artillery: 1, aircraft: 0, navy: 0 };
-          focusTerritory(t.id);
-          break;
+      // Ensure human owns at least 1 territory with a Market and a Capital
+      const humanTerrs = Object.values(newGame.territories).filter((t) => t.ownerId === "human");
+      if (humanTerrs.length > 0) {
+        activeHuman.capitalTerritoryId = humanTerrs[0].id;
+        humanTerrs[0].buildings = [{ type: "market", level: 1 }];
+        // Give human a frontline territory with combined arms ready to attack
+        for (const t of humanTerrs) {
+          const mapTerr = CLASSIC_MAP.territories.find((m) => m.id === t.id);
+          const hasEnemy = mapTerr?.neighbors.some(
+            (nId) => newGame.territories[nId] && newGame.territories[nId].ownerId !== "human"
+          );
+          if (hasEnemy) {
+            t.armies = 5;
+            t.units = { infantry: 2, tank: 2, artillery: 1, aircraft: 0, navy: 0 };
+            focusTerritory(t.id);
+            break;
+          }
         }
       }
-    }
 
-    showInGameTutorial = true;
-    activeTutorialStep = 0;
-    game = newGame;
-    myPlayerId = "human";
-    roomStatus = "playing";
-    turnDeadline = Date.now() + 180_000;
-    remainingSeconds = 180;
-    sound.playTurnRadioAlert();
+      showInGameTutorial = true;
+      activeTutorialStep = 0;
+      game = newGame;
+      myPlayerId = "human";
+      roomStatus = "playing";
+      turnDeadline = Date.now() + 180_000;
+      remainingSeconds = 180;
+      sound.playTurnRadioAlert();
+    } catch (err: any) {
+      console.error("Falha ao iniciar tutorial interativo:", err);
+      resetRoomState();
+      errorBanner = "Erro ao iniciar simulação prática: " + (err?.message || err);
+    }
   }
 
   function sendAction(action: unknown) {
@@ -1117,6 +1130,7 @@
     }
     if (game && myPlayerId && roomStatus === "playing") {
       try {
+        const prevCombat = game.lastCombat;
         const nextState = applyAction(
           game,
           myPlayerId,
@@ -1126,6 +1140,25 @@
         );
         game = nextState;
         resetSelectedForce();
+        if (game.lastCombat && game.lastCombat !== prevCombat) {
+          const isMaritime = isSeaLink(
+            game.lastCombat.fromTerritoryId,
+            game.lastCombat.toTerritoryId
+          );
+          if (isMaritime) sound.playNavalSalvo();
+          else sound.playInfantryRifle();
+          sound.playDiceRoll();
+          spawnCombatAnimation(
+            createCombatAnimationFromRoll(game.lastCombat, ui.combatAnimationSpeed, {
+              isMaritime,
+            })
+          );
+          if (game.lastCombat.conquered) {
+            setTimeout(() => {
+              sound.playConquest();
+            }, 300);
+          }
+        }
         checkAndRunPracticeBotTurn();
       } catch (err: any) {
         errorBanner = err?.message || "Ação inválida.";
@@ -1503,8 +1536,14 @@
       onCreateRoom={() => joinOrCreateRoom(true)}
       onJoinRoom={() => joinOrCreateRoom(false)}
       onLeaveRoom={leaveCurrentRoom}
-      onChooseColor={(color) => connectedRoom?.send("choose_color", { color })}
-      onChooseDoctrine={(doctrineId) => connectedRoom?.send("choose_doctrine", { doctrineId })}
+      onChooseColor={(color) => {
+        selectedPlayerColor = color;
+        connectedRoom?.send("choose_color", { color });
+      }}
+      onChooseDoctrine={(doctrineId) => {
+        selectedDoctrineId = doctrineId;
+        connectedRoom?.send("choose_doctrine", { doctrineId });
+      }}
       onSelectScenario={selectScenario}
       onOpenTutorial={() => (showTutorialModal = true)}
       onAddBot={() => connectedRoom?.send("add_bot")}

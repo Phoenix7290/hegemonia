@@ -95,5 +95,17 @@ describe("HEGEM-104: Tutorial Guiado da HUD & Cenários Táticos Presetados (Fro
     expect(source).toContain("Remanejamento de Forças e Linhas de Suprimento");
     expect(source).toContain("Tensão Mundial, Diplomacia e Diretiva Secreta");
   });
+
+  it("verifies App.svelte declares practice state variables and handles practice error safely", async () => {
+    const fs = await import("fs");
+    const path = await import("path");
+    const appPath = path.resolve(__dirname, "../App.svelte");
+    const source = fs.readFileSync(appPath, "utf-8");
+
+    expect(source).toMatch(/let selectedDoctrineId\s*=/);
+    expect(source).toMatch(/let selectedPlayerColor\s*=/);
+    expect(source).toContain("practiceTutorialInMap");
+    expect(source).toContain("Falha ao iniciar tutorial interativo");
+  });
 });
 
