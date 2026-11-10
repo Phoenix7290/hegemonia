@@ -794,14 +794,14 @@ describe("HEGEM-18: Core War Economy (Money, Steel, Oil, Scarce Gold)", () => {
     state = applyAction(
       state,
       activeId,
-      { type: "buy_card_with_gold", paymentMode: "gold_only" },
+      { type: "buy_card_with_gold" },
       rng
     );
 
     const afterFirstBuy = state.players.find((p) => p.id === activeId)!;
     expect(afterFirstBuy.cards.length).toBe(1);
-    expect(afterFirstBuy.resources.gold).toBe(1);
-    expect(afterFirstBuy.resources.money).toBe(10);
+    expect(afterFirstBuy.resources.gold).toBe(1); // 5 - 4 = 1
+    expect(afterFirstBuy.resources.money).toBe(10); // Money remains untouched
     expect(afterFirstBuy.boughtCardWithGoldThisTurn).toBe(true);
     expect(state.deck.length).toBe(initialDeckCount - 1);
 
@@ -810,7 +810,7 @@ describe("HEGEM-18: Core War Economy (Money, Steel, Oil, Scarce Gold)", () => {
       applyAction(
         state,
         activeId,
-        { type: "buy_card_with_gold", paymentMode: "gold_only" },
+        { type: "buy_card_with_gold" },
         rng
       )
     ).toThrow(/1 carta de suprimento com Ouro por turno/);
@@ -821,10 +821,23 @@ describe("HEGEM-18: Core War Economy (Money, Steel, Oil, Scarce Gold)", () => {
       applyAction(
         state,
         activeId,
-        { type: "buy_card_with_gold", paymentMode: "gold_only" },
+        { type: "buy_card_with_gold" },
         rng
       )
     ).toThrow(/Ouro insuficiente/);
+
+    // Add gold to reach 4 and purchase again
+    state.players[state.turnIndex].resources.gold = 4;
+    state = applyAction(
+      state,
+      activeId,
+      { type: "buy_card_with_gold" },
+      rng
+    );
+    const afterSecondBuy = state.players.find((p) => p.id === activeId)!;
+    expect(afterSecondBuy.cards.length).toBe(2);
+    expect(afterSecondBuy.resources.gold).toBe(0);
+    expect(afterSecondBuy.resources.money).toBe(10);
   });
 });
 

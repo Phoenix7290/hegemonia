@@ -1930,10 +1930,7 @@
               count: (game.tradeCount ?? 0) + 1,
             })}</span
           >
-          <strong
-            >+{nextTradeBonus}
-            {t("divisions", { count: nextTradeBonus })}</strong
-          >
+          <strong>+{t("divisions", { count: nextTradeBonus })}</strong>
         </div>
 
         <div class="cards-grid">
@@ -1980,12 +1977,8 @@
             oil: 0,
             gold: 0,
           }}
-          {@const canBuyGoldOnly =
-            !myPlayerState.boughtCardWithGoldThisTurn && res.gold >= 2}
-          {@const canBuyGoldMoney =
-            !myPlayerState.boughtCardWithGoldThisTurn &&
-            res.gold >= 1 &&
-            res.money >= 4}
+          {@const canBuyWithGold =
+            !myPlayerState.boughtCardWithGoldThisTurn && res.gold >= 4}
           <div class="gold-card-purchase-box">
             <div class="gold-card-purchase-head">
               <Icon name="gold" size={13} />
@@ -2001,27 +1994,14 @@
               <div class="gold-card-btn-row">
                 <button
                   class="hud-btn gold-buy-btn"
-                  disabled={!canBuyGoldOnly}
+                  disabled={!canBuyWithGold}
                   onclick={() =>
                     sendAction({
                       type: "buy_card_with_gold",
-                      paymentMode: "gold_only",
                     })}
                 >
                   <Icon name="gold" size={12} />
-                  {t("cards_buy_gold_only_btn")}
-                </button>
-                <button
-                  class="hud-btn gold-buy-btn"
-                  disabled={!canBuyGoldMoney}
-                  onclick={() =>
-                    sendAction({
-                      type: "buy_card_with_gold",
-                      paymentMode: "gold_and_money",
-                    })}
-                >
-                  <Icon name="coins" size={12} />
-                  {t("cards_buy_gold_money_btn")}
+                  {t("cards_buy_gold_btn")}
                 </button>
               </div>
             {/if}
@@ -4852,14 +4832,14 @@
     color: #94a3b8;
   }
   .gold-card-btn-row {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
+    display: flex;
     gap: 0.35rem;
   }
   .gold-buy-btn {
+    width: 100%;
     justify-content: center;
-    font-size: 0.7rem;
-    padding: 0.32rem 0.45rem;
+    font-size: 0.72rem;
+    padding: 0.4rem 0.6rem;
     border-color: rgba(251, 191, 36, 0.35);
     color: #fde68a;
   }

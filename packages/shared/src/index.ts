@@ -586,6 +586,7 @@ export const BuyCardWithGoldActionSchema = z.object({
   type: z.literal("buy_card_with_gold"),
   paymentMode: z.enum(["gold_only", "gold_and_money"]).optional(),
 });
+export type BuyCardWithGoldAction = z.infer<typeof BuyCardWithGoldActionSchema>;
 
 export const BuildStructureActionSchema = z.object({
   type: z.literal("build_structure"),

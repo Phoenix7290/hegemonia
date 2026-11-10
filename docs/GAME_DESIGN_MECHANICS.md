@@ -251,7 +251,7 @@ Durante a fase de reforço, além de posicionar as divisões gratuitas de Infant
 - `build_structure`: Constrói `market`, `industry`, `fortification`, `airfield` ou `port` em um território válido.
 - `recruit_unit`: Recruta `tank`, `artillery` (em Indústria), `aircraft` (em Aeródromo) ou `navy` (em Porto).
 - `market_trade`: Compra ou vende `steel`, `oil` ou `gold` no Mercado Global (exige possuir ao menos 1 `market`).
-- `buy_card_with_gold`: Gasta `2 Ouro` (ou `1 Ouro + 4$`) para sacar imediatamente 1 Carta de Suprimento extra (máximo 1 por turno).
+- `buy_card_with_gold`: Gasta `4 Ouro` para sacar imediatamente 1 Carta de Suprimento extra (máximo 1 por turno).
 - `propose_investment` / `propose_border_trade`: Abre rota de investimento com aliado ou contrato de extração na fronteira.
 
 ### 3. Fase de Combate (`attack`)
