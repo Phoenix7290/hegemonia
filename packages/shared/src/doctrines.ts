@@ -18,7 +18,7 @@ export type DoctrineId = z.infer<typeof DoctrineIdSchema>;
 
 export interface DoctrineDef {
   id: DoctrineId;
-  icon: "blitzkrieg" | "fortification" | "anchor" | "swords" | "infantry" | "skull" | "artillery";
+  icon: "blitzkrieg" | "fortification" | "anchor" | "swords" | "infantry" | "skull" | "artillery" | "helmet";
   accentColor: string;
   badgeCode: string;
   namePt: string;
@@ -31,17 +31,17 @@ export interface DoctrineDef {
 }
 
 export const DOCTRINES: Record<DoctrineId, DoctrineDef> = {
-  mass_assault: {
-    id: "mass_assault",
-    icon: "infantry",
-    accentColor: "#ef4444",
-    badgeCode: "MAS",
-    namePt: "Ataque em Massa (Exército Vermelho)",
-    nameEn: "Mass Assault (Red Army)",
+  superior_firepower: {
+    id: "superior_firepower",
+    icon: "helmet",
+    accentColor: "#94a3b8",
+    badgeCode: "CLS",
+    namePt: "Comando Clássico (Doutrina Padrão)",
+    nameEn: "Classic Command (Standard Doctrine)",
     summaryPt:
-      "Infantaria 30% mais barata ($2); +2 tropas bônus na troca de cartas. Bloqueio total de blindados, artilharia e caças; -40% tesouraria.",
+      "Experiência neutra e equilibrada (sem bônus e sem penalidades). Acesso irrestrito a todas as unidades e estruturas, priorizando objetivos clássicos de conquista.",
     summaryEn:
-      "Infantry 30% cheaper ($2); +2 bonus troops on card trades. Strict block on tanks, artillery, and fighters; -40% gross treasury.",
+      "Neutral, balanced baseline experience (no buffs, no debuffs). Full access to all units and structures, prioritizing classic War conquest objectives.",
     maxPerLobby: 2,
     orderIndex: 1,
   },
@@ -87,21 +87,6 @@ export const DOCTRINES: Record<DoctrineId, DoctrineDef> = {
     maxPerLobby: 2,
     orderIndex: 4,
   },
-  extermination: {
-    id: "extermination",
-    icon: "skull",
-    accentColor: "#881337",
-    badgeCode: "EXT",
-    namePt: "Guerra Total & Extermínio (Aniquilação)",
-    nameEn: "Total War & Extermination (Annihilation)",
-    summaryPt:
-      "+1 em todos os dados de ataque ao invadir e saque dobrado de províncias. Inicia com 50% de Tensão e Infâmia; proibido construir melhorias civis. Objetivos extremos.",
-    summaryEn:
-      "+1 on all attack dice when invading and double plunder on conquest. Starts with 50% Tension and Infamy; cannot build civilian structures. Extreme victory objectives.",
-    maxPerLobby: 1,
-    isDarkTheme: true,
-    orderIndex: 5,
-  },
   guerrilla: {
     id: "guerrilla",
     icon: "swords",
@@ -114,27 +99,35 @@ export const DOCTRINES: Record<DoctrineId, DoctrineDef> = {
     summaryEn:
       "Supply immunity on coasts/islands and immediate partisan counter-strike in 1-army garrisons. Nomadic Capital (can relocate capital every 2 rounds).",
     maxPerLobby: 2,
+    orderIndex: 5,
+  },
+  mass_assault: {
+    id: "mass_assault",
+    icon: "infantry",
+    accentColor: "#ef4444",
+    badgeCode: "MAS",
+    namePt: "Ataque em Massa (Exército Vermelho)",
+    nameEn: "Mass Assault (Red Army)",
+    summaryPt:
+      "Infantaria 30% mais barata ($2); +2 tropas bônus na troca de cartas. Bloqueio total de blindados, artilharia e caças; -40% tesouraria.",
+    summaryEn:
+      "Infantry 30% cheaper ($2); +2 bonus troops on card trades. Strict block on tanks, artillery, and fighters; -40% gross treasury.",
+    maxPerLobby: 2,
     orderIndex: 6,
   },
-  // NOTE FOR FUTURE DEVELOPERS (HEGEM-125):
-  // We intentionally retain the `superior_firepower` enum ID so existing database records,
-  // analytics, and historical match logs remain 100% compatible.
-  // The original Artillery-focused "Superior Firepower / Grande Batalhão" doctrine (2 barrages/turn,
-  // +1 die with artillery saturation) may be re-introduced as an 8th doctrine or scenario preset in the future.
-  // Currently, `superior_firepower` serves as the "Classic / Standard Command" (Comando Clássico)
-  // baseline doctrine: 0 buffs, 0 debuffs, pure classic War experience, prioritizing classic conquest objectives.
-  superior_firepower: {
-    id: "superior_firepower",
-    icon: "swords",
-    accentColor: "#94a3b8",
-    badgeCode: "CLS",
-    namePt: "Comando Clássico (Doutrina Padrão)",
-    nameEn: "Classic Command (Standard Doctrine)",
+  extermination: {
+    id: "extermination",
+    icon: "skull",
+    accentColor: "#881337",
+    badgeCode: "EXT",
+    namePt: "Guerra Total & Extermínio (Aniquilação)",
+    nameEn: "Total War & Extermination (Annihilation)",
     summaryPt:
-      "Experiência neutra e equilibrada (sem bônus e sem penalidades). Acesso irrestrito a todas as unidades e estruturas, priorizando objetivos clássicos de conquista.",
+      "Economia nula (0 0 0 0) e proibição total de construir estruturas. Em troca, mobilização massiva de tropas por turno (+3 Inf, +2 Tanques, +2 Artilharias, +1 Caça, +1 Frota), saque de recrutas e objetivos de aniquilação.",
     summaryEn:
-      "Neutral, balanced baseline experience (no buffs, no debuffs). Full access to all units and structures, prioritizing classic War conquest objectives.",
-    maxPerLobby: 2,
+      "Zero economy (0 0 0 0) and total ban on building structures. In exchange, massive turn troop mobilization (+3 Inf, +2 Tanks, +2 Artillery, +1 Fighter, +1 Fleet), recruit plunder, and extreme objectives.",
+    maxPerLobby: 1,
+    isDarkTheme: true,
     orderIndex: 7,
   },
 
@@ -184,12 +177,12 @@ export const DOCTRINES: Record<DoctrineId, DoctrineDef> = {
 };
 
 export const CORE_DOCTRINE_LIST: DoctrineDef[] = [
-  DOCTRINES.mass_assault,
+  DOCTRINES.superior_firepower,
   DOCTRINES.tall_sovereign,
   DOCTRINES.naval_supremacy,
   DOCTRINES.blitzkrieg,
   DOCTRINES.guerrilla,
-  DOCTRINES.superior_firepower,
+  DOCTRINES.mass_assault,
   DOCTRINES.extermination,
 ];
 

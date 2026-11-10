@@ -89,3 +89,12 @@ When implementing features from `docs/ROADMAP.md` (e.g., War Economy, Diplomatic
   2. Maintain 100% key parity with `pt-BR` and `en` (enforced by `i18n.test.ts`).
   3. Register the locale in `apps/web/src/i18n/registry.ts` under `SUPPORTED_LOCALES` and `catalogs`.
 
+---
+
+## 6. Version Specification, Release Integrity & Build Telemetry
+
+- **Mandatory Version Tracking**:
+  - AI agents must ALWAYS verify, specify, and preserve the active game version (e.g. `Hegemonia v0.6.1`) in UI footers, diagnostics, git commit messages, PR descriptions, and release notes.
+  - When releasing new features or hotfixes, synchronize `HEGEMONIA_VERSION` across `packages/shared/src/version.ts`, monorepo `package.json` files, and telemetry guards.
+  - Ensure git commit hashes and build variables are passed cleanly to Docker builds and client/server runtimes (`GIT_COMMIT_HASH`), preventing uninformative `dev` placeholders in production environments.
+

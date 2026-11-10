@@ -2,15 +2,17 @@ import { defineConfig } from "vite";
 import { svelte } from "@sveltejs/vite-plugin-svelte";
 import { execSync } from "node:child_process";
 
-let commitHash = "dev";
-try {
-  commitHash = execSync("git rev-parse --short HEAD", {
-    stdio: ["ignore", "pipe", "ignore"],
-  })
-    .toString()
-    .trim();
-} catch {
-  // Fallback caso git não esteja disponível em tempo de build
+let commitHash = process.env.GIT_COMMIT_HASH?.trim() || "dev";
+if (commitHash === "dev") {
+  try {
+    commitHash = execSync("git rev-parse --short HEAD", {
+      stdio: ["ignore", "pipe", "ignore"],
+    })
+      .toString()
+      .trim();
+  } catch {
+    // Fallback caso git não esteja disponível em tempo de build
+  }
 }
 
 export default defineConfig({

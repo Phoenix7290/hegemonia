@@ -97,6 +97,24 @@ export const enMap: TranslationCatalog = {
   obj_rp_mongol_empire: "Mongol Empire: Conquer Mongolia, China, Kazakhstan, Omsk, Siberia, Moscow and Poland.",
   obj_rp_pan_african: "Pan-African Union: Conquer all of Africa, plus Brazil and Venezuela.",
 
+  // New Asymmetric Strategic Directives (v0.6.1)
+  obj_bretton_woods: "Economic Hegemony (Bretton Woods): Accumulate $300 in Treasury, 50 Reserve Gold, and maintain 2 active investment routes.",
+  obj_bretton_woods_title: "Economic Hegemony (Bretton Woods)",
+  obj_fortified_bastion: "Impregnable Bastion (Sovereign Fortress): Maintain at least 4 fortified territories with Fortresses/Casemates unbreached for 5 rounds.",
+  obj_fortified_bastion_title: "Impregnable Bastion (Sovereign Fortress)",
+  obj_sovereign_citadel: "Sovereign Citadel (Defense Bastion): Maintain at least 3 fortified territories with Fortresses/Casemates unbreached for 4 rounds.",
+  obj_sovereign_citadel_title: "Sovereign Citadel (Defense Bastion)",
+  obj_pax_hegemonica: "Pax Hegemonica (Diplomatic Pacification): Maintain 1 active Military Alliance and NAPs with all other living generals (or survive to Round 30).",
+  obj_pax_hegemonica_title: "Pax Hegemonica (Diplomatic Pacification)",
+  obj_extermination_annihilation: "Total Annihilation (Extermination Doctrine): Directly eliminate at least 2 enemy generals on the battlefield (or all opponents if fewer than 2).",
+  obj_extermination_annihilation_title: "Total Annihilation (Extermination)",
+  obj_extermination_world_chaos: "World Chaos & Apocalypse (Extermination Doctrine): Eliminate at least 2 enemy generals and escalate World Tension to 100%.",
+  obj_extermination_world_chaos_title: "World Chaos & Apocalypse",
+  obj_extermination_capital_scourge: "Continent Scourge (Extermination Doctrine): Directly eliminate at least 2 enemy generals and occupy at least 18 devastated territories.",
+  obj_extermination_capital_scourge_title: "Continent Scourge",
+  obj_extermination_warmonger_hegemony: "Supreme Warmonger (Extermination Doctrine): Reach 100% Infamy, eliminate at least 2 enemy generals, and control 15 territories.",
+  obj_extermination_warmonger_hegemony_title: "Supreme Warmonger",
+
   // Map Modes & Overlays (HEGEM-62)
   map_base_label: "Base",
   map_overlays_label: "Layers",

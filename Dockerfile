@@ -13,12 +13,16 @@ COPY apps/web/package.json ./apps/web/
 
 RUN pnpm install --frozen-lockfile
 
+ARG GIT_COMMIT_HASH="dev"
+ENV GIT_COMMIT_HASH=$GIT_COMMIT_HASH
+
 COPY . .
 RUN pnpm test
 RUN pnpm build
 
 # Production runtime stage
 FROM node:24-bookworm-slim
+ARG GIT_COMMIT_HASH="dev"
 WORKDIR /app
 
 ENV NODE_ENV=production
@@ -26,6 +30,7 @@ ENV PORT=2567
 ENV HOST=::
 ENV PUBLIC_DIR=/app/apps/web/dist
 ENV AVATAR_DIR=/app/data/avatars
+ENV GIT_COMMIT_HASH=$GIT_COMMIT_HASH
 
 COPY --from=builder /app /app
 RUN mkdir -p /app/data/avatars /app/apps/web/dist/music /app/apps/web/dist/sfx \

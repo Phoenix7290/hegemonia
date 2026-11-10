@@ -1,4 +1,5 @@
-import { t } from "./index.svelte";
+import { t, i18n } from "./index.svelte";
+import { ALL_OBJECTIVES } from "@hegemonia/maps";
 
 const TERRITORY_ALIASES: Record<string, string> = {
   brazil: "brasil",
@@ -79,6 +80,10 @@ export function getSubregionName(id: string): string {
 }
 
 export function getObjectiveTitle(id: string): string {
+  const normalized = id.startsWith("obj_") ? id : `obj_${id}`;
+  const directTitle = t(`${normalized}_title`);
+  if (directTitle !== `${normalized}_title`) return directTitle;
+
   const key = `objective_${id}_title`;
   const translated = t(key);
   if (translated !== key) return translated;
@@ -99,7 +104,13 @@ export function getObjectiveDescription(id: string): string {
 
   const key = `objective_${id}_desc`;
   const translated = t(key);
-  return translated !== key ? translated : id;
+  if (translated !== key) return translated;
+
+  const found = ALL_OBJECTIVES.find((o) => o.id === id || o.id === normalized);
+  if (found) {
+    return i18n.locale === "en" ? (found.descriptionEn ?? found.descriptionPt) : found.descriptionPt;
+  }
+  return id;
 }
 
 export function getFactionName(color: string): string {
