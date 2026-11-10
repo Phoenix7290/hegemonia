@@ -6,6 +6,7 @@ import {
   GameActionSchema,
   HEGEMONIA_VERSION,
   PlayerColorSchema,
+  SCENARIO_BY_ID,
   SESSION_REPLACED_CLOSE_CODE,
   isDoctrineAvailableInLobby,
   type AuthUser,
@@ -15,6 +16,7 @@ import {
   type GameState,
   type MatchOrigin,
   type PlayerColor,
+  type TacticalScenarioId,
 } from "@hegemonia/shared";
 import { authenticateToken } from "./auth-service.js";
 import { sessionTokenFromHeaders } from "./http.js";
@@ -61,6 +63,7 @@ interface HegemoniaRoomOptions {
   expectedUserIds?: string[];
   rulesConfig?: Record<string, unknown>;
   turnTimerSeconds?: number;
+  scenarioId?: TacticalScenarioId;
 }
 
 const ALL_COLORS: PlayerColor[] = [
@@ -98,6 +101,7 @@ export class HegemoniaRoom extends Room {
   private seasonId?: string;
   private expectedUserIds = new Set<string>();
   private rulesConfig: Record<string, unknown> = {};
+  private selectedScenarioId: TacticalScenarioId = "standard";
 
   onCreate(options: HegemoniaRoomOptions) {
     this.autoDispose = false;
@@ -106,6 +110,14 @@ export class HegemoniaRoom extends Room {
     this.seasonId = options.seasonId;
     this.expectedUserIds = new Set(options.expectedUserIds ?? []);
     this.rulesConfig = options.rulesConfig ?? {};
+    if (options.scenarioId && options.scenarioId in SCENARIO_BY_ID) {
+      this.selectedScenarioId = options.scenarioId;
+    } else if (
+      typeof this.rulesConfig.scenarioId === "string" &&
+      this.rulesConfig.scenarioId in SCENARIO_BY_ID
+    ) {
+      this.selectedScenarioId = this.rulesConfig.scenarioId as TacticalScenarioId;
+    }
     if (typeof options.turnTimerSeconds === "number" && options.turnTimerSeconds > 0) {
       this.turnTimerSeconds = options.turnTimerSeconds;
     } else if (
@@ -174,6 +186,17 @@ export class HegemoniaRoom extends Room {
       const sec = Number(payload?.seconds);
       if (sec >= 15 && sec <= 300) {
         this.turnTimerSeconds = sec;
+        this.broadcastRoomState();
+      }
+    });
+
+    this.onMessage("select_scenario", (client, payload: { scenarioId: string }) => {
+      if (this.gameState) return;
+      const caller = this.lobbyPlayers.find((p) => p.sessionId === client.sessionId);
+      if (!caller?.isHost) return;
+      if (this.competitionMode !== "custom") return;
+      if (payload?.scenarioId && payload.scenarioId in SCENARIO_BY_ID) {
+        this.selectedScenarioId = payload.scenarioId as TacticalScenarioId;
         this.broadcastRoomState();
       }
     });
@@ -307,16 +330,26 @@ export class HegemoniaRoom extends Room {
               (p.isBot ? DOCTRINE_LIST[idx % DOCTRINE_LIST.length].id : null),
             recentObjectiveIds: this.recentObjectivesByUser.get(p.userId ?? p.token),
           }));
-          const provisional = createGame({ id: "pending", seed: this.secretSeed, players });
+          const provisional = createGame({
+            id: "pending",
+            seed: this.secretSeed,
+            players,
+            scenarioId: this.selectedScenarioId,
+          });
           this.matchId = await createMatch({
             roomCode: this.roomCode,
             seedCommitHash: provisional.seedCommitHash,
             competitionMode: this.competitionMode,
             matchOrigin: this.matchOrigin,
             seasonId: this.seasonId,
-            rulesConfig: this.rulesConfig,
+            rulesConfig: { ...this.rulesConfig, scenarioId: this.selectedScenarioId },
           });
-          const nextState = createGame({ id: this.matchId, seed: this.secretSeed, players });
+          const nextState = createGame({
+            id: this.matchId,
+            seed: this.secretSeed,
+            players,
+            scenarioId: this.selectedScenarioId,
+          });
           for (const gp of nextState.players) {
             const lobbyEntry = players.find((lp) => lp.id === gp.id);
             if (lobbyEntry?.doctrineId) {
@@ -898,6 +931,7 @@ export class HegemoniaRoom extends Room {
       matchOrigin: this.matchOrigin,
       turnDeadline: this.turnDeadline,
       turnTimerSeconds: this.gameState?.round === 1 ? 60 : this.turnTimerSeconds,
+      selectedScenarioId: this.selectedScenarioId,
       myPlayerId: viewerToken,
       lobbyPlayers: this.lobbyPlayers.map((p) => ({
         token: p.token,

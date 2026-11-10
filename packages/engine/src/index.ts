@@ -21,6 +21,7 @@ import {
   type TerritoryState,
   type UnitCounts,
   type UnitType,
+  type TacticalScenarioId,
 } from "@hegemonia/shared";
 import {
   ALL_OBJECTIVES,
@@ -34,6 +35,7 @@ import {
   ROLEPLAY_OBJECTIVES,
 } from "@hegemonia/maps";
 import { createSeededRng, hashSeed, type SeededRng } from "./rng.js";
+import { applyTacticalScenario } from "./scenarios.js";
 import {
   applyDoctrineCombatDiceModifiers,
   applySelectDoctrine,
@@ -78,9 +80,11 @@ export interface CreateGameOptions {
   seed: string;
   map?: GameMapDef;
   objectives?: ObjectiveCard[];
+  scenarioId?: TacticalScenarioId;
 }
 
 export * from "./doctrines.js";
+export * from "./scenarios.js";
 
 /**
  * Card trade progression with a linear limit cap at trade 10 (max 35 base armies) to prevent exponential late-game explosion:
@@ -842,7 +846,7 @@ export function calculateTurnEconomy(
   };
 }
 
-function collectTurnEconomy(
+export function collectTurnEconomy(
   state: GameState,
   playerId: string,
   map: GameMapDef = CLASSIC_MAP
@@ -1071,11 +1075,15 @@ export function createGame(opts: CreateGameOptions): GameState {
     borderTrades: [],
   };
 
-  const firstPlayer = state.players[0];
-  const reinf = calculateTurnReinforcements(state, firstPlayer.id, map);
-  firstPlayer.unplacedArmies = reinf.total;
-  state.log.push(`${firstPlayer.name} recebe ${reinf.total} exércitos para posicionar.`);
-  collectTurnEconomy(state, firstPlayer.id, map);
+  if (opts.scenarioId && opts.scenarioId !== "standard") {
+    applyTacticalScenario(state, opts.scenarioId, map);
+  } else {
+    const firstPlayer = state.players[0];
+    const reinf = calculateTurnReinforcements(state, firstPlayer.id, map);
+    firstPlayer.unplacedArmies = reinf.total;
+    state.log.push(`${firstPlayer.name} recebe ${reinf.total} exércitos para posicionar.`);
+    collectTurnEconomy(state, firstPlayer.id, map);
+  }
 
   return state;
 }
@@ -2425,7 +2433,7 @@ export function applyAction(
       fromTerr.artilleryBarragesCountThisTurn = currentBarrages + 1;
       fromTerr.artilleryBarrageFiredThisTurn =
         fromTerr.artilleryBarragesCountThisTurn >= maxBarrages;
-      state.worldTension = Math.min(100, Number(((state.worldTension ?? 0) + 0.3).toFixed(1)));
+      state.worldTension = Math.min(100, Number(((state.worldTension ?? 0) + 0.1).toFixed(1)));
       const rolls = Array.from({ length: fromUnits.artillery }, () => rng.rollD6());
       const hits = rolls.filter((r) => r >= 4).length;
 
@@ -2553,7 +2561,7 @@ export function applyAction(
 
       currentPlayer.resources.oil -= airOilCost;
       fromTerr.airMissionFlownThisTurn = true;
-      state.worldTension = Math.min(100, Number(((state.worldTension ?? 0) + 0.3).toFixed(1)));
+      state.worldTension = Math.min(100, Number(((state.worldTension ?? 0) + 0.1).toFixed(1)));
       state.lastStrike = {
         kind: "air_mission",
         missionType: action.missionType,
@@ -2997,7 +3005,7 @@ export function applyAction(
           (currentPlayer.resources?.oil ?? 0) >= getEffectiveBlitzOilCost(currentPlayer, 1);
         toTerr.blitzkriegAvailable = attackerCombat.remaining.tank > 0 && canAffordBlitzOil;
         toTerr.casBonusAttackerId = undefined;
-        state.worldTension = Math.min(100, Number(((state.worldTension ?? 0) + 1.0).toFixed(1)));
+        state.worldTension = Math.min(100, Number(((state.worldTension ?? 0) + 0.3).toFixed(1)));
 
         // HEGEM-98: Dano Colateral Dinâmico em Conquistas (Aço & Artilharia)
         if (toTerr.buildings && toTerr.buildings.length > 0) {
@@ -3056,8 +3064,8 @@ export function applyAction(
           defenderPlayer.capitalLostTurn = state.round;
           defenderPlayer.economicPenaltyMultiplier = 0.5;
           defenderPlayer.moralePenalty = 2;
-          state.worldTension = Math.min(100, Number(((state.worldTension ?? 0) + 5.0).toFixed(1)));
-          currentPlayer.infamy = Math.min(100, (currentPlayer.infamy ?? 0) + 15);
+          state.worldTension = Math.min(100, Number(((state.worldTension ?? 0) + 2.5).toFixed(1)));
+          currentPlayer.infamy = Math.min(100, (currentPlayer.infamy ?? 0) + 8);
 
           let stolenCardNotice = "";
           if (defenderPlayer.cards.length > 0) {
@@ -3129,8 +3137,8 @@ export function applyAction(
           const defPlayer = state.players.find((p) => p.id === defenderId)!;
           defPlayer.eliminated = true;
           defPlayer.eliminatedBy = playerId;
-          state.worldTension = Math.min(100, Number(((state.worldTension ?? 0) + 8.0).toFixed(1)));
-          currentPlayer.infamy = Math.min(100, (currentPlayer.infamy ?? 0) + 25);
+          state.worldTension = Math.min(100, Number(((state.worldTension ?? 0) + 3.5).toFixed(1)));
+          currentPlayer.infamy = Math.min(100, (currentPlayer.infamy ?? 0) + 12);
           if (defPlayer.cards.length > 0) {
             currentPlayer.cards.push(...defPlayer.cards);
             state.log.push(
@@ -4021,7 +4029,7 @@ function advanceTurn(state: GameState, rng: SeededRng, map: GameMapDef): void {
       state.round += 1;
       roundAdvanced = true;
       const activePlayersCount = state.players.filter((p) => !p.eliminated).length;
-      const roundTensionBoost = activePlayersCount <= 3 ? 3.0 : activePlayersCount <= 4 ? 2.5 : 2.0;
+      const roundTensionBoost = activePlayersCount <= 3 ? 1.5 : activePlayersCount <= 4 ? 1.2 : 1.0;
       state.worldTension = Math.min(100, Number(((state.worldTension ?? 0) + roundTensionBoost).toFixed(1)));
 
       if (state.investmentRoutes) {
@@ -4040,9 +4048,9 @@ function advanceTurn(state: GameState, rng: SeededRng, map: GameMapDef): void {
               (t) => t.ownerId === p.id
             ).length;
             if (heldCount / totalTerritories >= 0.38) {
-              p.infamy = Math.min(100, (p.infamy ?? 0) + 5);
+              p.infamy = Math.min(100, (p.infamy ?? 0) + 2);
               state.log.push(
-                `⚠️ HEGEMONIA AMEAÇADORA: ${p.name} controla ${heldCount}/${totalTerritories} territórios (${Math.round((heldCount / totalTerritories) * 100)}%) e gera alarme global! (+5% Infâmia)`
+                `⚠️ HEGEMONIA AMEAÇADORA: ${p.name} controla ${heldCount}/${totalTerritories} territórios (${Math.round((heldCount / totalTerritories) * 100)}%) e gera alarme global! (+2% Infâmia)`
               );
             }
           }

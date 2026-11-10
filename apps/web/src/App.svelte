@@ -10,6 +10,7 @@
     UNIT_COSTS,
     addUnits,
     calculateObjectiveProgress,
+    createGame,
     emptyUnitCounts,
     getMovedInUnits,
     getReachableManeuverTargets,
@@ -33,6 +34,7 @@
     MatchOrigin,
     MatchmakingStatus,
     PublicQueueMode,
+    TacticalScenarioId,
     UnitCounts,
     UnitType,
   } from "@hegemonia/shared";
@@ -47,6 +49,7 @@
   } from "./components/CommandCenter.svelte";
   import Icon from "./components/Icon.svelte";
   import ObjectiveSelectionModal from "./components/ObjectiveSelectionModal.svelte";
+  import TutorialGuideModal from "./components/TutorialGuideModal.svelte";
   import VictoryModal from "./components/VictoryModal.svelte";
   import WarJournal from "./components/WarJournal.svelte";
   import ReconInspector from "./components/ReconInspector.svelte";
@@ -129,6 +132,8 @@
   let matchmakingBusy = $state(false);
   let competitionMode = $state<CompetitionMode>("custom");
   let matchOrigin = $state<MatchOrigin>("lobby");
+  let selectedScenarioId = $state<TacticalScenarioId>("standard");
+  let showTutorialModal = $state<boolean>(false);
   let matchmakingPollTimer: ReturnType<typeof setTimeout> | null = null;
   let matchmakingPollGeneration = 0;
   let matchmakingStatusUserId: string | null = null;
@@ -497,6 +502,7 @@
     game: GameState | null;
     competitionMode: CompetitionMode;
     matchOrigin: MatchOrigin;
+    selectedScenarioId?: TacticalScenarioId;
   }
 
   function clearPersistedRoom() {
@@ -746,6 +752,9 @@
         lobbyPlayers = payload.lobbyPlayers;
         competitionMode = payload.competitionMode;
         matchOrigin = payload.matchOrigin;
+        if (payload.selectedScenarioId) {
+          selectedScenarioId = payload.selectedScenarioId;
+        }
         communications.setMyPlayerId(payload.myPlayerId);
         communications.setPlayers(payload.lobbyPlayers);
         game = payload.game;
@@ -903,6 +912,32 @@
       room.removeAllListeners();
       void room.leave().catch(() => undefined);
     }
+  }
+
+  function selectScenario(scenarioId: TacticalScenarioId) {
+    selectedScenarioId = scenarioId;
+    if (connectedRoom) {
+      connectedRoom.send("select_scenario", { scenarioId });
+    }
+  }
+
+  function practiceTutorialInMap() {
+    showTutorialModal = false;
+    const cleanName = (auth.user?.displayName || playerName).trim() || "Comandante";
+    const samplePlayers = [
+      { id: "human", name: `${cleanName} (Você)`, color: "blue" as const },
+      { id: "bot1", name: "General IA #1", color: "red" as const },
+      { id: "bot2", name: "General IA #2", color: "green" as const },
+    ];
+    game = createGame({
+      id: "tutorial-practice",
+      seed: "practice-seed-123",
+      players: samplePlayers,
+      scenarioId: selectedScenarioId !== "standard" ? selectedScenarioId : "standard",
+    });
+    myPlayerId = "human";
+    roomStatus = "playing";
+    sound.play("offensive_order");
   }
 
   function sendAction(action: unknown) {
@@ -1268,6 +1303,7 @@
       {matchmakingBusy}
       {competitionMode}
       {matchOrigin}
+      {selectedScenarioId}
       onQueue={queueForMatch}
       onCancelQueue={cancelMatchmakingQueue}
       onConnectMatch={connectToMatchedRoom}
@@ -1276,6 +1312,8 @@
       onLeaveRoom={leaveCurrentRoom}
       onChooseColor={(color) => connectedRoom?.send("choose_color", { color })}
       onChooseDoctrine={(doctrineId) => connectedRoom?.send("choose_doctrine", { doctrineId })}
+      onSelectScenario={selectScenario}
+      onOpenTutorial={() => (showTutorialModal = true)}
       onAddBot={() => connectedRoom?.send("add_bot")}
       onRemoveBot={(token) => connectedRoom?.send("remove_bot", { token })}
       onSetReady={(ready) => connectedRoom?.send("set_ready", { ready })}
@@ -1446,6 +1484,12 @@
       {/if}
     </div>
   {/if}
+
+  <TutorialGuideModal
+    open={showTutorialModal}
+    onClose={() => (showTutorialModal = false)}
+    onPractice={practiceTutorialInMap}
+  />
 </main>
 
 <style>

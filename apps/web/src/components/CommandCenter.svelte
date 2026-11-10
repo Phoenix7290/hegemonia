@@ -2,6 +2,7 @@
   import {
     DOCTRINE_LIST,
     DoctrineIdSchema,
+    TACTICAL_SCENARIOS,
     isDoctrineAvailableInLobby,
     type CompetitionMode,
     type DoctrineId,
@@ -10,6 +11,7 @@
     type MatchmakingStatus,
     type PlayerColor,
     type PublicQueueMode,
+    type TacticalScenarioId,
   } from "@hegemonia/shared";
   import { api, navigate } from "../lib/api";
   import { auth } from "../lib/auth.svelte";
@@ -53,6 +55,7 @@
     matchmakingBusy,
     competitionMode = "custom",
     matchOrigin = "lobby",
+    selectedScenarioId = "standard",
     onQueue,
     onCancelQueue,
     onConnectMatch,
@@ -61,6 +64,8 @@
     onLeaveRoom,
     onChooseColor,
     onChooseDoctrine,
+    onSelectScenario,
+    onOpenTutorial,
     onAddBot,
     onRemoveBot,
     onSetReady,
@@ -78,6 +83,7 @@
     matchmakingBusy: boolean;
     competitionMode?: CompetitionMode;
     matchOrigin?: MatchOrigin;
+    selectedScenarioId?: TacticalScenarioId;
     onQueue: (mode: PublicQueueMode) => void;
     onCancelQueue: () => void;
     onConnectMatch: () => void;
@@ -86,6 +92,8 @@
     onLeaveRoom: () => void;
     onChooseColor: (color: PlayerColor) => void;
     onChooseDoctrine?: (doctrineId: DoctrineId) => void;
+    onSelectScenario?: (scenarioId: TacticalScenarioId) => void;
+    onOpenTutorial?: () => void;
     onAddBot: () => void;
     onRemoveBot: (token: string) => void;
     onSetReady?: (ready: boolean) => void;
@@ -217,8 +225,21 @@
           <div class="card-corner br"></div>
 
           <div class="ops-header">
-            <span class="eyebrow">{t("deck_ops_eyebrow")}</span>
-            <h2>{t("deck_ops_title")}</h2>
+            <div>
+              <span class="eyebrow">{t("deck_ops_eyebrow")}</span>
+              <h2>{t("deck_ops_title")}</h2>
+            </div>
+            {#if onOpenTutorial}
+              <button
+                type="button"
+                class="tutorial-deck-btn"
+                onclick={onOpenTutorial}
+                title="Abrir Tutorial Guiado da HUD e Mecânicas"
+              >
+                <Icon name="compass" size={14} color="#eab308" />
+                <span>TUTORIAL RÁPIDO (HUD)</span>
+              </button>
+            {/if}
           </div>
 
           {#if auth.user}
@@ -392,6 +413,17 @@
           </div>
 
           <div class="briefing-header-right">
+            {#if onOpenTutorial}
+              <button
+                type="button"
+                class="tutorial-lobby-btn"
+                onclick={onOpenTutorial}
+                title="Abrir Tutorial Guiado da HUD"
+              >
+                <Icon name="compass" size={14} color="#eab308" />
+                <span>TUTORIAL RÁPIDO</span>
+              </button>
+            {/if}
             <div class="capacity-pill">
               <Icon name="users" size={15} />
               <span
@@ -650,6 +682,56 @@
             </div>
           </aside>
         </div>
+
+        {#if competitionMode === "custom"}
+          <div class="scenarios-picker-panel full-width">
+            <div class="section-subhead">
+              <div class="subhead-title-row">
+                <span>CENÁRIOS TÁTICOS PRESETADOS (CUSTOM LOBBY)</span>
+                <span class="scenario-mode-tag">CUSTOM ONLY</span>
+              </div>
+              <small>
+                {#if amIHost}
+                  Selecione um cenário geopolítico pré-montado com distribuição assimétrica e pressão estratégica
+                {:else}
+                  Configuração definida pelo anfitrião da sala (sala customizada)
+                {/if}
+              </small>
+            </div>
+
+            <div class="scenarios-cards-grid">
+              {#each TACTICAL_SCENARIOS as sc}
+                {@const isSelected = selectedScenarioId === sc.id}
+                <button
+                  type="button"
+                  class="scenario-choice-card"
+                  class:selected={isSelected}
+                  disabled={!amIHost}
+                  onclick={() => amIHost && onSelectScenario && onSelectScenario(sc.id)}
+                >
+                  <div class="scenario-card-top">
+                    <span
+                      class="scenario-tension-badge"
+                      class:high-tension={sc.initialTension >= 40}
+                    >
+                      TENSÃO {sc.initialTension}%
+                    </span>
+                    {#if isSelected}
+                      <span class="scenario-active-tag">
+                        <Icon name="check" size={11} color="#10b981" />
+                        <span>ATIVO</span>
+                      </span>
+                    {/if}
+                  </div>
+
+                  <span class="scenario-codename">{sc.codename}</span>
+                  <strong class="scenario-name">{sc.name}</strong>
+                  <p class="scenario-desc">{sc.description}</p>
+                </button>
+              {/each}
+            </div>
+          </div>
+        {/if}
 
         <footer class="briefing-footer">
           <div class="footer-status">
@@ -1785,6 +1867,160 @@
     .launch-battle-btn {
       flex: 1;
       justify-content: center;
+    }
+  }
+  .tutorial-deck-btn,
+  .tutorial-lobby-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    padding: 0.35rem 0.75rem;
+    background: rgba(234, 179, 8, 0.1);
+    border: 1px solid rgba(234, 179, 8, 0.35);
+    color: #fde047;
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    border-radius: 3px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+  .tutorial-deck-btn:hover,
+  .tutorial-lobby-btn:hover {
+    background: rgba(234, 179, 8, 0.2);
+    border-color: #eab308;
+    color: #f8fafc;
+    box-shadow: 0 0 10px rgba(234, 179, 8, 0.25);
+  }
+
+  .scenarios-picker-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 0.85rem;
+    padding: 1.15rem 1.25rem;
+    background: rgba(10, 15, 25, 0.65);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 4px;
+    width: 100%;
+  }
+
+  .subhead-title-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+  }
+
+  .scenario-mode-tag {
+    font-size: 0.62rem;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    padding: 0.15rem 0.45rem;
+    background: rgba(234, 179, 8, 0.12);
+    border: 1px solid rgba(234, 179, 8, 0.35);
+    color: #fde047;
+    border-radius: 2px;
+  }
+
+  .scenarios-cards-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    gap: 0.85rem;
+  }
+
+  .scenario-choice-card {
+    background: rgba(15, 23, 42, 0.6);
+    border: 1px solid rgba(255, 255, 255, 0.09);
+    border-radius: 4px;
+    padding: 1rem 1.1rem;
+    text-align: left;
+    display: flex;
+    flex-direction: column;
+    gap: 0.45rem;
+    cursor: pointer;
+    transition: all 0.18s ease;
+  }
+  .scenario-choice-card:disabled {
+    cursor: default;
+  }
+  .scenario-choice-card:not(:disabled):hover {
+    background: rgba(234, 179, 8, 0.06);
+    border-color: rgba(234, 179, 8, 0.4);
+    transform: translateY(-1px);
+  }
+  .scenario-choice-card.selected {
+    background: rgba(234, 179, 8, 0.12);
+    border-color: #eab308;
+    box-shadow: 0 0 14px rgba(234, 179, 8, 0.2);
+  }
+
+  .scenario-card-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    min-height: 24px;
+    margin-bottom: 0.15rem;
+  }
+
+  .scenario-tension-badge {
+    font-size: 0.62rem;
+    font-weight: 700;
+    padding: 0.18rem 0.5rem;
+    background: rgba(56, 189, 248, 0.12);
+    border: 1px solid rgba(56, 189, 248, 0.35);
+    color: #38bdf8;
+    border-radius: 2px;
+    white-space: nowrap;
+    letter-spacing: 0.04em;
+  }
+  .scenario-tension-badge.high-tension {
+    background: rgba(239, 68, 68, 0.15);
+    border-color: rgba(239, 68, 68, 0.4);
+    color: #fca5a5;
+  }
+
+  .scenario-active-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    font-size: 0.62rem;
+    font-weight: 800;
+    color: #10b981;
+    background: rgba(16, 185, 129, 0.14);
+    border: 1px solid rgba(16, 185, 129, 0.4);
+    padding: 0.18rem 0.5rem;
+    border-radius: 2px;
+    white-space: nowrap;
+    letter-spacing: 0.04em;
+    margin-left: auto;
+  }
+
+  .scenario-codename {
+    font-size: 0.68rem;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    color: #fde047;
+    text-transform: uppercase;
+  }
+
+  .scenario-name {
+    font-size: 0.96rem;
+    font-weight: 800;
+    color: #f8fafc;
+    letter-spacing: 0.02em;
+    line-height: 1.25;
+  }
+
+  .scenario-desc {
+    margin: 0;
+    font-size: 0.76rem;
+    line-height: 1.45;
+    color: #94a3b8;
+  }
+
+  @media (max-width: 768px) {
+    .scenarios-cards-grid {
+      grid-template-columns: 1fr;
     }
   }
 </style>
