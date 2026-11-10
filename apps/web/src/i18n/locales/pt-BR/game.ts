@@ -295,9 +295,10 @@ export const ptBRGame: TranslationCatalog = {
   res_coastal: "Costeiro",
   res_landlocked: "Continental Interno",
   cards_buy_gold_title: "Reserva Estratégica de Ouro",
-  cards_buy_gold_sub: "Adquirir +1 Carta de Suprimento (máx. 1/turno na Fase 1)",
-  cards_buy_gold_only_btn: "Comprar (2 Ouro)",
-  cards_buy_gold_money_btn: "Comprar (1 Ouro + $4)",
+  cards_buy_gold_sub: "Adquirir +1 Carta de Suprimento (Custo: 4 Ouro, máx. 1/turno na Fase 1)",
+  cards_buy_gold_btn: "Comprar (4 Ouro)",
+  cards_buy_gold_only_btn: "Comprar (4 Ouro)",
+  cards_buy_gold_money_btn: "Comprar (4 Ouro)",
   cards_buy_gold_done: "Carta estratégica já adquirida neste turno",
 
   // Territorial Infrastructure & Buildings (HEGEM-32)

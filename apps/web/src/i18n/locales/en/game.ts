@@ -295,9 +295,10 @@ export const enGame: TranslationCatalog = {
   res_coastal: "Coastal",
   res_landlocked: "Landlocked",
   cards_buy_gold_title: "Strategic Gold Reserve",
-  cards_buy_gold_sub: "Purchase +1 Supply Card (max 1/turn in Phase 1)",
-  cards_buy_gold_only_btn: "Buy (2 Gold)",
-  cards_buy_gold_money_btn: "Buy (1 Gold + $4)",
+  cards_buy_gold_sub: "Purchase +1 Supply Card (Cost: 4 Gold, max 1/turn in Phase 1)",
+  cards_buy_gold_btn: "Buy (4 Gold)",
+  cards_buy_gold_only_btn: "Buy (4 Gold)",
+  cards_buy_gold_money_btn: "Buy (4 Gold)",
   cards_buy_gold_done: "Strategic card already purchased this turn",
 
   // Territorial Infrastructure & Buildings (HEGEM-32)
