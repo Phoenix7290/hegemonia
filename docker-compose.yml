@@ -45,6 +45,8 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        GIT_COMMIT_HASH: "${GIT_COMMIT_HASH:-}"
     image: hegemonia:latest
     container_name: hegemonia
     restart: unless-stopped

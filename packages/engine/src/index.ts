@@ -174,8 +174,14 @@ export function calculateTurnReinforcements(
     capitalBonus = 1;
   }
 
+  let doctrineBonus = 0;
+  if (player?.doctrineId === "extermination") {
+    // Doutrina de Extermínio possui economia zero (0 0 0 0) e não pode construir; recebe +4 divisões de reforço por turno
+    doctrineBonus = 4;
+  }
+
   const moralePenalty = player?.moralePenalty ?? 0;
-  const total = Math.max(1, baseArmies + continentBonus + capitalBonus - moralePenalty);
+  const total = Math.max(1, baseArmies + continentBonus + capitalBonus + doctrineBonus - moralePenalty);
 
   return {
     baseArmies,
@@ -1584,6 +1590,7 @@ export function applyAction(
       if (action.doctrineId === "extermination") {
         state.worldTension = Math.max(state.worldTension ?? 0, 50);
         actingPlayer.infamy = Math.max(actingPlayer.infamy ?? 0, 50);
+        actingPlayer.resources = { money: 0, steel: 0, oil: 0, gold: 0 };
       }
 
       state.log.push(
@@ -1640,69 +1647,108 @@ export function applyAction(
 
       const docId = currentPlayer.doctrineId;
       let tradeRewardSummary = "";
+      const isCappedTrade = state.tradeCount >= 10;
+      const ownedTerritoriesList = Object.values(state.territories).filter((t) => t.ownerId === playerId);
+      const totalEmpireInf =
+        currentPlayer.unplacedArmies +
+        ownedTerritoriesList.reduce((acc, t) => acc + getTerritoryUnits(t).infantry, 0);
+      const totalEmpireTanks = ownedTerritoriesList.reduce((acc, t) => acc + getTerritoryUnits(t).tank, 0);
+      const totalEmpireAir = ownedTerritoriesList.reduce((acc, t) => acc + getTerritoryUnits(t).aircraft, 0);
+      const totalEmpireNavy = ownedTerritoriesList.reduce((acc, t) => acc + getTerritoryUnits(t).navy, 0);
+      const totalEmpireArmies = ownedTerritoriesList.reduce((acc, t) => acc + t.armies, 0) + currentPlayer.unplacedArmies;
 
       if (docId === "mass_assault") {
         // HEGEM-126: Mass Assault receives only Infantry (bonus + 2), capped at 50 total infantry units
-        const rawInf = bonus + 2;
-        const currentTotalInf =
-          currentPlayer.unplacedArmies +
-          Object.values(state.territories)
-            .filter((t) => t.ownerId === playerId)
-            .reduce((acc, t) => acc + getTerritoryUnits(t).infantry, 0);
-        const allowedInf = Math.max(0, Math.min(rawInf, 50 - currentTotalInf));
+        const rawInf = isCappedTrade ? Math.min(15, bonus + 2) : bonus + 2;
+        const allowedInf = Math.max(0, Math.min(rawInf, 50 - totalEmpireInf));
         currentPlayer.unplacedArmies += allowedInf;
         tradeRewardSummary = `+${allowedInf} Infantarias (Assalto em Massa, limite máx. 50)`;
       } else if (docId === "blitzkrieg") {
-        // HEGEM-126: Blitzkrieg receives only Tanks on card trade
-        const tankCount = Math.max(2, Math.floor(bonus / 2));
+        // HEGEM-126: Blitzkrieg receives only Tanks; from 10th trade capped at 20 empire tanks (max 8 per trade)
+        let tankCount = Math.max(2, Math.floor(bonus / 2));
+        if (isCappedTrade) {
+          tankCount = Math.min(8, Math.max(0, Math.min(tankCount, 20 - totalEmpireTanks)));
+        }
         placeBonusUnitsOnEmpire("tank", tankCount);
-        tradeRewardSummary = `+${tankCount} Blindados (Blitzkrieg)`;
+        tradeRewardSummary = `+${tankCount} Blindados (Blitzkrieg${isCappedTrade ? ", teto 20" : ""})`;
       } else if (docId === "naval_supremacy" || docId === "fleet_in_being") {
-        // HEGEM-126: AeroNaval receives equal amount of Aircraft and Navy
-        const pairCount = Math.max(1, Math.floor(bonus / 4));
+        // HEGEM-126: AeroNaval receives equal amount of Aircraft and Navy; from 10th trade capped at 12 air and 12 navy
+        let pairCount = Math.max(1, Math.floor(bonus / 4));
+        if (isCappedTrade) {
+          const maxAir = Math.max(0, 12 - totalEmpireAir);
+          const maxNavy = Math.max(0, 12 - totalEmpireNavy);
+          pairCount = Math.min(3, Math.min(pairCount, Math.min(maxAir, maxNavy)));
+        }
         const airPlaced = placeBonusUnitsOnEmpire("aircraft", pairCount);
         const navyPlaced = placeBonusUnitsOnEmpire("navy", pairCount);
-        tradeRewardSummary = `+${airPlaced} Aeronave(s) e +${navyPlaced} Marinha(s) (Supremacia Aeronaval)`;
+        tradeRewardSummary = `+${airPlaced} Aeronave(s) e +${navyPlaced} Marinha(s) (Supremacia Aeronaval${isCappedTrade ? ", teto 12" : ""})`;
       } else if (docId === "extermination") {
-        // HEGEM-126: Extermination receives a combined-arms package of every unit
-        const infQty = Math.max(2, Math.floor(bonus / 3));
-        const heavyQty = bonus >= 10 ? 2 : 1;
+        // HEGEM-126: Extermination receives a combined-arms package of every unit; capped from 10th trade
+        let infQty = Math.max(2, Math.floor(bonus / 3));
+        let heavyQty = bonus >= 10 ? 2 : 1;
+        let airQty = 1;
+        let navyQty = 1;
+        if (isCappedTrade) {
+          infQty = Math.min(6, Math.max(0, Math.min(infQty, 30 - totalEmpireInf)));
+          heavyQty = Math.min(2, Math.max(0, Math.min(heavyQty, 12 - totalEmpireTanks)));
+          airQty = totalEmpireAir >= 6 ? 0 : 1;
+          navyQty = totalEmpireNavy >= 6 ? 0 : 1;
+        }
         currentPlayer.unplacedArmies += infQty;
         placeBonusUnitsOnEmpire("tank", heavyQty);
         placeBonusUnitsOnEmpire("artillery", heavyQty);
-        placeBonusUnitsOnEmpire("aircraft", 1);
-        placeBonusUnitsOnEmpire("navy", 1);
-        tradeRewardSummary = `+${infQty} Inf, +${heavyQty} Blindado(s), +${heavyQty} Art, +1 Caça, +1 Frota (Extermínio)`;
+        placeBonusUnitsOnEmpire("aircraft", airQty);
+        placeBonusUnitsOnEmpire("navy", navyQty);
+        tradeRewardSummary = `+${infQty} Inf, +${heavyQty} Blindado(s), +${heavyQty} Art, +${airQty} Caça, +${navyQty} Frota (Extermínio${isCappedTrade ? ", com teto" : ""})`;
       } else if (docId === "guerrilla" || docId === "guerrilla_warfare") {
-        // HEGEM-126: Partisan receives a small amount of Infantry and Navy
-        const infQty = Math.max(2, Math.floor(bonus / 2));
-        const navyQty = bonus >= 10 ? 2 : 1;
+        // HEGEM-126: Partisan receives a small amount of Infantry and Navy; capped from 10th trade
+        let infQty = Math.max(2, Math.floor(bonus / 2));
+        let navyQty = bonus >= 10 ? 2 : 1;
+        if (isCappedTrade) {
+          infQty = Math.min(8, Math.max(0, Math.min(infQty, 35 - totalEmpireInf)));
+          navyQty = Math.min(2, Math.max(0, Math.min(navyQty, 8 - totalEmpireNavy)));
+        }
         currentPlayer.unplacedArmies += infQty;
         const nPlaced = placeBonusUnitsOnEmpire("navy", navyQty);
-        tradeRewardSummary = `+${infQty} Infantarias e +${nPlaced} Marinha(s) (Partisan)`;
+        tradeRewardSummary = `+${infQty} Infantarias e +${nPlaced} Marinha(s) (Partisan${isCappedTrade ? ", com teto" : ""})`;
       } else if (docId === "tall_sovereign" || docId === "defense_in_depth") {
-        // HEGEM-126: Tall receives large Money and Resources, but NO army units
-        const moneyGrant = bonus * 3;
-        const steelGrant = Math.max(2, Math.floor(bonus / 3));
-        const oilGrant = Math.max(2, Math.floor(bonus / 3));
-        const goldGrant = Math.max(1, Math.floor(bonus / 5));
+        // HEGEM-126: Tall receives large Money and Resources, but NO army units; capped from 10th trade
+        let moneyGrant = bonus * 3;
+        let steelGrant = Math.max(2, Math.floor(bonus / 3));
+        let oilGrant = Math.max(2, Math.floor(bonus / 3));
+        let goldGrant = Math.max(1, Math.floor(bonus / 5));
+        if (isCappedTrade) {
+          moneyGrant = Math.min(60, moneyGrant);
+          steelGrant = Math.min(8, steelGrant);
+          oilGrant = Math.min(8, oilGrant);
+          goldGrant = Math.min(4, goldGrant);
+        }
         currentPlayer.resources.money += moneyGrant;
         currentPlayer.resources.steel += steelGrant;
         currentPlayer.resources.oil += oilGrant;
         currentPlayer.resources.gold += goldGrant;
-        tradeRewardSummary = `+$${moneyGrant}, +${steelGrant} Aço, +${oilGrant} Petróleo, +${goldGrant} Ouro (Fortaleza Soberana — 0 exércitos)`;
+        tradeRewardSummary = `+$${moneyGrant}, +${steelGrant} Aço, +${oilGrant} Petróleo, +${goldGrant} Ouro (Fortaleza Soberana${isCappedTrade ? ", com teto" : ""})`;
       } else if (docId === "superior_firepower") {
-        // HEGEM-126: Classic / Normal doctrine receives small Infantry + Money + Resources
-        const infQty = Math.max(3, Math.floor(bonus * 0.75));
-        const moneyGrant = Math.max(4, bonus);
+        // HEGEM-126: Classic / Normal doctrine receives small Infantry + Money + Resources; capped from 10th trade
+        let infQty = Math.max(3, Math.floor(bonus * 0.75));
+        let moneyGrant = Math.max(4, bonus);
+        let steelGrant = 1;
+        let oilGrant = 1;
+        if (isCappedTrade) {
+          infQty = Math.min(12, Math.max(0, Math.min(infQty, 35 - totalEmpireInf)));
+          moneyGrant = Math.min(25, moneyGrant);
+          steelGrant = Math.min(2, steelGrant);
+          oilGrant = Math.min(2, oilGrant);
+        }
         currentPlayer.unplacedArmies += infQty;
         currentPlayer.resources.money += moneyGrant;
-        currentPlayer.resources.steel += 1;
-        currentPlayer.resources.oil += 1;
-        tradeRewardSummary = `+${infQty} exércitos, +$${moneyGrant}, +1 Aço, +1 Petróleo (Comando Clássico)`;
+        currentPlayer.resources.steel += steelGrant;
+        currentPlayer.resources.oil += oilGrant;
+        tradeRewardSummary = `+${infQty} exércitos, +$${moneyGrant}, +${steelGrant} Aço, +${oilGrant} Petróleo (Comando Clássico${isCappedTrade ? ", com teto" : ""})`;
       } else {
-        currentPlayer.unplacedArmies += bonus;
-        tradeRewardSummary = `+${bonus} exércitos`;
+        const allowedArmies = isCappedTrade ? Math.min(20, Math.max(0, Math.min(bonus, 60 - totalEmpireArmies))) : bonus;
+        currentPlayer.unplacedArmies += allowedArmies;
+        tradeRewardSummary = `+${allowedArmies} exércitos${isCappedTrade ? " (com teto)" : ""}`;
       }
 
       currentPlayer.cards = currentPlayer.cards.filter(
@@ -3849,6 +3895,13 @@ export function applyAction(
         (c) =>
           c.memberPlayerIds.includes(playerId) && c.memberPlayerIds.includes(target.id)
       );
+      if (actingPlayer.doctrineId === "extermination") {
+        throw new Error("A Doutrina de Extermínio opera com economia nula e não pode enviar remessas financeiras.");
+      }
+      if (target.doctrineId === "extermination") {
+        throw new Error("A Doutrina de Extermínio proíbe o recebimento de ajuda ou recursos da economia global.");
+      }
+
       if (!hasActiveAlliance && !inSameCoalition) {
         throw new Error(
           "Remessas Lend-Lease exigem uma Aliança Militar ativa ou participação na mesma Coalizão."
@@ -4172,13 +4225,13 @@ function advanceTurn(state: GameState, rng: SeededRng, map: GameMapDef): void {
 
         switch (candidate.doctrineId) {
           case "extermination": {
-            candidate.unplacedArmies += 3;
+            candidate.unplacedArmies += 5;
             spawnOnTerr(capTerr, "tank", 2);
             spawnOnTerr(capTerr, "artillery", 2);
             spawnOnTerr(capTerr, "aircraft", 1);
             spawnOnTerr(coastalTerr, "navy", 1);
             state.log.push(
-              `☠️ MOBILIZAÇÃO DE EXTERMÍNIO: ${candidate.name} mobilizou +3 Infantarias, +2 Tanques, +2 Artilharias, +1 Avião e +1 Navio!`
+              `☠️ MOBILIZAÇÃO DE EXTERMÍNIO: ${candidate.name} mobilizou +5 Infantarias, +2 Tanques, +2 Artilharias, +1 Avião e +1 Navio!`
             );
             break;
           }

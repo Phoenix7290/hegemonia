@@ -1,7 +1,7 @@
 import express from "express";
 import cors from "cors";
 import { execSync } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { ZodError } from "zod";
 import { checkDatabase } from "./connection.js";
@@ -14,18 +14,53 @@ import { HEGEMONIA_VERSION, MATCHMAKING_RULESET_VERSION } from "@hegemonia/share
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-let serverCommitHash = process.env.GIT_COMMIT_HASH ?? "dev";
-try {
-  if (serverCommitHash === "dev") {
-    serverCommitHash = execSync("git rev-parse --short HEAD", {
-      stdio: ["ignore", "pipe", "ignore"],
-    })
-      .toString()
-      .trim();
+function resolveServerCommitHash(): string {
+  if (process.env.GIT_COMMIT_HASH && process.env.GIT_COMMIT_HASH !== "dev") {
+    return process.env.GIT_COMMIT_HASH.trim().slice(0, 7);
   }
-} catch {
-  // Fallback se git não estiver disponível
+  // 1. Tentar ler commit.txt gerado no build em dist/
+  const candidatePaths = [
+    resolve(process.cwd(), "apps/web/dist/commit.txt"),
+    resolve(process.cwd(), "dist/commit.txt"),
+    resolve(process.cwd(), "../web/dist/commit.txt"),
+  ];
+  for (const cp of candidatePaths) {
+    try {
+      if (existsSync(cp)) {
+        const val = readFileSync(cp, "utf8").trim();
+        if (val && val !== "dev") return val.slice(0, 7);
+      }
+    } catch {}
+  }
+  // 2. Tentar executar git rev-parse se git estiver disponível
+  try {
+    const gitHash = execSync("git rev-parse --short HEAD", {
+      stdio: ["ignore", "pipe", "ignore"],
+    }).toString().trim();
+    if (gitHash && gitHash.length >= 4) return gitHash.slice(0, 7);
+  } catch {}
+  // 3. Tentar ler .git/HEAD diretamente sem binário git
+  try {
+    const gitHeadPath = resolve(process.cwd(), ".git/HEAD");
+    const parentHeadPath = resolve(process.cwd(), "../../.git/HEAD");
+    const targetHead = existsSync(gitHeadPath) ? gitHeadPath : (existsSync(parentHeadPath) ? parentHeadPath : null);
+    if (targetHead) {
+      const gitDir = resolve(targetHead, "..");
+      const head = readFileSync(targetHead, "utf8").trim();
+      if (head.startsWith("ref: ")) {
+        const refFile = resolve(gitDir, head.slice(5).trim());
+        if (existsSync(refFile)) {
+          return readFileSync(refFile, "utf8").trim().slice(0, 7);
+        }
+      } else if (head.length >= 7) {
+        return head.slice(0, 7);
+      }
+    }
+  } catch {}
+  return "dev";
 }
+
+let serverCommitHash = resolveServerCommitHash();
 
 export async function createApp(): Promise<express.Express> {
   const app = express();

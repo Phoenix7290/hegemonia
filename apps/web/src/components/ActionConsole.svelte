@@ -7,6 +7,7 @@
   import { isSeaLink } from "@hegemonia/maps";
   import {
     checkNavalBlockade,
+    getFriendlyPathDistance,
     getMovedInUnits,
     getTerritoryUnits,
     hasTerritoryBuilding,
@@ -501,14 +502,24 @@
           {@const toT = game.territories[selectedToId]}
           {@const availableUnits = subtractUnits(getTerritoryUnits(fromT), getMovedInUnits(fromT))}
           {@const isNeighbor = Boolean(territoryById.get(selectedFromId)?.neighbors.includes(selectedToId))}
-          {@const isConnected = isNeighbor || isConnectedByFriendlyPath(game, selectedFromId, selectedToId, myPlayerId ?? "")}
+          {@const dist = getFriendlyPathDistance(game, selectedFromId, selectedToId, myPlayerId ?? "")}
+          {@const fromHasAirfield = hasTerritoryBuilding(fromT, "airfield")}
+          {@const toHasAirfield = hasTerritoryBuilding(toT, "airfield")}
+          {@const isConnected = isNeighbor || (Number.isFinite(dist) && isConnectedByFriendlyPath(game, selectedFromId, selectedToId, myPlayerId ?? ""))}
           {@const isAirlift =
             !isConnected &&
-            hasTerritoryBuilding(fromT, "airfield") &&
-            hasTerritoryBuilding(toT, "airfield")}
+            fromHasAirfield &&
+            toHasAirfield}
+          {@const allowedUnits = {
+            infantry: (dist <= 1 || isNeighbor) ? availableUnits.infantry : 0,
+            artillery: (dist <= 1 || isNeighbor) ? availableUnits.artillery : 0,
+            tank: dist <= 2 ? availableUnits.tank : 0,
+            navy: dist <= 3 ? availableUnits.navy : 0,
+            aircraft: (fromHasAirfield && toHasAirfield) ? availableUnits.aircraft : 0,
+          }}
           {@const maxM = isAirlift
             ? Math.min(availableUnits.infantry, Math.max(0, totalUnits(availableUnits) - 1))
-            : Math.max(0, totalUnits(availableUnits) - 1)}
+            : Math.max(0, Math.min(totalUnits(allowedUnits), totalUnits(availableUnits) - 1))}
           {@const currentTransfer = isAirlift ? sliderArmies : selectedUnitTotal}
           {@const fromTotal = totalUnits(getTerritoryUnits(fromT))}
           {@const toTotal = totalUnits(getTerritoryUnits(toT))}
@@ -586,7 +597,7 @@
                 disabled={maxM < 1 || (isAirlift ? sliderArmies >= maxM : selectedUnitTotal >= maxM)}
                 onclick={() => {
                   if (isAirlift) sliderArmies = Math.min(maxM, sliderArmies + 1);
-                  else quickSetManeuver("plus1", maxM, availableUnits);
+                  else quickSetManeuver("plus1", maxM, allowedUnits);
                 }}
               >
                 +1
@@ -597,7 +608,7 @@
                 disabled={maxM < 1}
                 onclick={() => {
                   if (isAirlift) sliderArmies = Math.max(1, Math.floor(maxM / 2));
-                  else quickSetManeuver("half", maxM, availableUnits);
+                  else quickSetManeuver("half", maxM, allowedUnits);
                 }}
               >
                 50% ({Math.max(1, Math.floor(maxM / 2))})
@@ -608,7 +619,7 @@
                 disabled={maxM < 1}
                 onclick={() => {
                   if (isAirlift) sliderArmies = maxM;
-                  else quickSetManeuver("max", maxM, availableUnits);
+                  else quickSetManeuver("max", maxM, allowedUnits);
                 }}
               >
                 MÁXIMO ({maxM})
@@ -619,7 +630,7 @@
                 disabled={currentTransfer === 0}
                 onclick={() => {
                   if (isAirlift) sliderArmies = 1;
-                  else quickSetManeuver("clear", maxM, availableUnits);
+                  else quickSetManeuver("clear", maxM, allowedUnits);
                 }}
               >
                 LIMPAR
@@ -632,7 +643,7 @@
               </div>
             {:else}
               <UnitSelector
-                available={availableUnits}
+                available={allowedUnits}
                 bind:selection={selectedUnits}
                 maxTotal={maxM}
               />

@@ -88,7 +88,12 @@
     highlightObjectiveTerritories: boolean;
     activeRightDrawer?: "cards" | "objective" | "audio" | "market" | null;
     showHudManager?: boolean;
-    objectiveProgress: { owned: number; total: number; pct: number } | null;
+    objectiveProgress: {
+      owned: number;
+      total: number;
+      pct: number;
+      metrics?: { label: string; current: number; target: number; unit?: string; pct: number }[];
+    } | null;
     toggleImmersiveMode: () => void;
     toggleHudElement: (key: any) => void;
     zoomIn: () => void;
@@ -1727,22 +1732,43 @@
           >
         </div>
         <p class="objective-body">
-          {getObjectiveDescription(myPlayerState.objective.id)}
+          {getObjectiveDescription(myPlayerState.objective)}
         </p>
         {#if objectiveProgress}
           <div class="objective-progress-box">
-            <div class="progress-bar-header">
-              <span>Progresso da Operação:</span>
-              <strong
-                >{objectiveProgress.pct}% ({objectiveProgress.owned}/{objectiveProgress.total})</strong
-              >
-            </div>
-            <div class="progress-track">
-              <div
-                class="progress-fill"
-                style="width: {objectiveProgress.pct}%;"
-              ></div>
-            </div>
+            {#if objectiveProgress.metrics && objectiveProgress.metrics.length > 0}
+              {#each objectiveProgress.metrics as m}
+                <div class="progress-bar-header" style="margin-top: 0.5rem;">
+                  <span>{m.label}:</span>
+                  <strong
+                    >{m.unit === "$" ? "$" : ""}{m.current}{m.unit && m.unit !== "$" ? ` ${m.unit}` : ""} / {m.unit === "$" ? "$" : ""}{m.target}{m.unit && m.unit !== "$" ? ` ${m.unit}` : ""} ({m.pct}%)</strong
+                  >
+                </div>
+                <div class="progress-track">
+                  <div
+                    class="progress-fill"
+                    style="width: {m.pct}%;"
+                  ></div>
+                </div>
+              {/each}
+              <div class="progress-bar-header" style="margin-top: 0.75rem; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 0.35rem;">
+                <span>Progresso Total da Operação:</span>
+                <strong>{objectiveProgress.pct}%</strong>
+              </div>
+            {:else}
+              <div class="progress-bar-header">
+                <span>Progresso da Operação:</span>
+                <strong
+                  >{objectiveProgress.pct}% ({objectiveProgress.owned}/{objectiveProgress.total})</strong
+                >
+              </div>
+              <div class="progress-track">
+                <div
+                  class="progress-fill"
+                  style="width: {objectiveProgress.pct}%;"
+                ></div>
+              </div>
+            {/if}
           </div>
         {/if}
 

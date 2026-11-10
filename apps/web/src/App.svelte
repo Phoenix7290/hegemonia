@@ -49,6 +49,7 @@
   } from "./components/CommandCenter.svelte";
   import Icon from "./components/Icon.svelte";
   import ObjectiveSelectionModal from "./components/ObjectiveSelectionModal.svelte";
+  import WonderAlertToast from "./components/WonderAlertToast.svelte";
   import TutorialGuideModal from "./components/TutorialGuideModal.svelte";
   import VictoryModal from "./components/VictoryModal.svelte";
   import WarJournal from "./components/WarJournal.svelte";
@@ -317,7 +318,28 @@
       owned: prog.held,
       total: prog.total,
       pct: prog.completionPct,
+      metrics: prog.metrics,
     };
+  });
+
+  let activeWonderInfo = $derived.by(() => {
+    if (!game) return null;
+    for (const t of Object.values(game.territories)) {
+      if (hasTerritoryBuilding(t, "wonder")) {
+        const owner = game.players.find((p) => p.id === t.ownerId);
+        const terrDef = CLASSIC_MAP.territories.find((item) => item.id === t.id);
+        return {
+          territoryId: t.id,
+          territoryName: terrDef?.namePt ?? t.id,
+          builderName: owner?.name ?? "General Desconhecido",
+          builderColor: owner?.color ?? "yellow",
+          roundsHeld: owner?.wonderRoundsHeld ?? 0,
+          roundsRequired: 3,
+          isMine: t.ownerId === myPlayerId,
+        };
+      }
+    }
+    return null;
   });
 
   let currentAttackOdds = $derived.by(() => {
@@ -1059,7 +1081,9 @@
     const origin = game.territories[pending.fromTerritoryId];
     const occupying = pending.occupyingUnits ?? selectUnits(getTerritoryUnits(destination), 1);
     const remaining = pending.remainingAttackers ?? getTerritoryUnits(origin);
-    return addUnits(occupying, remaining);
+    const pool = addUnits(occupying, remaining);
+    // Aeronaves não podem avançar na ocupação militar (permanecem nos aeródromos)
+    return { ...pool, aircraft: 0 };
   }
 
   function resetOccupationSelection() {
@@ -1346,6 +1370,14 @@
         availableObjectives={myPlayerState.availableObjectives}
         doctrineId={myPlayerState.doctrineId}
         onSelect={(objectiveId) => sendAction({ type: "choose_objective", objectiveId })}
+      />
+    {/if}
+
+    <!-- WONDER OF THE BASTION APOCALYPSE ALERT TOAST -->
+    {#if activeWonderInfo && !game.winnerId}
+      <WonderAlertToast
+        wonder={activeWonderInfo}
+        onFocusTerritory={focusTerritory}
       />
     {/if}
 
