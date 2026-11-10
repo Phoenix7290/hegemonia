@@ -1,4 +1,5 @@
 import type { GameMapDef, ObjectiveCard, ResourceType, TerritoryDef } from "@hegemonia/shared";
+export type { GameMapDef, ObjectiveCard, ResourceType, TerritoryDef } from "@hegemonia/shared";
 
 export const MAP_WIDTH = 1200;
 export const MAP_HEIGHT = 620;
