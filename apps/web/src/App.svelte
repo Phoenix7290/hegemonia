@@ -55,6 +55,7 @@
   import ObjectiveSelectionModal from "./components/ObjectiveSelectionModal.svelte";
   import WonderAlertToast from "./components/WonderAlertToast.svelte";
   import TutorialGuideModal from "./components/TutorialGuideModal.svelte";
+  import InGameTutorialGuide from "./components/InGameTutorialGuide.svelte";
   import VictoryModal from "./components/VictoryModal.svelte";
   import WarJournal from "./components/WarJournal.svelte";
   import ReconInspector from "./components/ReconInspector.svelte";
@@ -139,6 +140,8 @@
   let matchOrigin = $state<MatchOrigin>("lobby");
   let selectedScenarioId = $state<TacticalScenarioId>("standard");
   let showTutorialModal = $state<boolean>(false);
+  let showInGameTutorial = $state<boolean>(false);
+  let activeTutorialStep = $state<number>(0);
   let matchmakingPollTimer: ReturnType<typeof setTimeout> | null = null;
   let matchmakingPollGeneration = 0;
   let matchmakingStatusUserId: string | null = null;
@@ -566,6 +569,8 @@
     inspectedTerritoryId = null;
     activeRightDrawer = null;
     showHudManager = false;
+    showInGameTutorial = false;
+    activeTutorialStep = 0;
     competitionMode = "custom";
     matchOrigin = "lobby";
   }
@@ -1065,18 +1070,43 @@
       newGame.players.unshift(humanPlayer);
     }
     newGame.turnIndex = 0;
+    // Set round 2 so full combat, deployment and all phases are immediately active for learning
+    newGame.round = 2;
+    newGame.phase = "deploy";
     const activeHuman = newGame.players[0];
-    if (activeHuman.unplacedArmies === 0) {
-      const reinf = calculateTurnReinforcements(newGame, activeHuman.id, CLASSIC_MAP);
-      activeHuman.unplacedArmies = Math.max(3, reinf.total);
+    const reinf = calculateTurnReinforcements(newGame, activeHuman.id, CLASSIC_MAP);
+    activeHuman.unplacedArmies = Math.max(5, reinf.total);
+    // Provide plenty of resources so user can buy/sell in Market, build fortifications, industries and test units
+    activeHuman.resources = { money: 40, steel: 18, oil: 16, gold: 8 };
+
+    // Ensure human owns at least 1 territory with a Market and a Capital
+    const humanTerrs = Object.values(newGame.territories).filter((t) => t.ownerId === "human");
+    if (humanTerrs.length > 0) {
+      activeHuman.capitalTerritoryId = humanTerrs[0].id;
+      humanTerrs[0].buildings = [{ type: "market", level: 1 }];
+      // Give human a frontline territory with combined arms ready to attack
+      for (const t of humanTerrs) {
+        const mapTerr = CLASSIC_MAP.territories.find((m) => m.id === t.id);
+        const hasEnemy = mapTerr?.neighbors.some(
+          (nId) => newGame.territories[nId] && newGame.territories[nId].ownerId !== "human"
+        );
+        if (hasEnemy) {
+          t.armies = 5;
+          t.units = { infantry: 2, tank: 2, artillery: 1, aircraft: 0, navy: 0 };
+          focusTerritory(t.id);
+          break;
+        }
+      }
     }
 
+    showInGameTutorial = true;
+    activeTutorialStep = 0;
     game = newGame;
     myPlayerId = "human";
     roomStatus = "playing";
-    turnDeadline = Date.now() + 120_000;
-    remainingSeconds = 120;
-    sound.play("offensive_order");
+    turnDeadline = Date.now() + 180_000;
+    remainingSeconds = 180;
+    sound.playTurnRadioAlert();
   }
 
   function sendAction(action: unknown) {
@@ -1654,6 +1684,49 @@
         </div>
       {/if}
     </div>
+
+    <!-- IN-GAME INTERACTIVE TUTORIAL GUIDE (HEGEM-104) -->
+    {#if showInGameTutorial}
+      <InGameTutorialGuide
+        {game}
+        myPlayerId={myPlayerId ?? "human"}
+        {isMyTurn}
+        bind:activeStep={activeTutorialStep}
+        onOpenMarket={() => (activeRightDrawer = "market")}
+        onOpenObjective={() => (activeRightDrawer = "objective")}
+        onInspectTerritory={(territoryId) => {
+          inspectedTerritoryId = territoryId;
+          focusTerritory(territoryId);
+        }}
+        onSelectCombatTerritories={(fromId, toId) => {
+          selectedFromId = fromId;
+          selectedToId = toId;
+          focusTerritory(fromId);
+        }}
+        onAdvancePhase={() => {
+          const human = game?.players.find((p) => p.id === myPlayerId);
+          if (game?.phase === "deploy" && human?.unplacedArmies === 0) {
+            sendAction({ type: "end_deploy" });
+          } else if (game?.phase === "attack") {
+            sendAction({ type: "end_attack" });
+          }
+        }}
+        onClose={() => (showInGameTutorial = false)}
+      />
+    {:else if !connectedRoom}
+      <button
+        type="button"
+        class="reopen-tutorial-pill"
+        onclick={() => {
+          sound.playClick();
+          showInGameTutorial = true;
+        }}
+        title="Abrir Tutorial Guiado da Partida"
+      >
+        <Icon name="compass" size={14} color="#eab308" />
+        <span>TUTORIAL GUIADO</span>
+      </button>
+    {/if}
   {/if}
 
   <TutorialGuideModal
@@ -1846,5 +1919,35 @@
       animation: none;
       opacity: 0.75;
     }
+  }
+
+  .reopen-tutorial-pill {
+    position: fixed;
+    top: 66px;
+    right: 20px;
+    z-index: 35;
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 6px 14px;
+    background: rgba(8, 14, 26, 0.94);
+    border: 1px solid rgba(234, 179, 8, 0.5);
+    border-radius: 6px;
+    color: #fde047;
+    font-family: var(--font-tactical);
+    font-size: 0.74rem;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    cursor: pointer;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.65), 0 0 10px rgba(234, 179, 8, 0.2);
+    backdrop-filter: blur(8px);
+    transition: all 0.15s ease;
+  }
+  .reopen-tutorial-pill:hover {
+    background: rgba(234, 179, 8, 0.2);
+    border-color: #fde047;
+    color: #ffffff;
+    box-shadow: 0 4px 20px rgba(234, 179, 8, 0.4);
+    transform: translateY(-1px);
   }
 </style>

@@ -77,5 +77,23 @@ describe("HEGEM-104: Tutorial Guiado da HUD & Cenários Táticos Presetados (Fro
     expect(defaultScenario.initialTension).toBe(0);
     expect(defaultScenario.id).toBe("standard");
   });
+
+  it("verifies in-game live tutorial guide component structure and zero-emoji compliance", async () => {
+    const fs = await import("fs");
+    const path = await import("path");
+    const guidePath = path.resolve(__dirname, "../components/InGameTutorialGuide.svelte");
+    expect(fs.existsSync(guidePath)).toBe(true);
+
+    const source = fs.readFileSync(guidePath, "utf-8");
+    expect(EMOJI_REGEX.test(source)).toBe(false);
+
+    // Verify all 6 interactive gameplay areas requested by user
+    expect(source).toContain("Recrutamento e Alocação de Tropas");
+    expect(source).toContain("Gestão Econômica, Compra e Venda de Commodities");
+    expect(source).toContain("Fortalezas, Indústrias, Portos e Aeródromos");
+    expect(source).toContain("Ofensivas de Combate e Conquista Territorial");
+    expect(source).toContain("Remanejamento de Forças e Linhas de Suprimento");
+    expect(source).toContain("Tensão Mundial, Diplomacia e Diretiva Secreta");
+  });
 });
 
