@@ -35,6 +35,7 @@ import {
   ROLEPLAY_OBJECTIVES,
 } from "@hegemonia/maps";
 import { createSeededRng, hashSeed, type SeededRng } from "./rng.js";
+export { createSeededRng, type SeededRng } from "./rng.js";
 import { applyTacticalScenario } from "./scenarios.js";
 import {
   applyDoctrineCombatDiceModifiers,

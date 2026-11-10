@@ -9,8 +9,11 @@
   import {
     UNIT_COSTS,
     addUnits,
+    applyAction,
     calculateObjectiveProgress,
+    calculateTurnReinforcements,
     createGame,
+    createSeededRng,
     emptyUnitCounts,
     getMovedInUnits,
     getReachableManeuverTargets,
@@ -30,6 +33,7 @@
     AirMissionType,
     BuildingType,
     CompetitionMode,
+    GameAction,
     GameState,
     MatchOrigin,
     MatchmakingStatus,
@@ -422,6 +426,10 @@
     const timer = setInterval(() => {
       if (turnDeadline > 0) {
         remainingSeconds = Math.max(0, Math.ceil((turnDeadline - Date.now()) / 1000));
+        if (remainingSeconds <= 0 && !connectedRoom && game && roomStatus === "playing") {
+          turnDeadline = Date.now() + 120_000;
+          remainingSeconds = 120;
+        }
       }
     }, 500);
     return () => clearInterval(timer);
@@ -943,28 +951,159 @@
     }
   }
 
+  let practiceRng = createSeededRng("tutorial-practice-runtime");
+
+  function checkAndRunPracticeBotTurn() {
+    if (!game || roomStatus !== "playing" || connectedRoom) return;
+    const current = game.players[game.turnIndex];
+    if (current && current.id !== "human" && !current.eliminated) {
+      turnDeadline = Date.now() + 120_000;
+      remainingSeconds = 120;
+      setTimeout(() => {
+        if (!game || roomStatus !== "playing" || connectedRoom) return;
+        const active = game.players[game.turnIndex];
+        if (active.id === current.id) {
+          try {
+            const myTerrs = Object.values(game.territories).filter(
+              (t) => t.ownerId === current.id
+            );
+            if (active.unplacedArmies > 0 && myTerrs.length > 0) {
+              game = applyAction(
+                game,
+                current.id,
+                {
+                  type: "deploy",
+                  territoryId: myTerrs[0].id,
+                  armies: active.unplacedArmies,
+                },
+                practiceRng,
+                CLASSIC_MAP
+              );
+            }
+            if (game.round > 1 && game.phase === "deploy") {
+              game = applyAction(
+                game,
+                current.id,
+                { type: "end_deploy" },
+                practiceRng,
+                CLASSIC_MAP
+              );
+            }
+            game = applyAction(
+              game,
+              current.id,
+              { type: "end_turn" },
+              practiceRng,
+              CLASSIC_MAP
+            );
+            turnDeadline = Date.now() + 120_000;
+            remainingSeconds = 120;
+            checkAndRunPracticeBotTurn();
+          } catch {
+            const hIdx = game.players.findIndex((p) => p.id === "human");
+            if (hIdx >= 0) {
+              game.turnIndex = hIdx;
+              turnDeadline = Date.now() + 120_000;
+              remainingSeconds = 120;
+            }
+          }
+        }
+      }, 700);
+    }
+  }
+
   function practiceTutorialInMap() {
     showTutorialModal = false;
+    connectionGeneration++;
+    stopMatchmakingPolling();
+    matchmakingStatus = { ...IDLE_MATCHMAKING_STATUS };
+    const room = connectedRoom;
+    connectedRoom = null;
+    communications.detach();
+    clearPersistedRoom();
+    if (room) {
+      room.removeAllListeners();
+      void room.leave().catch(() => undefined);
+    }
+    selectedFromId = null;
+    selectedToId = null;
+    inspectedTerritoryId = null;
+    activeCombatAnimations = [];
+
     const cleanName = (auth.user?.displayName || playerName).trim() || "Comandante";
     const samplePlayers = [
-      { id: "human", name: `${cleanName} (Você)`, color: "blue" as const },
-      { id: "bot1", name: "General IA #1", color: "red" as const },
-      { id: "bot2", name: "General IA #2", color: "green" as const },
+      {
+        id: "human",
+        name: `${cleanName} (Você)`,
+        color: "blue" as const,
+        doctrineId: selectedDoctrineId ?? "superior_firepower",
+      },
+      {
+        id: "bot1",
+        name: "General IA #1",
+        color: "red" as const,
+        doctrineId: "mass_assault",
+      },
+      {
+        id: "bot2",
+        name: "General IA #2",
+        color: "green" as const,
+        doctrineId: "tall_sovereign",
+      },
     ];
-    game = createGame({
+    const newGame = createGame({
       id: "tutorial-practice",
       seed: "practice-seed-123",
       players: samplePlayers,
       scenarioId: selectedScenarioId !== "standard" ? selectedScenarioId : "standard",
     });
+
+    // Ensure human player is ALWAYS first to play in tutorial practice
+    const humanIndex = newGame.players.findIndex((p) => p.id === "human");
+    if (humanIndex > 0) {
+      const [humanPlayer] = newGame.players.splice(humanIndex, 1);
+      newGame.players.unshift(humanPlayer);
+    }
+    newGame.turnIndex = 0;
+    const activeHuman = newGame.players[0];
+    if (activeHuman.unplacedArmies === 0) {
+      const reinf = calculateTurnReinforcements(newGame, activeHuman.id, CLASSIC_MAP);
+      activeHuman.unplacedArmies = Math.max(3, reinf.total);
+    }
+
+    game = newGame;
     myPlayerId = "human";
     roomStatus = "playing";
+    turnDeadline = Date.now() + 120_000;
+    remainingSeconds = 120;
     sound.play("offensive_order");
   }
 
   function sendAction(action: unknown) {
     sound.playClick();
-    connectedRoom?.send("game_action", action);
+    if (connectedRoom) {
+      connectedRoom.send("game_action", action);
+      return;
+    }
+    if (game && myPlayerId && roomStatus === "playing") {
+      try {
+        const nextState = applyAction(
+          game,
+          myPlayerId,
+          action as GameAction,
+          practiceRng,
+          CLASSIC_MAP
+        );
+        game = nextState;
+        resetSelectedForce();
+        checkAndRunPracticeBotTurn();
+      } catch (err: any) {
+        errorBanner = err?.message || "Ação inválida.";
+        setTimeout(() => {
+          if (errorBanner === err?.message) errorBanner = "";
+        }, 3000);
+      }
+    }
   }
 
   function handleBuildStructure(territoryId: string, buildingType: BuildingType) {

@@ -571,12 +571,21 @@
     color: #94a3b8;
     width: 30px;
     height: 30px;
-    display: flex;
+    min-width: 30px;
+    min-height: 30px;
+    max-width: 30px;
+    max-height: 30px;
+    aspect-ratio: 1 / 1;
+    padding: 0;
+    margin: 0;
+    display: inline-flex;
     align-items: center;
     justify-content: center;
     cursor: pointer;
     border-radius: 3px;
     transition: all 0.15s ease;
+    flex-shrink: 0;
+    box-sizing: border-box;
   }
   .close-btn:hover {
     color: #f8fafc;
