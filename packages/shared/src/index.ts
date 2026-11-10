@@ -826,3 +826,5 @@ export * from "./comms.js";
 export * from "./multiplayer.js";
 export * from "./xp.js";
 export * from "./version.js";
+
+export * from "./scenarios.js";

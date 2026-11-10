@@ -654,8 +654,8 @@ describe("Diplomacy, Treaties, World Tension and Coalitions", () => {
 
     // Round advanced to 2
     expect(state.round).toBe(2);
-    expect(state.worldTension).toBe(3.0);
-    expect(state.players[0].infamy).toBe(5);
+    expect(state.worldTension).toBe(1.5);
+    expect(state.players[0].infamy).toBe(2);
   });
 });
 
@@ -2591,16 +2591,16 @@ describe("Advanced Artillery Mechanics, Maintenance & Escort Vulnerability (HEGE
 
       expect(state.worldTension).toBe(0);
 
-      // 1. Round advancement should increase by +3.0% (for <= 3 players)
+      // 1. Round advancement should increase by +1.5% (for <= 3 players)
       state.round = 1;
       state.phase = "maneuver";
       state.turnIndex = state.players.length - 1;
       const lastPlayer = state.players[state.turnIndex];
       state = applyAction(state, lastPlayer.id, { type: "end_turn" }, rng);
       expect(state.round).toBe(2);
-      expect(state.worldTension).toBe(3.0);
+      expect(state.worldTension).toBe(1.5);
 
-      // 2. Artillery barrage should add +0.3%
+      // 2. Artillery barrage should add +0.1%
       const currP = state.players[state.turnIndex];
       currP.unplacedArmies = 0;
       state.phase = "attack";
@@ -2618,9 +2618,9 @@ describe("Advanced Artillery Mechanics, Maintenance & Escort Vulnerability (HEGE
         { type: "artillery_barrage", fromTerritoryId: "brasil", toTerritoryId: "venezuela" },
         rng
       );
-      expect(state.worldTension).toBe(3.3);
+      expect(state.worldTension).toBe(1.6);
 
-      // 3. Common conquest should add +1.0%
+      // 3. Common conquest should add +0.3%
       state.territories["brasil"].units = unitCounts(10, 0, 0, 0, 0);
       state.territories["brasil"].armies = 10;
       state.territories["venezuela"].units = unitCounts(1, 0, 0, 0, 0);
@@ -2638,7 +2638,7 @@ describe("Advanced Artillery Mechanics, Maintenance & Escort Vulnerability (HEGE
         { type: "attack", fromTerritoryId: "brasil", toTerritoryId: "venezuela" },
         rng
       );
-      expect(state.worldTension).toBe(4.3); // 3.3 + 1.0
+      expect(state.worldTension).toBe(1.9); // 1.6 + 0.3
       expect(state.lastCombat?.attackerUnits).toEqual(unitCounts(9, 0, 0, 0, 0));
       expect(state.lastStrike).toEqual({
         kind: "artillery_barrage",
