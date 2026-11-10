@@ -3867,6 +3867,42 @@ describe("HEGEM-96: Manual Deploy Phase Transition (end_deploy)", () => {
         rng
       );
       expect(state.territories["franca"].units?.aircraft).toBe(1);
+
+      // 5. Extermination doctrine reinforcement bonus (+4 base divisions) and 0 0 0 0 economy protection
+      const p2State = state.players.find((p) => p.id === "p2")!;
+      p2State.doctrineId = "extermination";
+      const extermReinforcements = calculateTurnReinforcements(state, "p2", CLASSIC_MAP);
+      expect(extermReinforcements.total).toBeGreaterThanOrEqual(7); // base + 4 doctrine bonus
+
+      // Extermination cannot send or receive alliance aid
+      expect(() =>
+        applyAction(
+          state,
+          "p1",
+          { type: "send_alliance_aid", targetPlayerId: "p2", money: 5 },
+          rng
+        )
+      ).toThrow("A Doutrina de Extermínio proíbe o recebimento de ajuda ou recursos");
+
+      // 6. Card trade limit cap from 10th trade onwards (state.tradeCount >= 10)
+      state.tradeCount = 9; // next trade is the 10th
+      const p1State = state.players.find((p) => p.id === "p1")!;
+      p1State.doctrineId = "mass_assault";
+      p1State.cards = [
+        { id: "c1", territoryId: null, symbol: "circle" },
+        { id: "c2", territoryId: null, symbol: "circle" },
+        { id: "c3", territoryId: null, symbol: "circle" },
+      ];
+      p1State.unplacedArmies = 40; // close to 50 cap
+      state.phase = "deploy";
+      state.turnIndex = state.players.findIndex((p) => p.id === "p1");
+      state = applyAction(
+        state,
+        "p1",
+        { type: "trade_cards", cardIds: ["c1", "c2", "c3"] },
+        rng
+      );
+      expect(p1State.unplacedArmies).toBeLessThanOrEqual(50);
     });
   });
 });

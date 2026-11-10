@@ -1,5 +1,6 @@
 import { t, i18n } from "./index.svelte";
 import { ALL_OBJECTIVES } from "@hegemonia/maps";
+import type { ObjectiveCard } from "@hegemonia/shared";
 
 const TERRITORY_ALIASES: Record<string, string> = {
   brazil: "brasil",
@@ -79,10 +80,24 @@ export function getSubregionName(id: string): string {
   return id;
 }
 
-export function getObjectiveTitle(id: string): string {
+export function getObjectiveTitle(idOrObj: string | ObjectiveCard | undefined | null): string {
+  if (!idOrObj) return t("objective");
+  if (typeof idOrObj === "object") {
+    const desc = i18n.locale === "en" ? (idOrObj.descriptionEn ?? idOrObj.descriptionPt) : idOrObj.descriptionPt;
+    if (desc && desc.includes(":")) {
+      return desc.split(":")[0].trim();
+    }
+    return getObjectiveTitle(idOrObj.id);
+  }
+  const id = idOrObj;
   const normalized = id.startsWith("obj_") ? id : `obj_${id}`;
+  const bare = id.startsWith("obj_") ? id.slice(4) : id;
+
   const directTitle = t(`${normalized}_title`);
   if (directTitle !== `${normalized}_title`) return directTitle;
+
+  const bareTitle = t(`${bare}_title`);
+  if (bareTitle !== `${bare}_title`) return bareTitle;
 
   const key = `objective_${id}_title`;
   const translated = t(key);
@@ -97,16 +112,35 @@ export function getObjectiveTitle(id: string): string {
   return t("objective");
 }
 
-export function getObjectiveDescription(id: string): string {
+export function getObjectiveDescription(idOrObj: string | ObjectiveCard | undefined | null): string {
+  if (!idOrObj) return "";
+  if (typeof idOrObj === "object") {
+    if (i18n.locale === "en" && idOrObj.descriptionEn) return idOrObj.descriptionEn;
+    if (idOrObj.descriptionPt) return idOrObj.descriptionPt;
+    return getObjectiveDescription(idOrObj.id);
+  }
+  const id = idOrObj;
+  // If the string itself is already a description (e.g. long sentence with spaces), return it
+  if (id.includes(" ") && id.length > 30) return id;
+
   const normalized = id.startsWith("obj_") ? id : `obj_${id}`;
+  const bare = id.startsWith("obj_") ? id.slice(4) : id;
+
   const directTranslated = t(normalized);
   if (directTranslated !== normalized) return directTranslated;
 
-  const key = `objective_${id}_desc`;
+  const directBare = t(bare);
+  if (directBare !== bare) return directBare;
+
+  const key = `objective_${bare}_desc`;
   const translated = t(key);
   if (translated !== key) return translated;
 
-  const found = ALL_OBJECTIVES.find((o) => o.id === id || o.id === normalized);
+  const keyNorm = `objective_${normalized}_desc`;
+  const translatedNorm = t(keyNorm);
+  if (translatedNorm !== keyNorm) return translatedNorm;
+
+  const found = ALL_OBJECTIVES.find((o) => o.id === id || o.id === normalized || o.id === bare);
   if (found) {
     return i18n.locale === "en" ? (found.descriptionEn ?? found.descriptionPt) : found.descriptionPt;
   }

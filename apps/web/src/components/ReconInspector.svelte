@@ -440,6 +440,12 @@
 
             <!-- Construction Blueprint Buttons (2-Column Grid) -->
             {#if isOwnedByMe && isMyTurn && !game.pendingConquest && !game.winnerId}
+              {#if myPlayerState?.doctrineId === "extermination"}
+                <div class="extermination-no-build-box" style="margin-top: 1rem; padding: 12px; background: rgba(136, 19, 55, 0.15); border: 1px solid rgba(244, 63, 94, 0.3); border-radius: 6px; text-align: center;">
+                  <strong style="color: #fb7185; font-size: 0.8rem; display: block; margin-bottom: 4px;">DOUTRINA DE EXTERMÍNIO: CONSTRUÇÃO PROIBIDA</strong>
+                  <span style="color: #cbd5e1; font-size: 0.74rem;">Esta nação opera com economia nula (0 0 0 0) focada em aniquilação e não desenvolve infraestrutura civil.</span>
+                </div>
+              {:else}
               <div class="recon-build-grid">
                 <!-- +1 Slot Extra (Permanent Infrastructure Expansion) -->
                 {#if handleExpandInfrastructure && !inspectedTerritory.state.infrastructureExpanded && game.phase === "deploy"}
@@ -527,7 +533,7 @@
                   </button>
                 {/if}
 
-                <!-- Industry ($6, 1 Steel) -->
+                <!-- Industry ($6, 1 Steel) or Upgrade to Lv2 for Tall Sovereign ($8, 2 Steel) -->
                 {#if !hasTerritoryBuilding(inspectedTerritory.state, "industry")}
                   <button
                     type="button"
@@ -549,6 +555,30 @@
                       </strong>
                       <strong class="cost-tag steel" class:missing={myRes.steel < 1}>
                         <Icon name="steel" size={11} /> 1
+                      </strong>
+                    </div>
+                  </button>
+                {:else if (myPlayerState?.doctrineId === "tall_sovereign" || myPlayerState?.doctrineId === "defense_in_depth") && getTerritoryBuildingLevel(inspectedTerritory.state, "industry") === 1}
+                  <button
+                    type="button"
+                    class="btn-build-option upgrade industry-opt"
+                    disabled={myRes.money < 8 || myRes.steel < 2}
+                    onclick={() => handleBuildStructure(inspectedTerritory!.def.id, "industry")}
+                    title="Evoluir para Complexo Industrial Nv. 2 (+100% commodities e dobro de dividendos)"
+                  >
+                    <div class="build-opt-icon industry">
+                      <Icon name="industry" size={18} />
+                    </div>
+                    <div class="build-opt-copy">
+                      <span class="build-opt-title">Complexo Industrial Nv. 2</span>
+                      <small class="build-opt-sub">+100% Produção & Dividendos</small>
+                    </div>
+                    <div class="build-opt-costs">
+                      <strong class="cost-tag money" class:missing={myRes.money < 8}>
+                        <Icon name="coins" size={11} /> $8
+                      </strong>
+                      <strong class="cost-tag steel" class:missing={myRes.steel < 2}>
+                        <Icon name="steel" size={11} /> 2
                       </strong>
                     </div>
                   </button>
@@ -755,6 +785,7 @@
                   </button>
                 {/if}
               </div>
+              {/if}
             {/if}
           </section>
 
