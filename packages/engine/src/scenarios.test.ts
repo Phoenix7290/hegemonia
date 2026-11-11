@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { CLASSIC_MAP } from "@hegemonia/maps";
 import { TACTICAL_SCENARIOS, SCENARIO_BY_ID } from "@hegemonia/shared";
-import { createGame } from "./index.js";
+import { createGame, calculateTurnReinforcements } from "./index.js";
 import { applyTacticalScenario } from "./scenarios.js";
 
 const testPlayers = [
@@ -157,5 +157,91 @@ describe("HEGEM-104: Tactical Preset Scenarios (Scenarios no Custom Lobby)", () 
       expect(p.resources.money).toBeGreaterThanOrEqual(20);
     });
     expect(game.log.some((l) => l.includes("GUERRA TOTAL"))).toBe(true);
+  });
+
+  it("ensures tutorial practice mode prioritizes human player at index 0 with active reinforcements", () => {
+    const samplePlayers = [
+      { id: "human", name: "Comandante (Você)", color: "blue" as const, doctrineId: "superior_firepower" as const },
+      { id: "bot1", name: "General IA #1", color: "red" as const, doctrineId: "mass_assault" as const },
+      { id: "bot2", name: "General IA #2", color: "green" as const, doctrineId: "tall_sovereign" as const },
+    ];
+    const game = createGame({
+      id: "tutorial-practice-test",
+      seed: "practice-seed-123",
+      players: samplePlayers,
+      scenarioId: "standard",
+    });
+
+    const humanIndex = game.players.findIndex((p) => p.id === "human");
+    if (humanIndex > 0) {
+      const [humanPlayer] = game.players.splice(humanIndex, 1);
+      game.players.unshift(humanPlayer);
+    }
+    game.turnIndex = 0;
+    const active = game.players[0];
+    if (active.unplacedArmies === 0) {
+      const reinf = calculateTurnReinforcements(game, active.id);
+      active.unplacedArmies = Math.max(3, reinf.total);
+    }
+
+    expect(game.players[game.turnIndex].id).toBe("human");
+    expect(game.players[0].unplacedArmies).toBeGreaterThanOrEqual(3);
+  });
+
+  it("configures live in-game tutorial match with round 2, market, capital and combined arms frontline", () => {
+    const samplePlayers = [
+      { id: "human", name: "Comandante (Você)", color: "blue" as const, doctrineId: "superior_firepower" as const },
+      { id: "bot1", name: "General IA #1", color: "red" as const, doctrineId: "mass_assault" as const },
+      { id: "bot2", name: "General IA #2", color: "green" as const, doctrineId: "tall_sovereign" as const },
+    ];
+    const game = createGame({
+      id: "tutorial-practice-interactive",
+      seed: "practice-seed-123",
+      players: samplePlayers,
+      scenarioId: "standard",
+    });
+
+    const humanIndex = game.players.findIndex((p) => p.id === "human");
+    if (humanIndex > 0) {
+      const [humanPlayer] = game.players.splice(humanIndex, 1);
+      game.players.unshift(humanPlayer);
+    }
+    game.turnIndex = 0;
+    game.round = 2;
+    game.phase = "deploy";
+    const activeHuman = game.players[0];
+    const reinf = calculateTurnReinforcements(game, activeHuman.id, CLASSIC_MAP);
+    activeHuman.unplacedArmies = Math.max(5, reinf.total);
+    activeHuman.resources = { money: 40, steel: 18, oil: 16, gold: 8 };
+
+    const humanTerrs = Object.values(game.territories).filter((t) => t.ownerId === "human");
+    expect(humanTerrs.length).toBeGreaterThan(0);
+    activeHuman.capitalTerritoryId = humanTerrs[0].id;
+    humanTerrs[0].buildings = [{ type: "market", level: 1 }];
+
+    for (const t of humanTerrs) {
+      const mapTerr = CLASSIC_MAP.territories.find((m) => m.id === t.id);
+      const hasEnemy = mapTerr?.neighbors.some(
+        (nId) => game.territories[nId] && game.territories[nId].ownerId !== "human"
+      );
+      if (hasEnemy) {
+        t.armies = 5;
+        t.units = { infantry: 2, tank: 2, artillery: 1, aircraft: 0, navy: 0 };
+        break;
+      }
+    }
+
+    expect(game.round).toBe(2);
+    expect(game.phase).toBe("deploy");
+    expect(activeHuman.unplacedArmies).toBeGreaterThanOrEqual(5);
+    expect(activeHuman.resources.money).toBe(40);
+    expect(activeHuman.resources.steel).toBe(18);
+    expect(activeHuman.resources.oil).toBe(16);
+    expect(activeHuman.resources.gold).toBe(8);
+    expect(humanTerrs[0].buildings?.some((b) => b.type === "market")).toBe(true);
+    const frontline = humanTerrs.find((t) => t.armies === 5);
+    expect(frontline).toBeDefined();
+    expect(frontline?.units.tank).toBe(2);
+    expect(frontline?.units.artillery).toBe(1);
   });
 });

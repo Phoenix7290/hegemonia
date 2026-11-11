@@ -9,8 +9,12 @@
   import {
     UNIT_COSTS,
     addUnits,
+    applyAction,
     calculateObjectiveProgress,
+    calculateTurnReinforcements,
+    cloneGameState,
     createGame,
+    createSeededRng,
     emptyUnitCounts,
     getMovedInUnits,
     getReachableManeuverTargets,
@@ -30,9 +34,12 @@
     AirMissionType,
     BuildingType,
     CompetitionMode,
+    DoctrineId,
+    GameAction,
     GameState,
     MatchOrigin,
     MatchmakingStatus,
+    PlayerColor,
     PublicQueueMode,
     TacticalScenarioId,
     UnitCounts,
@@ -51,6 +58,7 @@
   import ObjectiveSelectionModal from "./components/ObjectiveSelectionModal.svelte";
   import WonderAlertToast from "./components/WonderAlertToast.svelte";
   import TutorialGuideModal from "./components/TutorialGuideModal.svelte";
+  import InGameTutorialGuide from "./components/InGameTutorialGuide.svelte";
   import VictoryModal from "./components/VictoryModal.svelte";
   import WarJournal from "./components/WarJournal.svelte";
   import ReconInspector from "./components/ReconInspector.svelte";
@@ -134,7 +142,11 @@
   let competitionMode = $state<CompetitionMode>("custom");
   let matchOrigin = $state<MatchOrigin>("lobby");
   let selectedScenarioId = $state<TacticalScenarioId>("standard");
+  let selectedDoctrineId = $state<DoctrineId>("superior_firepower");
+  let selectedPlayerColor = $state<PlayerColor>("blue");
   let showTutorialModal = $state<boolean>(false);
+  let showInGameTutorial = $state<boolean>(false);
+  let activeTutorialStep = $state<number>(0);
   let matchmakingPollTimer: ReturnType<typeof setTimeout> | null = null;
   let matchmakingPollGeneration = 0;
   let matchmakingStatusUserId: string | null = null;
@@ -422,6 +434,10 @@
     const timer = setInterval(() => {
       if (turnDeadline > 0) {
         remainingSeconds = Math.max(0, Math.ceil((turnDeadline - Date.now()) / 1000));
+        if (remainingSeconds <= 0 && !connectedRoom && game && roomStatus === "playing") {
+          turnDeadline = Date.now() + 120_000;
+          remainingSeconds = 120;
+        }
       }
     }, 500);
     return () => clearInterval(timer);
@@ -558,6 +574,8 @@
     inspectedTerritoryId = null;
     activeRightDrawer = null;
     showHudManager = false;
+    showInGameTutorial = false;
+    activeTutorialStep = 0;
     competitionMode = "custom";
     matchOrigin = "lobby";
   }
@@ -943,28 +961,225 @@
     }
   }
 
+  let practiceRng = createSeededRng("tutorial-practice-runtime");
+
+  function getPlainGameState(s: GameState): GameState {
+    try {
+      return $state.snapshot(s);
+    } catch {
+      return cloneGameState(s);
+    }
+  }
+
+  function checkAndRunPracticeBotTurn() {
+    if (!game || roomStatus !== "playing" || connectedRoom) return;
+    const current = game.players[game.turnIndex];
+    if (current && current.id !== "human" && !current.eliminated) {
+      turnDeadline = Date.now() + 120_000;
+      remainingSeconds = 120;
+      setTimeout(() => {
+        if (!game || roomStatus !== "playing" || connectedRoom) return;
+        const active = game.players[game.turnIndex];
+        if (active.id === current.id) {
+          try {
+            let stateStep = getPlainGameState(game);
+            const myTerrs = Object.values(stateStep.territories).filter(
+              (t) => t.ownerId === current.id
+            );
+            const activePlayer = stateStep.players[stateStep.turnIndex];
+            if (activePlayer && activePlayer.unplacedArmies > 0 && myTerrs.length > 0) {
+              stateStep = applyAction(
+                stateStep,
+                current.id,
+                {
+                  type: "deploy",
+                  territoryId: myTerrs[0].id,
+                  armies: activePlayer.unplacedArmies,
+                },
+                practiceRng,
+                CLASSIC_MAP
+              );
+            }
+            if (stateStep.round > 1 && stateStep.phase === "deploy") {
+              stateStep = applyAction(
+                stateStep,
+                current.id,
+                { type: "end_deploy" },
+                practiceRng,
+                CLASSIC_MAP
+              );
+            }
+            stateStep = applyAction(
+              stateStep,
+              current.id,
+              { type: "end_turn" },
+              practiceRng,
+              CLASSIC_MAP
+            );
+            game = stateStep;
+            turnDeadline = Date.now() + 120_000;
+            remainingSeconds = 120;
+            checkAndRunPracticeBotTurn();
+          } catch {
+            const hIdx = game.players.findIndex((p) => p.id === "human");
+            if (hIdx >= 0) {
+              game.turnIndex = hIdx;
+              turnDeadline = Date.now() + 120_000;
+              remainingSeconds = 120;
+            }
+          }
+        }
+      }, 700);
+    }
+  }
+
   function practiceTutorialInMap() {
     showTutorialModal = false;
-    const cleanName = (auth.user?.displayName || playerName).trim() || "Comandante";
-    const samplePlayers = [
-      { id: "human", name: `${cleanName} (Você)`, color: "blue" as const },
-      { id: "bot1", name: "General IA #1", color: "red" as const },
-      { id: "bot2", name: "General IA #2", color: "green" as const },
-    ];
-    game = createGame({
-      id: "tutorial-practice",
-      seed: "practice-seed-123",
-      players: samplePlayers,
-      scenarioId: selectedScenarioId !== "standard" ? selectedScenarioId : "standard",
-    });
-    myPlayerId = "human";
-    roomStatus = "playing";
-    sound.play("offensive_order");
+    connectionGeneration++;
+    stopMatchmakingPolling();
+    matchmakingStatus = { ...IDLE_MATCHMAKING_STATUS };
+    const room = connectedRoom;
+    connectedRoom = null;
+    communications.detach();
+    clearPersistedRoom();
+    if (room) {
+      room.removeAllListeners();
+      void room.leave().catch(() => undefined);
+    }
+    selectedFromId = null;
+    selectedToId = null;
+    inspectedTerritoryId = null;
+    activeCombatAnimations = [];
+
+    try {
+      const cleanName = (auth.user?.displayName || playerName).trim() || "Comandante";
+      const availableColors: PlayerColor[] = (
+        ["blue", "red", "green", "yellow", "black", "white"] as PlayerColor[]
+      ).filter((c) => c !== selectedPlayerColor);
+      const samplePlayers = [
+        {
+          id: "human",
+          name: `${cleanName} (Você)`,
+          color: selectedPlayerColor,
+          doctrineId: selectedDoctrineId,
+        },
+        {
+          id: "bot1",
+          name: "General IA #1",
+          color: availableColors[0] ?? "red",
+          doctrineId: "mass_assault" as const,
+        },
+        {
+          id: "bot2",
+          name: "General IA #2",
+          color: availableColors[1] ?? "green",
+          doctrineId: "tall_sovereign" as const,
+        },
+      ];
+      const newGame = createGame({
+        id: "tutorial-practice",
+        seed: "practice-seed-123",
+        players: samplePlayers,
+        scenarioId: selectedScenarioId !== "standard" ? selectedScenarioId : "standard",
+      });
+
+      // Ensure human player is ALWAYS first to play in tutorial practice
+      const humanIndex = newGame.players.findIndex((p) => p.id === "human");
+      if (humanIndex > 0) {
+        const [humanPlayer] = newGame.players.splice(humanIndex, 1);
+        newGame.players.unshift(humanPlayer);
+      }
+      newGame.turnIndex = 0;
+      // Set round 2 so full combat, deployment and all phases are immediately active for learning
+      newGame.round = 2;
+      newGame.phase = "deploy";
+      const activeHuman = newGame.players[0];
+      const reinf = calculateTurnReinforcements(newGame, activeHuman.id, CLASSIC_MAP);
+      activeHuman.unplacedArmies = Math.max(5, reinf.total);
+      // Provide plenty of resources so user can buy/sell in Market, build fortifications, industries and test units
+      activeHuman.resources = { money: 40, steel: 18, oil: 16, gold: 8 };
+
+      // Ensure human owns at least 1 territory with a Market and a Capital
+      const humanTerrs = Object.values(newGame.territories).filter((t) => t.ownerId === "human");
+      if (humanTerrs.length > 0) {
+        activeHuman.capitalTerritoryId = humanTerrs[0].id;
+        humanTerrs[0].buildings = [{ type: "market", level: 1 }];
+        // Give human a frontline territory with combined arms ready to attack
+        for (const t of humanTerrs) {
+          const mapTerr = CLASSIC_MAP.territories.find((m) => m.id === t.id);
+          const hasEnemy = mapTerr?.neighbors.some(
+            (nId) => newGame.territories[nId] && newGame.territories[nId].ownerId !== "human"
+          );
+          if (hasEnemy) {
+            t.armies = 5;
+            t.units = { infantry: 2, tank: 2, artillery: 1, aircraft: 0, navy: 0 };
+            focusTerritory(t.id);
+            break;
+          }
+        }
+      }
+
+      showInGameTutorial = true;
+      activeTutorialStep = 0;
+      game = cloneGameState(newGame);
+      myPlayerId = "human";
+      roomStatus = "playing";
+      turnDeadline = Date.now() + 180_000;
+      remainingSeconds = 180;
+      sound.playTurnRadioAlert();
+    } catch (err: any) {
+      console.error("Falha ao iniciar tutorial interativo:", err);
+      resetRoomState();
+      errorBanner = "Erro ao iniciar simulação prática: " + (err?.message || err);
+    }
   }
 
   function sendAction(action: unknown) {
     sound.playClick();
-    connectedRoom?.send("game_action", action);
+    if (connectedRoom) {
+      connectedRoom.send("game_action", action);
+      return;
+    }
+    if (game && myPlayerId && roomStatus === "playing") {
+      try {
+        const rawState = getPlainGameState(game);
+        const prevCombat = rawState.lastCombat;
+        const nextState = applyAction(
+          rawState,
+          myPlayerId,
+          action as GameAction,
+          practiceRng,
+          CLASSIC_MAP
+        );
+        game = nextState;
+        resetSelectedForce();
+        if (game.lastCombat && game.lastCombat !== prevCombat) {
+          const isMaritime = isSeaLink(
+            game.lastCombat.fromTerritoryId,
+            game.lastCombat.toTerritoryId
+          );
+          if (isMaritime) sound.playNavalSalvo();
+          else sound.playInfantryRifle();
+          sound.playDiceRoll();
+          spawnCombatAnimation(
+            createCombatAnimationFromRoll(game.lastCombat, ui.combatAnimationSpeed, {
+              isMaritime,
+            })
+          );
+          if (game.lastCombat.conquered) {
+            setTimeout(() => {
+              sound.playConquest();
+            }, 300);
+          }
+        }
+        checkAndRunPracticeBotTurn();
+      } catch (err: any) {
+        errorBanner = err?.message || "Ação inválida.";
+        setTimeout(() => {
+          if (errorBanner === err?.message) errorBanner = "";
+        }, 3000);
+      }
+    }
   }
 
   function handleBuildStructure(territoryId: string, buildingType: BuildingType) {
@@ -1334,8 +1549,14 @@
       onCreateRoom={() => joinOrCreateRoom(true)}
       onJoinRoom={() => joinOrCreateRoom(false)}
       onLeaveRoom={leaveCurrentRoom}
-      onChooseColor={(color) => connectedRoom?.send("choose_color", { color })}
-      onChooseDoctrine={(doctrineId) => connectedRoom?.send("choose_doctrine", { doctrineId })}
+      onChooseColor={(color) => {
+        selectedPlayerColor = color;
+        connectedRoom?.send("choose_color", { color });
+      }}
+      onChooseDoctrine={(doctrineId) => {
+        selectedDoctrineId = doctrineId;
+        connectedRoom?.send("choose_doctrine", { doctrineId });
+      }}
       onSelectScenario={selectScenario}
       onOpenTutorial={() => (showTutorialModal = true)}
       onAddBot={() => connectedRoom?.send("add_bot")}
@@ -1434,6 +1655,7 @@
         {resetZoom}
         {leaveCurrentRoom}
         {sendAction}
+        onReopenTutorial={!connectedRoom && !showInGameTutorial ? () => { sound.playClick(); showInGameTutorial = true; } : undefined}
       />
 
       <!-- ↖ LEFT SLIDE-OVER TERRITORY COMMAND DOSSIER & BOTTOM-LEFT CONTROLS HINT -->
@@ -1515,6 +1737,36 @@
         </div>
       {/if}
     </div>
+
+    <!-- IN-GAME INTERACTIVE TUTORIAL GUIDE (HEGEM-104) -->
+    {#if showInGameTutorial}
+      <InGameTutorialGuide
+        {game}
+        myPlayerId={myPlayerId ?? "human"}
+        {isMyTurn}
+        bind:activeStep={activeTutorialStep}
+        onOpenMarket={() => (activeRightDrawer = "market")}
+        onOpenObjective={() => (activeRightDrawer = "objective")}
+        onInspectTerritory={(territoryId) => {
+          inspectedTerritoryId = territoryId;
+          focusTerritory(territoryId);
+        }}
+        onSelectCombatTerritories={(fromId, toId) => {
+          selectedFromId = fromId;
+          selectedToId = toId;
+          focusTerritory(fromId);
+        }}
+        onAdvancePhase={() => {
+          const human = game?.players.find((p) => p.id === myPlayerId);
+          if (game?.phase === "deploy" && human?.unplacedArmies === 0) {
+            sendAction({ type: "end_deploy" });
+          } else if (game?.phase === "attack") {
+            sendAction({ type: "end_attack" });
+          }
+        }}
+        onClose={() => (showInGameTutorial = false)}
+      />
+    {/if}
   {/if}
 
   <TutorialGuideModal

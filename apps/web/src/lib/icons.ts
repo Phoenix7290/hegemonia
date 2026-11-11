@@ -26,6 +26,7 @@ export const ICON_NAMES = [
   "arrow-right",
   "reset",
   "chevrons",
+  "grip",
 
   // Turn Phases (HEGEM-63 Semantically Distinct Phase Icons)
   "phase-deploy",
@@ -212,6 +213,14 @@ export const ICON_CATALOG: Record<IconName, readonly IconShape[]> = {
   ],
   chevrons: [
     { tag: "path", attrs: { d: "m6 9 6 6 6-6M6 3l6 6 6-6" } },
+  ],
+  grip: [
+    { tag: "circle", attrs: { cx: 9, cy: 6, r: 1.5 } },
+    { tag: "circle", attrs: { cx: 9, cy: 12, r: 1.5 } },
+    { tag: "circle", attrs: { cx: 9, cy: 18, r: 1.5 } },
+    { tag: "circle", attrs: { cx: 15, cy: 6, r: 1.5 } },
+    { tag: "circle", attrs: { cx: 15, cy: 12, r: 1.5 } },
+    { tag: "circle", attrs: { cx: 15, cy: 18, r: 1.5 } },
   ],
 
   // --- Turn Phases (Deploy, Attack, Maneuver) ---

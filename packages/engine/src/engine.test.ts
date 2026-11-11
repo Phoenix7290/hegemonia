@@ -8,6 +8,7 @@ import {
   calculateTurnReinforcements,
   checkNavalBlockade,
   checkPlayerVictory,
+  cloneGameState,
   createGame,
   createPlayerView,
   createSeededRng,
@@ -3904,6 +3905,87 @@ describe("HEGEM-96: Manual Deploy Phase Transition (end_deploy)", () => {
       );
       expect(p1State.unplacedArmies).toBeLessThanOrEqual(50);
     });
+  });
+});
+
+describe("Proxy and Reactive State Cloning Resilience", () => {
+  it("safely clones deep Proxy objects via cloneGameState without throwing", () => {
+    const target = {
+      name: "test",
+      values: [1, 2, 3],
+      nested: { count: 10, items: [{ id: "a" }] },
+    };
+    const proxy = new Proxy(target, {});
+    const cloned = cloneGameState(proxy);
+    expect(cloned).toEqual(target);
+    expect(cloned).not.toBe(target);
+  });
+
+  it("applies actions when GameState is wrapped in a reactive Proxy (e.g. Svelte 5 $state)", () => {
+    const rng = createSeededRng("proxy-test");
+    const baseState = createGame({
+      id: "proxy-game",
+      seed: "proxy-seed",
+      players: [
+        { id: "p1", name: "Player 1", color: "blue", doctrineId: "standard" },
+        { id: "p2", name: "Player 2", color: "red", doctrineId: "blitzkrieg" },
+      ],
+    });
+    baseState.round = 2;
+    baseState.phase = "deploy";
+    const p1 = baseState.players[0];
+    p1.resources = { money: 100, steel: 50, oil: 50, gold: 20 };
+    const p1Terr = Object.values(baseState.territories).find((t) => t.ownerId === "p1")!;
+    p1Terr.buildings = [{ type: "market", level: 1 }];
+    p1.unplacedArmies = 3;
+
+    // Wrap in deep Proxy to simulate Svelte 5 $state
+    const createDeepProxy = (obj: any): any => {
+      if (typeof obj !== "object" || obj === null) return obj;
+      return new Proxy(obj, {
+        get(t, prop) {
+          const val = Reflect.get(t, prop);
+          return typeof val === "object" && val !== null ? createDeepProxy(val) : val;
+        },
+      });
+    };
+
+    const proxiedState = createDeepProxy(baseState);
+
+    // 1. Deploy action on proxied state
+    const afterDeploy = applyAction(
+      proxiedState,
+      "p1",
+      { type: "deploy", territoryId: p1Terr.id, armies: 2 },
+      rng
+    );
+    expect(afterDeploy.territories[p1Terr.id].armies).toBe(p1Terr.armies + 2);
+
+    // 2. Market trade action on proxied state
+    const proxiedAfterDeploy = createDeepProxy(afterDeploy);
+    const afterTrade = applyAction(
+      proxiedAfterDeploy,
+      "p1",
+      { type: "market_trade", resource: "steel", operation: "buy", quantity: 1 },
+      rng
+    );
+    expect(afterTrade.players[0].resources.steel).toBe(51);
+
+    // 3. Build structure action on proxied state
+    const proxiedAfterTrade = createDeepProxy(afterTrade);
+    const afterBuild = applyAction(
+      proxiedAfterTrade,
+      "p1",
+      { type: "build_structure", territoryId: p1Terr.id, buildingType: "industry" },
+      rng
+    );
+    expect(
+      afterBuild.territories[p1Terr.id].buildings?.some((b) => b.type === "industry")
+    ).toBe(true);
+
+    // 4. Create player view on proxied state
+    const view = createPlayerView(proxiedAfterTrade, "p1");
+    expect(view.players[0].id).toBe("p1");
   });
 });
 

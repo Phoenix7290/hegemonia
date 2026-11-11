@@ -77,5 +77,100 @@ describe("HEGEM-104: Tutorial Guiado da HUD & Cenários Táticos Presetados (Fro
     expect(defaultScenario.initialTension).toBe(0);
     expect(defaultScenario.id).toBe("standard");
   });
+
+  it("verifies in-game live tutorial guide component structure and zero-emoji compliance", async () => {
+    const fs = await import("fs");
+    const path = await import("path");
+    const guidePath = path.resolve(__dirname, "../components/InGameTutorialGuide.svelte");
+    expect(fs.existsSync(guidePath)).toBe(true);
+
+    const source = fs.readFileSync(guidePath, "utf-8");
+    expect(EMOJI_REGEX.test(source)).toBe(false);
+
+    // Verify all 6 interactive gameplay areas requested by user
+    expect(source).toContain("Recrutamento e Alocação de Tropas");
+    expect(source).toContain("Gestão Econômica, Compra e Venda de Commodities");
+    expect(source).toContain("Fortalezas, Indústrias, Portos e Aeródromos");
+    expect(source).toContain("Ofensivas de Combate e Conquista Territorial");
+    expect(source).toContain("Remanejamento de Forças e Linhas de Suprimento");
+    expect(source).toContain("Tensão Mundial, Diplomacia e Diretiva Secreta");
+  });
+
+  it("verifies App.svelte declares practice state variables and handles practice error safely", async () => {
+    const fs = await import("fs");
+    const path = await import("path");
+    const appPath = path.resolve(__dirname, "../App.svelte");
+    const source = fs.readFileSync(appPath, "utf-8");
+
+    expect(source).toMatch(/let selectedDoctrineId\s*=/);
+    expect(source).toMatch(/let selectedPlayerColor\s*=/);
+    expect(source).toContain("practiceTutorialInMap");
+    expect(source).toContain("Falha ao iniciar tutorial interativo");
+  });
+
+  it("verifies InGameTutorialGuide has free drag and drop positioning with viewport clamping", async () => {
+    const fs = await import("fs");
+    const path = await import("path");
+    const guidePath = path.resolve(__dirname, "../components/InGameTutorialGuide.svelte");
+    const source = fs.readFileSync(guidePath, "utf-8");
+
+    // Pointer events & dragging mechanics
+    expect(source).toContain("handlePointerDown");
+    expect(source).toContain("handlePointerMove");
+    expect(source).toContain("handlePointerUp");
+    expect(source).toContain("setPointerCapture");
+    expect(source).toContain("clampPosition");
+    expect(source).toContain("cursor: grab");
+    expect(source).toContain("cursor: grabbing");
+    expect(source).toContain("is-dragging");
+  });
+
+  it("verifies TopBar cleanly integrates the tutorial button inside Quartel-General without layout corruption", async () => {
+    const fs = await import("fs");
+    const path = await import("path");
+    const topBarPath = path.resolve(__dirname, "../components/TopBar.svelte");
+    const source = fs.readFileSync(topBarPath, "utf-8");
+
+    expect(source).toContain("onReopenTutorial");
+    expect(source).toContain("hq-tutorial-dock-btn");
+    expect(source).toContain("hq-tut-dock-label");
+  });
+
+  it("verifies App.svelte unproxies reactive state to prevent structuredClone DOMExceptions during actions", async () => {
+    const fs = await import("fs");
+    const path = await import("path");
+    const appPath = path.resolve(__dirname, "../App.svelte");
+    const source = fs.readFileSync(appPath, "utf-8");
+
+    expect(source).toContain("getPlainGameState");
+    expect(source).toContain("cloneGameState");
+    expect(source).toMatch(/const rawState\s*=\s*getPlainGameState\(game\)/);
+  });
+
+  it("verifies InGameTutorialGuide has uniform button heights, balanced spacing, and responsive layout", async () => {
+    const fs = await import("fs");
+    const path = await import("path");
+    const guidePath = path.resolve(__dirname, "../components/InGameTutorialGuide.svelte");
+    const source = fs.readFileSync(guidePath, "utf-8");
+
+    // Header layout structure
+    expect(source).toContain("header-top-bar");
+    expect(source).toContain("header-title-bar");
+    expect(source).toContain("header-actions");
+    expect(source).toContain("header-badge-col");
+
+    // Equal heights & spacing
+    expect(source).toContain("height: 26px;");
+    expect(source).toContain("height: 32px;");
+    expect(source).toContain("white-space: nowrap;");
+
+    // Responsiveness
+    expect(source).toContain("@media (max-width: 520px)");
+    expect(source).toContain("@media (max-width: 440px)");
+    expect(source).toContain("overflow-y: auto;");
+
+    // Zero-emoji policy check
+    expect(EMOJI_REGEX.test(source)).toBe(false);
+  });
 });
 

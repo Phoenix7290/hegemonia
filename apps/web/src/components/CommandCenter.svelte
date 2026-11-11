@@ -1198,12 +1198,13 @@
     display: inline-flex;
     align-items: center;
     gap: 6px;
-    height: 34px;
+    height: 36px;
     padding: 0 12px;
     font-size: 0.74rem;
     background: rgba(202, 138, 4, 0.16);
     border-color: rgba(234, 179, 8, 0.5);
     color: #fef08a;
+    box-sizing: border-box;
   }
   .copy-code-btn:hover:not(:disabled) {
     background: rgba(234, 179, 8, 0.28);
@@ -1219,15 +1220,16 @@
     display: inline-flex;
     align-items: center;
     gap: 7px;
-    height: 38px;
+    height: 36px;
     padding: 0 14px;
     background: rgba(5, 9, 18, 0.85);
     border: 1px solid rgba(148, 163, 184, 0.28);
-    border-radius: 5px;
+    border-radius: 4px;
     font-family: var(--font-tactical);
     font-size: 0.82rem;
     letter-spacing: 0.08em;
     color: #cbd5e1;
+    box-sizing: border-box;
   }
   .capacity-pill strong {
     color: #fde047;
@@ -1236,13 +1238,15 @@
     display: inline-flex;
     align-items: center;
     gap: 6px;
-    height: 38px;
+    height: 36px;
     padding: 0 14px;
     background: rgba(127, 29, 29, 0.35);
-    border-color: rgba(239, 68, 68, 0.45);
+    border: 1px solid rgba(239, 68, 68, 0.45);
+    border-radius: 4px;
     color: #fca5a5;
     font-size: 0.78rem;
     text-transform: uppercase;
+    box-sizing: border-box;
   }
   .leave-room-btn:hover:not(:disabled) {
     background: rgba(153, 27, 27, 0.65);
@@ -1874,16 +1878,18 @@
     display: inline-flex;
     align-items: center;
     gap: 0.45rem;
-    padding: 0.35rem 0.75rem;
+    height: 36px;
+    padding: 0 0.85rem;
     background: rgba(234, 179, 8, 0.1);
     border: 1px solid rgba(234, 179, 8, 0.35);
     color: #fde047;
     font-size: 0.72rem;
     font-weight: 700;
     letter-spacing: 0.06em;
-    border-radius: 3px;
+    border-radius: 4px;
     cursor: pointer;
     transition: all 0.15s ease;
+    box-sizing: border-box;
   }
   .tutorial-deck-btn:hover,
   .tutorial-lobby-btn:hover {

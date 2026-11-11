@@ -35,6 +35,7 @@ import {
   ROLEPLAY_OBJECTIVES,
 } from "@hegemonia/maps";
 import { createSeededRng, hashSeed, type SeededRng } from "./rng.js";
+export { createSeededRng, type SeededRng } from "./rng.js";
 import { applyTacticalScenario } from "./scenarios.js";
 import {
   applyDoctrineCombatDiceModifiers,
@@ -85,6 +86,19 @@ export interface CreateGameOptions {
 
 export * from "./doctrines.js";
 export * from "./scenarios.js";
+
+/**
+ * Safe deep-clone utility for GameState and game entities.
+ * Uses native structuredClone when supported and safe, with JSON serialization fallback
+ * to gracefully handle reactive Proxies (e.g. Svelte 5 $state) and browser window environments.
+ */
+export function cloneGameState<T>(val: T): T {
+  try {
+    return structuredClone(val);
+  } catch {
+    return JSON.parse(JSON.stringify(val));
+  }
+}
 
 /**
  * Card trade progression with a linear limit cap at trade 10 (max 35 base armies) to prevent exponential late-game explosion:
@@ -1076,7 +1090,7 @@ export function createGame(opts: CreateGameOptions): GameState {
     worldTension: 0,
     treaties: [],
     coalitions: [],
-    marketPrices: structuredClone(INITIAL_MARKET_PRICES),
+    marketPrices: cloneGameState(INITIAL_MARKET_PRICES),
     investmentRoutes: [],
     borderTrades: [],
   };
@@ -1519,7 +1533,7 @@ export function applyAction(
     throw new Error("A partida já terminou.");
   }
 
-  const state: GameState = structuredClone(prevState);
+  const state: GameState = cloneGameState(prevState);
   const currentPlayer = state.players[state.turnIndex];
   const actingPlayer = state.players.find((p) => p.id === playerId);
   if (!actingPlayer || actingPlayer.eliminated) {
@@ -1552,7 +1566,7 @@ export function applyAction(
   if (currentPlayer) {
     currentPlayer.resources = currentPlayer.resources ?? { money: 0, steel: 0, oil: 0, gold: 0 };
   }
-  state.marketPrices = state.marketPrices ?? structuredClone(INITIAL_MARKET_PRICES);
+  state.marketPrices = state.marketPrices ?? cloneGameState(INITIAL_MARKET_PRICES);
   state.investmentRoutes = state.investmentRoutes ?? [];
   state.borderTrades = state.borderTrades ?? [];
 
@@ -4339,7 +4353,7 @@ export function createPlayerView(
   state: GameState,
   viewerPlayerId: string | null
 ): GameState {
-  const clone = structuredClone(state);
+  const clone = cloneGameState(state);
   clone.deck = [];
   clone.discardPile = [];
 
