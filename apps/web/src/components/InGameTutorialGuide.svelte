@@ -357,7 +357,7 @@
       <!-- Cabeçalho do Card -->
       <header
         class="tutorial-card-header"
-        tabindex="0"
+        role="region"
         aria-label="Cabeçalho do tutorial arrastável"
         onpointerdown={handlePointerDown}
         onpointermove={handlePointerMove}
@@ -365,47 +365,50 @@
         onpointercancel={handlePointerUp}
         title="Clique e arraste para posicionar o tutorial livremente na tela"
       >
-        <div class="header-cluster">
-          <div class="header-icon-box">
-            <Icon name={currentStep.icon} size={16} color="#eab308" />
+        <!-- Linha Superior: Badge da Fase à esquerda, Controles à direita -->
+        <div class="header-top-bar">
+          <div class="header-badge-col">
+            <span class="step-badge">{currentStep.badge}</span>
           </div>
-          <div>
-            <div class="header-badge-row">
-              <span class="step-badge">{currentStep.badge}</span>
-              <span class="step-number">ETAPA {currentStep.stepNumber} DE {TUTORIAL_STEPS.length}</span>
-              <span class="drag-handle-hint">
-                <Icon name="grip" size={11} color="#eab308" />
-                <span>ARRASTAR</span>
-              </span>
-            </div>
-            <h3 class="tutorial-card-title">{currentStep.title}</h3>
+
+          <div class="header-actions">
+            <span class="step-number">ETAPA {currentStep.stepNumber} DE {TUTORIAL_STEPS.length}</span>
+            <span class="drag-handle-hint" title="Clique e arraste para posicionar o tutorial livremente na tela">
+              <Icon name="grip" size={12} color="#eab308" />
+              <span class="drag-label">ARRASTAR</span>
+            </span>
+            <button
+              type="button"
+              class="header-btn"
+              onclick={() => {
+                sound.playClick();
+                minimized = true;
+              }}
+              title="Minimizar Guia (para ver todo o mapa)"
+            >
+              <Icon name="chevron-up" size={13} />
+              <span class="btn-text">Minimizar</span>
+            </button>
+            <button
+              type="button"
+              class="header-btn close"
+              onclick={() => {
+                sound.playClick();
+                onClose();
+              }}
+              title="Encerrar Guia do Tutorial"
+            >
+              <Icon name="close" size={13} />
+            </button>
           </div>
         </div>
 
-        <div class="header-actions">
-          <button
-            type="button"
-            class="header-btn"
-            onclick={() => {
-              sound.playClick();
-              minimized = true;
-            }}
-            title="Minimizar Guia (para ver todo o mapa)"
-          >
-            <Icon name="chevron-up" size={13} />
-            <span class="btn-text">Minimizar</span>
-          </button>
-          <button
-            type="button"
-            class="header-btn close"
-            onclick={() => {
-              sound.playClick();
-              onClose();
-            }}
-            title="Encerrar Guia do Tutorial"
-          >
-            <Icon name="close" size={13} />
-          </button>
+        <!-- Linha Inferior: Ícone e Título da Etapa -->
+        <div class="header-title-bar">
+          <div class="header-icon-box">
+            <Icon name={currentStep.icon} size={16} color="#eab308" />
+          </div>
+          <h3 class="tutorial-card-title">{currentStep.title}</h3>
         </div>
       </header>
 
@@ -545,7 +548,9 @@
     align-items: center;
     justify-content: space-between;
     gap: 10px;
-    padding: 6px 14px;
+    height: 38px;
+    box-sizing: border-box;
+    padding: 0 12px;
     background: rgba(8, 14, 26, 0.94);
     border: 1px solid rgba(234, 179, 8, 0.45);
     border-radius: 6px;
@@ -595,10 +600,13 @@
   }
 
   .btn-pill-expand {
+    height: 26px;
+    line-height: 24px;
     display: inline-flex;
     align-items: center;
     gap: 4px;
-    padding: 3px 8px;
+    padding: 0 8px;
+    box-sizing: border-box;
     background: rgba(234, 179, 8, 0.15);
     border: 1px solid rgba(234, 179, 8, 0.4);
     border-radius: 4px;
@@ -616,12 +624,14 @@
   }
 
   .btn-pill-close {
-    width: 24px;
-    height: 24px;
+    width: 26px;
+    min-width: 26px;
+    height: 26px;
     display: inline-flex;
     align-items: center;
     justify-content: center;
     padding: 0;
+    box-sizing: border-box;
     background: transparent;
     border: 1px solid rgba(255, 255, 255, 0.15);
     border-radius: 4px;
@@ -639,12 +649,15 @@
   /* --- Full Card --- */
   .tutorial-card {
     position: relative;
-    background: rgba(8, 14, 26, 0.95);
+    background: rgba(8, 14, 26, 0.96);
     border: 1px solid rgba(234, 179, 8, 0.35);
     border-radius: 8px;
-    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.8), 0 0 15px rgba(234, 179, 8, 0.12);
-    backdrop-filter: blur(10px);
+    box-shadow: 0 12px 36px rgba(0, 0, 0, 0.85), 0 0 18px rgba(234, 179, 8, 0.14);
+    backdrop-filter: blur(12px);
     overflow: hidden;
+    max-height: calc(100vh - 85px);
+    display: flex;
+    flex-direction: column;
   }
 
   .card-corner {
@@ -683,11 +696,10 @@
   /* --- Header --- */
   .tutorial-card-header {
     display: flex;
-    justify-content: space-between;
-    align-items: flex-start;
-    gap: 12px;
-    padding: 12px 16px 8px;
-    background: linear-gradient(180deg, rgba(234, 179, 8, 0.12) 0%, rgba(8, 14, 26, 0) 100%);
+    flex-direction: column;
+    gap: 8px;
+    padding: 10px 14px 10px;
+    background: linear-gradient(180deg, rgba(234, 179, 8, 0.12) 0%, rgba(8, 14, 26, 0.6) 100%);
     border-bottom: 1px solid rgba(234, 179, 8, 0.2);
     cursor: grab;
     touch-action: none;
@@ -697,45 +709,20 @@
     cursor: grabbing;
   }
 
-  .drag-handle-hint {
-    display: inline-flex;
-    align-items: center;
-    gap: 3px;
-    font-size: 0.6rem;
-    font-weight: 800;
-    letter-spacing: 0.05em;
-    color: #eab308;
-    background: rgba(234, 179, 8, 0.12);
-    border: 1px solid rgba(234, 179, 8, 0.3);
-    padding: 1px 5px;
-    border-radius: 3px;
-  }
-
-  .header-cluster {
+  /* Linha Superior: Categoria à esquerda, Controles de mesma altura à direita */
+  .header-top-bar {
     display: flex;
-    align-items: flex-start;
-    gap: 10px;
-    flex: 1;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
     min-width: 0;
   }
 
-  .header-icon-box {
-    width: 32px;
-    height: 32px;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    background: rgba(234, 179, 8, 0.15);
-    border: 1px solid rgba(234, 179, 8, 0.4);
-    border-radius: 6px;
-    flex-shrink: 0;
-  }
-
-  .header-badge-row {
+  .header-badge-col {
     display: flex;
     align-items: center;
-    gap: 8px;
-    margin-bottom: 2px;
+    min-width: 0;
+    flex: 1;
   }
 
   .step-badge {
@@ -744,26 +731,12 @@
     letter-spacing: 0.08em;
     color: #fde047;
     text-transform: uppercase;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
-  .step-number {
-    font-size: 0.64rem;
-    font-weight: 700;
-    color: #94a3b8;
-    background: rgba(255, 255, 255, 0.06);
-    padding: 1px 6px;
-    border-radius: 3px;
-  }
-
-  .tutorial-card-title {
-    margin: 0;
-    font-size: 0.88rem;
-    font-weight: 800;
-    letter-spacing: 0.04em;
-    color: #ffffff;
-    line-height: 1.25;
-  }
-
+  /* Right-side action controls: TODOS com a MESMA ALTURA (26px) e alinhamento */
   .header-actions {
     display: inline-flex;
     align-items: center;
@@ -771,56 +744,142 @@
     flex-shrink: 0;
   }
 
-  .header-btn {
+  .step-number {
+    height: 26px;
+    line-height: 24px;
     display: inline-flex;
     align-items: center;
+    justify-content: center;
+    padding: 0 8px;
+    box-sizing: border-box;
+    font-size: 0.65rem;
+    font-weight: 700;
+    font-family: var(--font-mono);
+    color: #cbd5e1;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    border-radius: 4px;
+    white-space: nowrap;
+    letter-spacing: 0.04em;
+  }
+
+  .drag-handle-hint {
+    height: 26px;
+    line-height: 24px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     gap: 4px;
-    padding: 4px 8px;
-    background: transparent;
+    padding: 0 8px;
+    box-sizing: border-box;
+    font-size: 0.65rem;
+    font-weight: 800;
+    letter-spacing: 0.05em;
+    color: #fde047;
+    background: rgba(234, 179, 8, 0.12);
+    border: 1px solid rgba(234, 179, 8, 0.35);
+    border-radius: 4px;
+    white-space: nowrap;
+    cursor: grab;
+    transition: all 0.15s ease;
+  }
+
+  .drag-handle-hint:hover {
+    background: rgba(234, 179, 8, 0.22);
+    border-color: #facc15;
+    color: #ffffff;
+  }
+
+  .header-btn {
+    height: 26px;
+    line-height: 24px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    padding: 0 9px;
+    box-sizing: border-box;
+    background: rgba(255, 255, 255, 0.05);
     border: 1px solid rgba(255, 255, 255, 0.15);
     border-radius: 4px;
-    color: #94a3b8;
-    font-size: 0.68rem;
+    color: #cbd5e1;
+    font-size: 0.67rem;
+    font-weight: 700;
+    white-space: nowrap;
     cursor: pointer;
     transition: all 0.15s ease;
   }
 
   .header-btn:hover {
-    background: rgba(255, 255, 255, 0.08);
-    color: #f8fafc;
+    background: rgba(255, 255, 255, 0.12);
+    border-color: rgba(255, 255, 255, 0.3);
+    color: #ffffff;
   }
 
   .header-btn.close {
     width: 26px;
+    min-width: 26px;
     height: 26px;
     padding: 0;
     justify-content: center;
+    color: #94a3b8;
   }
 
   .header-btn.close:hover {
-    background: rgba(239, 68, 68, 0.2);
-    border-color: rgba(239, 68, 68, 0.4);
+    background: rgba(239, 68, 68, 0.25);
+    border-color: rgba(239, 68, 68, 0.5);
     color: #fca5a5;
+  }
+
+  /* Linha Inferior do Título */
+  .header-title-bar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+  }
+
+  .header-icon-box {
+    width: 28px;
+    height: 28px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(234, 179, 8, 0.15);
+    border: 1px solid rgba(234, 179, 8, 0.4);
+    border-radius: 5px;
+    flex-shrink: 0;
+  }
+
+  .tutorial-card-title {
+    margin: 0;
+    font-size: 0.92rem;
+    font-weight: 800;
+    letter-spacing: 0.03em;
+    color: #ffffff;
+    line-height: 1.25;
+    white-space: normal;
   }
 
   /* --- Stepper Dots --- */
   .step-nav {
     display: flex;
     gap: 6px;
-    padding: 6px 16px;
+    padding: 6px 14px;
     background: rgba(0, 0, 0, 0.35);
     border-bottom: 1px solid rgba(255, 255, 255, 0.06);
   }
 
   .step-nav-dot {
     flex: 1;
-    height: 24px;
+    height: 26px;
+    min-width: 0;
     display: flex;
     align-items: center;
     justify-content: center;
     background: rgba(255, 255, 255, 0.04);
     border: 1px solid rgba(255, 255, 255, 0.1);
-    border-radius: 3px;
+    border-radius: 4px;
     cursor: pointer;
     transition: all 0.15s ease;
   }
@@ -853,10 +912,12 @@
 
   /* --- Body --- */
   .tutorial-body {
-    padding: 12px 16px;
+    padding: 10px 14px;
     display: flex;
     flex-direction: column;
     gap: 10px;
+    overflow-y: auto;
+    max-height: calc(100vh - 235px);
   }
 
   .tutorial-desc {
@@ -897,11 +958,13 @@
 
   .btn-mission-action {
     align-self: flex-start;
+    height: 30px;
+    box-sizing: border-box;
     display: inline-flex;
     align-items: center;
     gap: 6px;
     margin-top: 4px;
-    padding: 6px 12px;
+    padding: 0 14px;
     background: linear-gradient(135deg, #fde047 0%, #ca8a04 100%);
     border: 1px solid #fef08a;
     border-radius: 4px;
@@ -944,16 +1007,19 @@
     align-items: center;
     justify-content: space-between;
     gap: 10px;
-    padding: 10px 16px 12px;
+    padding: 8px 14px 10px;
     background: rgba(0, 0, 0, 0.4);
     border-top: 1px solid rgba(255, 255, 255, 0.08);
   }
 
   .btn-nav-prev {
+    height: 32px;
+    box-sizing: border-box;
     display: inline-flex;
     align-items: center;
+    justify-content: center;
     gap: 4px;
-    padding: 6px 12px;
+    padding: 0 14px;
     background: rgba(255, 255, 255, 0.05);
     border: 1px solid rgba(255, 255, 255, 0.15);
     border-radius: 4px;
@@ -974,9 +1040,15 @@
   }
 
   .btn-nav-skip {
+    height: 32px;
+    box-sizing: border-box;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     background: transparent;
     border: none;
     color: #64748b;
+    padding: 0 8px;
     font-size: 0.72rem;
     text-decoration: underline;
     cursor: pointer;
@@ -988,10 +1060,13 @@
   }
 
   .btn-nav-next {
+    height: 32px;
+    box-sizing: border-box;
     display: inline-flex;
     align-items: center;
+    justify-content: center;
     gap: 6px;
-    padding: 6px 14px;
+    padding: 0 16px;
     background: rgba(234, 179, 8, 0.2);
     border: 1px solid rgba(234, 179, 8, 0.5);
     border-radius: 4px;
@@ -1019,5 +1094,58 @@
   .btn-nav-next.finish:hover {
     background: linear-gradient(135deg, #34d399 0%, #10b981 100%);
     box-shadow: 0 0 12px rgba(16, 185, 129, 0.5);
+  }
+
+  /* --- Responsividade Completa --- */
+  @media (max-width: 520px) {
+    .ingame-tutorial-container {
+      width: calc(100vw - 16px);
+      right: 8px;
+      top: 60px;
+    }
+    .tutorial-card-header {
+      padding: 8px 10px;
+    }
+    .step-nav {
+      padding: 6px 10px;
+    }
+    .tutorial-body {
+      padding: 8px 10px;
+    }
+    .tutorial-footer {
+      padding: 6px 10px 8px;
+    }
+  }
+
+  @media (max-width: 440px) {
+    .header-btn .btn-text {
+      display: none;
+    }
+    .header-btn {
+      width: 26px;
+      min-width: 26px;
+      padding: 0;
+    }
+    .drag-handle-hint .drag-label {
+      display: none;
+    }
+    .drag-handle-hint {
+      padding: 0 6px;
+    }
+    .step-number {
+      padding: 0 6px;
+      font-size: 0.62rem;
+    }
+    .tutorial-footer {
+      gap: 6px;
+    }
+    .btn-nav-prev,
+    .btn-nav-next {
+      padding: 0 10px;
+      font-size: 0.7rem;
+    }
+    .btn-nav-skip {
+      font-size: 0.68rem;
+    }
   }
 </style>

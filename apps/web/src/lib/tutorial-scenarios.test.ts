@@ -146,5 +146,31 @@ describe("HEGEM-104: Tutorial Guiado da HUD & Cenários Táticos Presetados (Fro
     expect(source).toContain("cloneGameState");
     expect(source).toMatch(/const rawState\s*=\s*getPlainGameState\(game\)/);
   });
+
+  it("verifies InGameTutorialGuide has uniform button heights, balanced spacing, and responsive layout", async () => {
+    const fs = await import("fs");
+    const path = await import("path");
+    const guidePath = path.resolve(__dirname, "../components/InGameTutorialGuide.svelte");
+    const source = fs.readFileSync(guidePath, "utf-8");
+
+    // Header layout structure
+    expect(source).toContain("header-top-bar");
+    expect(source).toContain("header-title-bar");
+    expect(source).toContain("header-actions");
+    expect(source).toContain("header-badge-col");
+
+    // Equal heights & spacing
+    expect(source).toContain("height: 26px;");
+    expect(source).toContain("height: 32px;");
+    expect(source).toContain("white-space: nowrap;");
+
+    // Responsiveness
+    expect(source).toContain("@media (max-width: 520px)");
+    expect(source).toContain("@media (max-width: 440px)");
+    expect(source).toContain("overflow-y: auto;");
+
+    // Zero-emoji policy check
+    expect(EMOJI_REGEX.test(source)).toBe(false);
+  });
 });
 
