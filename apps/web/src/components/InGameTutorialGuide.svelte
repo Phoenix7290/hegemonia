@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onMount } from "svelte";
   import type { GameState } from "@hegemonia/shared";
   import { CLASSIC_MAP } from "@hegemonia/maps";
   import Icon from "./Icon.svelte";
@@ -202,18 +203,118 @@
         break;
     }
   }
+
+  let containerEl: HTMLElement | null = $state(null);
+  let posX = $state<number | null>(null);
+  let posY = $state<number | null>(null);
+  let isDragging = $state(false);
+  let dragOffset = { x: 0, y: 0 };
+
+  onMount(() => {
+    if (typeof window !== "undefined") {
+      const w = window.innerWidth;
+      const targetW = 480;
+      posX = Math.max(16, w - targetW - 20);
+      posY = 70;
+    }
+  });
+
+  function clampPosition(x: number, y: number): { x: number; y: number } {
+    if (typeof window === "undefined" || !containerEl) return { x, y };
+    const w = window.innerWidth;
+    const h = window.innerHeight;
+    const rect = containerEl.getBoundingClientRect();
+    const pad = 10;
+    const clampedX = Math.max(pad, Math.min(w - rect.width - pad, x));
+    const clampedY = Math.max(pad, Math.min(h - rect.height - pad, y));
+    return { x: clampedX, y: clampedY };
+  }
+
+  function handlePointerDown(e: PointerEvent) {
+    if (e.button !== 0) return;
+    const target = e.target as HTMLElement | null;
+    if (target?.closest("button") || target?.closest("input") || target?.closest("a")) {
+      return;
+    }
+    if (!containerEl) return;
+    const rect = containerEl.getBoundingClientRect();
+    dragOffset = {
+      x: e.clientX - rect.left,
+      y: e.clientY - rect.top,
+    };
+    isDragging = true;
+    try {
+      (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    } catch {
+      // ignore
+    }
+  }
+
+  function handlePointerMove(e: PointerEvent) {
+    if (!isDragging || !containerEl) return;
+    const targetX = e.clientX - dragOffset.x;
+    const targetY = e.clientY - dragOffset.y;
+    const clamped = clampPosition(targetX, targetY);
+    posX = clamped.x;
+    posY = clamped.y;
+  }
+
+  function handlePointerUp(e: PointerEvent) {
+    if (isDragging) {
+      isDragging = false;
+      try {
+        (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
+      } catch {
+        // ignore
+      }
+    }
+  }
+
+  function handleWindowResize() {
+    if (posX !== null && posY !== null) {
+      const clamped = clampPosition(posX, posY);
+      posX = clamped.x;
+      posY = clamped.y;
+    }
+  }
+
+  $effect(() => {
+    if (minimized !== undefined && posX !== null && posY !== null && containerEl) {
+      requestAnimationFrame(() => {
+        const clamped = clampPosition(posX!, posY!);
+        posX = clamped.x;
+        posY = clamped.y;
+      });
+    }
+  });
 </script>
 
+<svelte:window onresize={handleWindowResize} />
+
 <aside
+  bind:this={containerEl}
   class="ingame-tutorial-container"
   role="region"
   aria-label="Tutorial Interativo em Tempo Real"
   class:minimized
+  class:is-dragging={isDragging}
+  style={posX !== null && posY !== null ? `left: ${posX}px; top: ${posY}px; right: auto;` : undefined}
 >
   {#if minimized}
     <!-- Barra Tática Minimizada (Pill discreto) -->
-    <div class="tutorial-minimized-pill">
+    <div
+      class="tutorial-minimized-pill"
+      role="toolbar"
+      tabindex="0"
+      aria-label="Barra do tutorial arrastável"
+      onpointerdown={handlePointerDown}
+      onpointermove={handlePointerMove}
+      onpointerup={handlePointerUp}
+      onpointercancel={handlePointerUp}
+      title="Clique e arraste para posicionar o tutorial livremente na tela"
+    >
       <div class="pill-badge">
+        <Icon name="grip" size={12} color="#eab308" />
         <Icon name="compass" size={14} color="#eab308" />
         <span class="pill-label">TUTORIAL EM TEMPO REAL</span>
         <span class="pill-step">[{activeStep + 1}/6]</span>
@@ -254,7 +355,16 @@
       <div class="card-corner br"></div>
 
       <!-- Cabeçalho do Card -->
-      <header class="tutorial-card-header">
+      <header
+        class="tutorial-card-header"
+        tabindex="0"
+        aria-label="Cabeçalho do tutorial arrastável"
+        onpointerdown={handlePointerDown}
+        onpointermove={handlePointerMove}
+        onpointerup={handlePointerUp}
+        onpointercancel={handlePointerUp}
+        title="Clique e arraste para posicionar o tutorial livremente na tela"
+      >
         <div class="header-cluster">
           <div class="header-icon-box">
             <Icon name={currentStep.icon} size={16} color="#eab308" />
@@ -263,6 +373,10 @@
             <div class="header-badge-row">
               <span class="step-badge">{currentStep.badge}</span>
               <span class="step-number">ETAPA {currentStep.stepNumber} DE {TUTORIAL_STEPS.length}</span>
+              <span class="drag-handle-hint">
+                <Icon name="grip" size={11} color="#eab308" />
+                <span>ARRASTAR</span>
+              </span>
             </div>
             <h3 class="tutorial-card-title">{currentStep.title}</h3>
           </div>
@@ -393,15 +507,25 @@
 <style>
   .ingame-tutorial-container {
     position: fixed;
-    top: 66px;
+    top: 70px;
     right: 20px;
-    z-index: 35;
+    z-index: 95;
     width: 480px;
-    max-width: calc(100vw - 40px);
+    max-width: calc(100vw - 20px);
     pointer-events: auto;
     font-family: var(--font-tactical);
     user-select: none;
     animation: fadeInTutorial 0.25s ease-out;
+  }
+
+  .ingame-tutorial-container.is-dragging {
+    transition: none !important;
+  }
+
+  .ingame-tutorial-container.is-dragging .tutorial-card,
+  .ingame-tutorial-container.is-dragging .tutorial-minimized-pill {
+    box-shadow: 0 16px 48px rgba(0, 0, 0, 0.9), 0 0 25px rgba(234, 179, 8, 0.35);
+    border-color: #fde047;
   }
 
   @keyframes fadeInTutorial {
@@ -427,6 +551,12 @@
     border-radius: 6px;
     box-shadow: 0 4px 18px rgba(0, 0, 0, 0.65), 0 0 10px rgba(234, 179, 8, 0.15);
     backdrop-filter: blur(8px);
+    cursor: grab;
+    touch-action: none;
+  }
+
+  .ingame-tutorial-container.is-dragging .tutorial-minimized-pill {
+    cursor: grabbing;
   }
 
   .pill-badge {
@@ -559,6 +689,26 @@
     padding: 12px 16px 8px;
     background: linear-gradient(180deg, rgba(234, 179, 8, 0.12) 0%, rgba(8, 14, 26, 0) 100%);
     border-bottom: 1px solid rgba(234, 179, 8, 0.2);
+    cursor: grab;
+    touch-action: none;
+  }
+
+  .ingame-tutorial-container.is-dragging .tutorial-card-header {
+    cursor: grabbing;
+  }
+
+  .drag-handle-hint {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    font-size: 0.6rem;
+    font-weight: 800;
+    letter-spacing: 0.05em;
+    color: #eab308;
+    background: rgba(234, 179, 8, 0.12);
+    border: 1px solid rgba(234, 179, 8, 0.3);
+    padding: 1px 5px;
+    border-radius: 3px;
   }
 
   .header-cluster {

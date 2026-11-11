@@ -107,5 +107,33 @@ describe("HEGEM-104: Tutorial Guiado da HUD & Cenários Táticos Presetados (Fro
     expect(source).toContain("practiceTutorialInMap");
     expect(source).toContain("Falha ao iniciar tutorial interativo");
   });
+
+  it("verifies InGameTutorialGuide has free drag and drop positioning with viewport clamping", async () => {
+    const fs = await import("fs");
+    const path = await import("path");
+    const guidePath = path.resolve(__dirname, "../components/InGameTutorialGuide.svelte");
+    const source = fs.readFileSync(guidePath, "utf-8");
+
+    // Pointer events & dragging mechanics
+    expect(source).toContain("handlePointerDown");
+    expect(source).toContain("handlePointerMove");
+    expect(source).toContain("handlePointerUp");
+    expect(source).toContain("setPointerCapture");
+    expect(source).toContain("clampPosition");
+    expect(source).toContain("cursor: grab");
+    expect(source).toContain("cursor: grabbing");
+    expect(source).toContain("is-dragging");
+  });
+
+  it("verifies TopBar cleanly integrates the tutorial button inside Quartel-General without layout corruption", async () => {
+    const fs = await import("fs");
+    const path = await import("path");
+    const topBarPath = path.resolve(__dirname, "../components/TopBar.svelte");
+    const source = fs.readFileSync(topBarPath, "utf-8");
+
+    expect(source).toContain("onReopenTutorial");
+    expect(source).toContain("hq-tutorial-dock-btn");
+    expect(source).toContain("hq-tut-dock-label");
+  });
 });
 

@@ -1642,6 +1642,7 @@
         {resetZoom}
         {leaveCurrentRoom}
         {sendAction}
+        onReopenTutorial={!connectedRoom && !showInGameTutorial ? () => { sound.playClick(); showInGameTutorial = true; } : undefined}
       />
 
       <!-- ↖ LEFT SLIDE-OVER TERRITORY COMMAND DOSSIER & BOTTOM-LEFT CONTROLS HINT -->
@@ -1752,19 +1753,6 @@
         }}
         onClose={() => (showInGameTutorial = false)}
       />
-    {:else if !connectedRoom}
-      <button
-        type="button"
-        class="reopen-tutorial-pill"
-        onclick={() => {
-          sound.playClick();
-          showInGameTutorial = true;
-        }}
-        title="Abrir Tutorial Guiado da Partida"
-      >
-        <Icon name="compass" size={14} color="#eab308" />
-        <span>TUTORIAL GUIADO</span>
-      </button>
     {/if}
   {/if}
 
@@ -1958,35 +1946,5 @@
       animation: none;
       opacity: 0.75;
     }
-  }
-
-  .reopen-tutorial-pill {
-    position: fixed;
-    top: 66px;
-    right: 20px;
-    z-index: 35;
-    display: inline-flex;
-    align-items: center;
-    gap: 7px;
-    padding: 6px 14px;
-    background: rgba(8, 14, 26, 0.94);
-    border: 1px solid rgba(234, 179, 8, 0.5);
-    border-radius: 6px;
-    color: #fde047;
-    font-family: var(--font-tactical);
-    font-size: 0.74rem;
-    font-weight: 800;
-    letter-spacing: 0.08em;
-    cursor: pointer;
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.65), 0 0 10px rgba(234, 179, 8, 0.2);
-    backdrop-filter: blur(8px);
-    transition: all 0.15s ease;
-  }
-  .reopen-tutorial-pill:hover {
-    background: rgba(234, 179, 8, 0.2);
-    border-color: #fde047;
-    color: #ffffff;
-    box-shadow: 0 4px 20px rgba(234, 179, 8, 0.4);
-    transform: translateY(-1px);
   }
 </style>

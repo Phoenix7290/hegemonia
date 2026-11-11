@@ -104,6 +104,7 @@
     onFocusTerritory?: (territoryId: string) => void;
     autoCameraFocus?: boolean;
     onToggleAutoCameraFocus?: (val: boolean) => void;
+    onReopenTutorial?: () => void;
   }
 
   let {
@@ -135,6 +136,7 @@
     onFocusTerritory,
     autoCameraFocus = true,
     onToggleAutoCameraFocus,
+    onReopenTutorial,
   }: Props = $props();
 
   let activeDiplomacyTargetId = $state<string | null>(null);
@@ -1247,6 +1249,23 @@
 
     <!-- Structured 2-Row Command Deck -->
     <div class="hq-command-grid">
+      {#if onReopenTutorial}
+        <button
+          type="button"
+          class="hud-btn hq-tutorial-dock-btn"
+          onclick={onReopenTutorial}
+          title="Reabrir Manual Tático Interativo da HUD"
+        >
+          <div class="hq-tut-dock-content">
+            <span class="hq-tut-dock-icon">
+              <Icon name="compass" size={14} color="#eab308" />
+            </span>
+            <span class="hq-tut-dock-label">TUTORIAL GUIADO</span>
+          </div>
+          <span class="hq-tut-dock-badge">REABRIR MANUAL</span>
+        </button>
+      {/if}
+
       <div class="hq-primary-row">
         <button
           class="hud-btn hq-deck-btn"
@@ -3946,6 +3965,64 @@
     gap: 0.35rem;
     min-width: 0;
     width: 100%;
+  }
+  .hq-tutorial-dock-btn {
+    width: 100%;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.36rem 0.65rem;
+    background: linear-gradient(
+      90deg,
+      rgba(234, 179, 8, 0.16) 0%,
+      rgba(20, 30, 52, 0.95) 100%
+    );
+    border: 1px solid rgba(234, 179, 8, 0.45);
+    border-radius: 6px;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 0 10px rgba(234, 179, 8, 0.12);
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+  .hq-tutorial-dock-btn:hover {
+    background: linear-gradient(
+      90deg,
+      rgba(234, 179, 8, 0.28) 0%,
+      rgba(20, 30, 52, 0.98) 100%
+    );
+    border-color: #fde047;
+    box-shadow: 0 0 14px rgba(234, 179, 8, 0.32);
+    transform: translateY(-1px);
+  }
+  .hq-tut-dock-content {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+  }
+  .hq-tut-dock-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    border-radius: 4px;
+    background: rgba(234, 179, 8, 0.2);
+    border: 1px solid rgba(234, 179, 8, 0.4);
+  }
+  .hq-tut-dock-label {
+    font-size: 0.72rem;
+    font-weight: 800;
+    letter-spacing: 0.05em;
+    color: #fef08a;
+  }
+  .hq-tut-dock-badge {
+    font-size: 0.62rem;
+    font-weight: 800;
+    color: #cbd5e1;
+    background: rgba(0, 0, 0, 0.45);
+    padding: 0.14rem 0.45rem;
+    border-radius: 4px;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    letter-spacing: 0.04em;
   }
   .hq-primary-row {
     display: grid;
