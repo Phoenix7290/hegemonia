@@ -12,6 +12,7 @@
     applyAction,
     calculateObjectiveProgress,
     calculateTurnReinforcements,
+    cloneGameState,
     createGame,
     createSeededRng,
     emptyUnitCounts,
@@ -962,6 +963,14 @@
 
   let practiceRng = createSeededRng("tutorial-practice-runtime");
 
+  function getPlainGameState(s: GameState): GameState {
+    try {
+      return $state.snapshot(s);
+    } catch {
+      return cloneGameState(s);
+    }
+  }
+
   function checkAndRunPracticeBotTurn() {
     if (!game || roomStatus !== "playing" || connectedRoom) return;
     const current = game.players[game.turnIndex];
@@ -973,38 +982,41 @@
         const active = game.players[game.turnIndex];
         if (active.id === current.id) {
           try {
-            const myTerrs = Object.values(game.territories).filter(
+            let stateStep = getPlainGameState(game);
+            const myTerrs = Object.values(stateStep.territories).filter(
               (t) => t.ownerId === current.id
             );
-            if (active.unplacedArmies > 0 && myTerrs.length > 0) {
-              game = applyAction(
-                game,
+            const activePlayer = stateStep.players[stateStep.turnIndex];
+            if (activePlayer && activePlayer.unplacedArmies > 0 && myTerrs.length > 0) {
+              stateStep = applyAction(
+                stateStep,
                 current.id,
                 {
                   type: "deploy",
                   territoryId: myTerrs[0].id,
-                  armies: active.unplacedArmies,
+                  armies: activePlayer.unplacedArmies,
                 },
                 practiceRng,
                 CLASSIC_MAP
               );
             }
-            if (game.round > 1 && game.phase === "deploy") {
-              game = applyAction(
-                game,
+            if (stateStep.round > 1 && stateStep.phase === "deploy") {
+              stateStep = applyAction(
+                stateStep,
                 current.id,
                 { type: "end_deploy" },
                 practiceRng,
                 CLASSIC_MAP
               );
             }
-            game = applyAction(
-              game,
+            stateStep = applyAction(
+              stateStep,
               current.id,
               { type: "end_turn" },
               practiceRng,
               CLASSIC_MAP
             );
+            game = stateStep;
             turnDeadline = Date.now() + 120_000;
             remainingSeconds = 120;
             checkAndRunPracticeBotTurn();
@@ -1109,7 +1121,7 @@
 
       showInGameTutorial = true;
       activeTutorialStep = 0;
-      game = newGame;
+      game = cloneGameState(newGame);
       myPlayerId = "human";
       roomStatus = "playing";
       turnDeadline = Date.now() + 180_000;
@@ -1130,9 +1142,10 @@
     }
     if (game && myPlayerId && roomStatus === "playing") {
       try {
-        const prevCombat = game.lastCombat;
+        const rawState = getPlainGameState(game);
+        const prevCombat = rawState.lastCombat;
         const nextState = applyAction(
-          game,
+          rawState,
           myPlayerId,
           action as GameAction,
           practiceRng,

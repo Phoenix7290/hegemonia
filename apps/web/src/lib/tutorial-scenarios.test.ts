@@ -135,5 +135,16 @@ describe("HEGEM-104: Tutorial Guiado da HUD & Cenários Táticos Presetados (Fro
     expect(source).toContain("hq-tutorial-dock-btn");
     expect(source).toContain("hq-tut-dock-label");
   });
+
+  it("verifies App.svelte unproxies reactive state to prevent structuredClone DOMExceptions during actions", async () => {
+    const fs = await import("fs");
+    const path = await import("path");
+    const appPath = path.resolve(__dirname, "../App.svelte");
+    const source = fs.readFileSync(appPath, "utf-8");
+
+    expect(source).toContain("getPlainGameState");
+    expect(source).toContain("cloneGameState");
+    expect(source).toMatch(/const rawState\s*=\s*getPlainGameState\(game\)/);
+  });
 });
 
