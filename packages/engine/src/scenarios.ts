@@ -1,6 +1,6 @@
-import type { GameMapDef } from "@hegemonia/maps";
 import { CLASSIC_MAP } from "@hegemonia/maps";
 import type {
+  GameMapDef,
   GameState,
   TacticalScenarioId,
   UnitCounts,
