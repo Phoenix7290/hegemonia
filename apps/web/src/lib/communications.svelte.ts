@@ -7,6 +7,8 @@ import {
   type CommunicationSyncPayload,
   type IceServerConfig,
   type PlayerColor,
+  type TacticalPingEvent,
+  type TacticalPingKind,
   type VoicePresence,
 } from "@hegemonia/shared";
 import { sound } from "../audio";
@@ -100,6 +102,9 @@ export class CommunicationsController {
   error = $state("");
   microphones = $state<MediaDeviceInfo[]>([]);
   myPlayerId = $state("");
+  activePings = $state<TacticalPingEvent[]>([]);
+
+  private pingTimeouts = new Map<string, ReturnType<typeof setTimeout>>();
 
   activeMessages = $derived(
     this.messages.filter(
@@ -192,6 +197,18 @@ export class CommunicationsController {
       void this.radio.handleSignal(payload);
     });
 
+    room.onMessage("tactical_ping", (ping: TacticalPingEvent) => {
+      if (this.activePings.some((entry) => entry.id === ping.id)) return;
+      this.activePings = [...this.activePings, ping];
+      sound.playTacticalPing(ping.kind);
+      const ttl = Math.max(1500, Math.min(15_000, ping.durationMs || 7000));
+      const timer = setTimeout(() => {
+        this.pingTimeouts.delete(ping.id);
+        this.activePings = this.activePings.filter((entry) => entry.id !== ping.id);
+      }, ttl);
+      this.pingTimeouts.set(ping.id, timer);
+    });
+
     room.send("comms_sync", {});
   }
 
@@ -210,6 +227,7 @@ export class CommunicationsController {
   }
 
   detach(): void {
+    this.clearPings();
     this.radio.dispose();
     this.room = null;
     this.channels = [];
@@ -253,6 +271,19 @@ export class CommunicationsController {
     if (!this.room || !clean) return;
     this.room.send("chat", { channelId: this.activeChannelId, text: clean });
     this.drafts = { ...this.drafts, [this.activeChannelId]: "" };
+  }
+
+  sendTacticalPing(territoryId: string, kind: TacticalPingKind): void {
+    if (!this.room || !territoryId) return;
+    this.room.send("tactical_ping", { territoryId, kind });
+  }
+
+  private clearPings(): void {
+    for (const timer of this.pingTimeouts.values()) {
+      clearTimeout(timer);
+    }
+    this.pingTimeouts.clear();
+    this.activePings = [];
   }
 
   setDraft(text: string): void {

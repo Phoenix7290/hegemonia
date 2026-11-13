@@ -1,6 +1,8 @@
 // Hegemonia Grand Strategy Audio Engine (Web Audio API + Custom MP3 Player + Independent SFX/Music Equalizer)
 // HEGEM-93: Tactical SFX Audio Engine with HOI4 Cues, ReplayGain & Broadcast Limiter Dynamics
 
+import type { TacticalPingKind } from "@hegemonia/shared";
+
 export interface ReplayGainEntry {
   category: "combat" | "turn" | "economy" | "global" | "ui" | "music";
   targetLufs: number;
@@ -25,6 +27,7 @@ export const REPLAY_GAIN_CONFIG: Record<string, ReplayGainEntry> = {
   faction_eliminated: { category: "global", targetLufs: -16, gainDb: -2.0 },
   victory_match: { category: "global", targetLufs: -14, gainDb: -1.5 },
   click: { category: "ui", targetLufs: -20, gainDb: -6.0 },
+  tactical_ping: { category: "ui", targetLufs: -17, gainDb: -3.0 },
   dice: { category: "ui", targetLufs: -18, gainDb: -3.0 },
   conquest: { category: "ui", targetLufs: -15, gainDb: -3.0 },
   music: { category: "music", targetLufs: -18, gainDb: -4.0 },
@@ -811,6 +814,51 @@ class SoundEngine {
     g.connect(this.sfxGain);
     osc.start();
     osc.stop(this.ctx.currentTime + 0.12);
+  }
+
+  /**
+   * HEGEM-99: Sinal sonoro distinto de ping tático aliado no mapa.
+   */
+  public playTacticalPing(kind: TacticalPingKind) {
+    if (this.isMuted || this.sfxVolume <= 0) return;
+    this.initContext();
+    if (!this.ctx || !this.sfxGain) return;
+
+    const now = this.ctx.currentTime;
+    const patterns: Record<TacticalPingKind, Array<{ f: number; t: number; dur: number; wave: OscillatorType }>> = {
+      defense: [
+        { f: 660, t: 0, dur: 0.09, wave: "sine" },
+        { f: 880, t: 0.08, dur: 0.12, wave: "sine" },
+      ],
+      attack: [
+        { f: 980, t: 0, dur: 0.07, wave: "triangle" },
+        { f: 1180, t: 0.08, dur: 0.1, wave: "triangle" },
+      ],
+      danger: [
+        { f: 880, t: 0, dur: 0.08, wave: "sawtooth" },
+        { f: 620, t: 0.09, dur: 0.12, wave: "sawtooth" },
+      ],
+      rally: [
+        { f: 523.25, t: 0, dur: 0.08, wave: "sine" },
+        { f: 659.25, t: 0.07, dur: 0.08, wave: "sine" },
+        { f: 783.99, t: 0.14, dur: 0.14, wave: "sine" },
+      ],
+    };
+
+    for (const note of patterns[kind]) {
+      const startAt = now + note.t;
+      const osc = this.ctx.createOscillator();
+      const g = this.ctx.createGain();
+      osc.type = note.wave;
+      osc.frequency.setValueAtTime(note.f, startAt);
+      g.gain.setValueAtTime(0.001, startAt);
+      g.gain.linearRampToValueAtTime(0.16, startAt + 0.015);
+      g.gain.exponentialRampToValueAtTime(0.001, startAt + note.dur);
+      osc.connect(g);
+      g.connect(this.sfxGain);
+      osc.start(startAt);
+      osc.stop(startAt + note.dur + 0.01);
+    }
   }
 
   public playDice() {

@@ -27,6 +27,7 @@ describe("HEGEM-93: Tactical Audio & SFX Engine with User Audio Assets", () => {
       "faction_eliminated",
       "victory_match",
       "click",
+      "tactical_ping",
       "dice",
       "conquest",
       "music",
@@ -87,6 +88,10 @@ describe("HEGEM-93: Tactical Audio & SFX Engine with User Audio Assets", () => {
     expect(() => sound.playConquest()).not.toThrow();
     expect(() => sound.playTurn()).not.toThrow();
     expect(() => sound.playCommsNotification()).not.toThrow();
+    expect(() => sound.playTacticalPing("defense")).not.toThrow();
+    expect(() => sound.playTacticalPing("attack")).not.toThrow();
+    expect(() => sound.playTacticalPing("danger")).not.toThrow();
+    expect(() => sound.playTacticalPing("rally")).not.toThrow();
   });
 
   it("handles volume adjustments, mute toggling and legacy UI getters correctly", () => {

@@ -19,6 +19,7 @@
     DEFAULT_MARKET_CONFIG,
     findValidTradeTriplet,
     getTradeBonusArmies,
+    hasTerritoryBuilding,
     playerHasMarket,
   } from "@hegemonia/engine";
   import {
@@ -86,6 +87,7 @@
     mapMode?: "cartographic" | "geopolitical" | "regional" | "economic";
     cleanMapMode: boolean;
     highlightObjectiveTerritories: boolean;
+    pingMode?: boolean;
     activeRightDrawer?: "cards" | "objective" | "audio" | "market" | null;
     showHudManager?: boolean;
     objectiveProgress: {
@@ -123,6 +125,7 @@
     mapMode = $bindable(),
     cleanMapMode = $bindable(),
     highlightObjectiveTerritories = $bindable(),
+    pingMode = $bindable(false),
     activeRightDrawer = $bindable(null),
     showHudManager = $bindable(false),
     objectiveProgress,
@@ -232,15 +235,88 @@
     ),
   );
 
-  let myAircraftTerritoryId = $derived.by(() => {
-    if (!game || !myPlayerId) return null;
-    const found = Object.values(game.territories).find(
-      (t) =>
-        t.ownerId === myPlayerId &&
-        (t.units?.aircraft ?? 0) >= 1 &&
-        t.armies >= 2,
+  let myAircraftTerritories = $derived.by(() => {
+    if (!game || !myPlayerId) return [];
+    return Object.values(game.territories)
+      .filter(
+        (t) =>
+          t.ownerId === myPlayerId &&
+          (t.units?.aircraft ?? 0) >= 1 &&
+          t.armies >= 2,
+      )
+      .sort((a, b) => {
+        const aAir = hasTerritoryBuilding(a, "airfield") ? 1 : 0;
+        const bAir = hasTerritoryBuilding(b, "airfield") ? 1 : 0;
+        if (aAir !== bAir) return bAir - aAir;
+        return (b.units?.aircraft ?? 0) - (a.units?.aircraft ?? 0);
+      });
+  });
+
+  let targetPartnerTerritories = $derived.by(() => {
+    if (!game || !activeDiplomacyTarget) return [];
+    return Object.values(game.territories)
+      .filter((t) => t.ownerId === activeDiplomacyTarget.id)
+      .sort((a, b) => {
+        const aCap = activeDiplomacyTarget.capitalTerritoryId === a.id ? 1 : 0;
+        const bCap = activeDiplomacyTarget.capitalTerritoryId === b.id ? 1 : 0;
+        if (aCap !== bCap) return bCap - aCap;
+        const aAir = hasTerritoryBuilding(a, "airfield") ? 1 : 0;
+        const bAir = hasTerritoryBuilding(b, "airfield") ? 1 : 0;
+        if (aAir !== bAir) return bAir - aAir;
+        return getTerritoryName(a.id).localeCompare(getTerritoryName(b.id));
+      });
+  });
+
+  let aircraftOriginId = $state<string>("");
+  let aircraftDestId = $state<string>("");
+  let aircraftTransferQty = $state<number>(1);
+  let lendLeaseAmountScale = $state<1 | 3>(1);
+
+  let selectedAircraftOrigin = $derived(
+    myAircraftTerritories.find((t) => t.id === aircraftOriginId) ??
+      myAircraftTerritories[0] ??
+      null,
+  );
+  let selectedAircraftDest = $derived(
+    targetPartnerTerritories.find((t) => t.id === aircraftDestId) ??
+      targetPartnerTerritories[0] ??
+      null,
+  );
+  let maxTransferableAircraft = $derived.by(() => {
+    if (!selectedAircraftOrigin) return 1;
+    return Math.max(
+      1,
+      Math.min(
+        selectedAircraftOrigin.units?.aircraft ?? 1,
+        selectedAircraftOrigin.armies - 1,
+      ),
     );
-    return found?.id ?? null;
+  });
+
+  $effect(() => {
+    if (selectedAircraftOrigin && aircraftOriginId !== selectedAircraftOrigin.id) {
+      aircraftOriginId = selectedAircraftOrigin.id;
+    }
+    if (!selectedAircraftOrigin && aircraftOriginId !== "") {
+      aircraftOriginId = "";
+    }
+  });
+
+  $effect(() => {
+    if (selectedAircraftDest && aircraftDestId !== selectedAircraftDest.id) {
+      aircraftDestId = selectedAircraftDest.id;
+    }
+    if (!selectedAircraftDest && aircraftDestId !== "") {
+      aircraftDestId = "";
+    }
+  });
+
+  $effect(() => {
+    if (aircraftTransferQty > maxTransferableAircraft) {
+      aircraftTransferQty = maxTransferableAircraft;
+    } else if (aircraftTransferQty < 1) {
+      aircraftTransferQty = 1;
+    }
   });
 
   let myEconomyIncome = $derived.by(() => {
@@ -426,12 +502,14 @@
   }
 
   function handleSendCoalitionAircraft(targetPlayerId: string) {
-    if (!myAircraftTerritoryId) return;
+    if (!selectedAircraftOrigin || !selectedAircraftDest) return;
+    const qty = Math.max(1, Math.min(maxTransferableAircraft, aircraftTransferQty));
     sendAction({
       type: "send_coalition_aircraft",
       targetPlayerId,
-      fromTerritoryId: myAircraftTerritoryId,
-      quantity: 1,
+      fromTerritoryId: selectedAircraftOrigin.id,
+      toTerritoryId: selectedAircraftDest.id,
+      quantity: qty,
     });
   }
 </script>
@@ -793,70 +871,169 @@
 
           {#if (targetTreatyWithMe?.status === "active" && targetTreatyWithMe.type === "alliance") || inSameCoalitionWithTarget}
             {@const myRes = myPlayerState?.resources ?? { money: 0, steel: 0, oil: 0, gold: 0 }}
+            {@const lendLeaseBlockedByExtermination =
+              myPlayerState?.doctrineId === "extermination" ||
+              activeDiplomacyTarget.doctrineId === "extermination"}
+            {@const moneyAmt = lendLeaseAmountScale === 3 ? 10 : 3}
+            {@const matAmt = lendLeaseAmountScale}
             <div class="dossier-section lend-lease-section">
-              <div class="dossier-section-title">
-                <Icon name={inSameCoalitionWithTarget ? "swords" : "handshake"} size={12} />
-                <span>
-                  {inSameCoalitionWithTarget
-                    ? "Logística de Coalizão (Lend-Lease & Aeronaves)"
-                    : "Ajuda Militar de Aliança (Lend-Lease)"}
+              <div class="dossier-section-title lend-lease-header-row">
+                <span class="lend-lease-title-left">
+                  <Icon name={inSameCoalitionWithTarget ? "swords" : "handshake"} size={12} />
+                  <span>
+                    {inSameCoalitionWithTarget
+                      ? "Logística de Coalizão (Lend-Lease & Aeronaves)"
+                      : "Ajuda Militar de Aliança (Lend-Lease)"}
+                  </span>
                 </span>
+                {#if !lendLeaseBlockedByExtermination}
+                  <div class="lend-lease-scale-pills">
+                    <button
+                      type="button"
+                      class="scale-pill"
+                      class:active={lendLeaseAmountScale === 1}
+                      onclick={() => (lendLeaseAmountScale = 1)}
+                    >
+                      1x
+                    </button>
+                    <button
+                      type="button"
+                      class="scale-pill"
+                      class:active={lendLeaseAmountScale === 3}
+                      onclick={() => (lendLeaseAmountScale = 3)}
+                    >
+                      3x
+                    </button>
+                  </div>
+                {/if}
               </div>
-              <div class="lend-lease-grid">
-                <button
-                  type="button"
-                  class="btn-lend-lease"
-                  disabled={myRes.money < 3}
-                  onclick={() => handleSendAllianceAid(activeDiplomacyTarget.id, { money: 3 })}
-                  title="Enviar $3 do Tesouro Nacional para este aliado"
-                >
-                  <Icon name="coins" size={12} />
-                  <span>Enviar $3</span>
-                </button>
-                <button
-                  type="button"
-                  class="btn-lend-lease"
-                  disabled={myRes.steel < 1}
-                  onclick={() => handleSendAllianceAid(activeDiplomacyTarget.id, { steel: 1 })}
-                  title="Enviar 1 Aço para este aliado"
-                >
-                  <Icon name="steel" size={12} />
-                  <span>+1 Aço</span>
-                </button>
-                <button
-                  type="button"
-                  class="btn-lend-lease"
-                  disabled={myRes.oil < 1}
-                  onclick={() => handleSendAllianceAid(activeDiplomacyTarget.id, { oil: 1 })}
-                  title="Enviar 1 Petróleo para este aliado"
-                >
-                  <Icon name="oil" size={12} />
-                  <span>+1 Petróleo</span>
-                </button>
-                <button
-                  type="button"
-                  class="btn-lend-lease"
-                  disabled={myRes.gold < 1}
-                  onclick={() => handleSendAllianceAid(activeDiplomacyTarget.id, { gold: 1 })}
-                  title="Enviar 1 Ouro para este aliado"
-                >
-                  <Icon name="gold" size={12} />
-                  <span>+1 Ouro</span>
-                </button>
-              </div>
+
+              {#if lendLeaseBlockedByExtermination}
+                <div class="coalition-locked-box">
+                  <Icon name="lock" size={12} />
+                  <span>
+                    {myPlayerState?.doctrineId === "extermination"
+                      ? "Sua Doutrina de Extermínio opera em economia nula (0 0 0 0) e bloqueia envios Lend-Lease."
+                      : "Este aliado opera sob Doutrina de Extermínio (economia nula) e não pode receber suprimentos."}
+                  </span>
+                </div>
+              {:else}
+                <div class="lend-lease-grid">
+                  <button
+                    type="button"
+                    class="btn-lend-lease"
+                    disabled={myRes.money < moneyAmt}
+                    onclick={() => handleSendAllianceAid(activeDiplomacyTarget.id, { money: moneyAmt })}
+                    title={`Enviar $${moneyAmt} do Tesouro Nacional para este aliado`}
+                  >
+                    <Icon name="coins" size={12} />
+                    <span>+${moneyAmt}</span>
+                  </button>
+                  <button
+                    type="button"
+                    class="btn-lend-lease"
+                    disabled={myRes.steel < matAmt}
+                    onclick={() => handleSendAllianceAid(activeDiplomacyTarget.id, { steel: matAmt })}
+                    title={`Enviar ${matAmt} Aço para este aliado`}
+                  >
+                    <Icon name="steel" size={12} />
+                    <span>+{matAmt} Aço</span>
+                  </button>
+                  <button
+                    type="button"
+                    class="btn-lend-lease"
+                    disabled={myRes.oil < matAmt}
+                    onclick={() => handleSendAllianceAid(activeDiplomacyTarget.id, { oil: matAmt })}
+                    title={`Enviar ${matAmt} Petróleo para este aliado`}
+                  >
+                    <Icon name="oil" size={12} />
+                    <span>+{matAmt} Petróleo</span>
+                  </button>
+                  <button
+                    type="button"
+                    class="btn-lend-lease"
+                    disabled={myRes.gold < matAmt}
+                    onclick={() => handleSendAllianceAid(activeDiplomacyTarget.id, { gold: matAmt })}
+                    title={`Enviar ${matAmt} Ouro para este aliado`}
+                  >
+                    <Icon name="gold" size={12} />
+                    <span>+{matAmt} Ouro</span>
+                  </button>
+                </div>
+              {/if}
+
               {#if inSameCoalitionWithTarget}
-                <button
-                  type="button"
-                  class="btn-coalition-aircraft"
-                  disabled={!myAircraftTerritoryId}
-                  onclick={() => handleSendCoalitionAircraft(activeDiplomacyTarget.id)}
-                  title={myAircraftTerritoryId
-                    ? "Transferir 1 Aeronave de combate diretamente para a base do seu parceiro de Coalizão"
-                    : "Você precisa ter ao menos 1 Aeronave em um território com mais de 1 divisão para transferir"}
-                >
-                  <Icon name="aircraft" size={13} />
-                  <span>Transferir +1 Aeronave de Coalizão</span>
-                </button>
+                <div class="coalition-aircraft-panel">
+                  <div class="coalition-aircraft-row">
+                    <label class="aircraft-select-group">
+                      <span>Base de Origem</span>
+                      <select
+                        bind:value={aircraftOriginId}
+                        disabled={myAircraftTerritories.length === 0}
+                      >
+                        {#if myAircraftTerritories.length === 0}
+                          <option value="">Sem esquadrilhas elegíveis</option>
+                        {:else}
+                          {#each myAircraftTerritories as orig (orig.id)}
+                            {@const avail = Math.min(orig.units?.aircraft ?? 0, orig.armies - 1)}
+                            <option value={orig.id}>
+                              {getTerritoryName(orig.id)} ({avail} disp.{hasTerritoryBuilding(orig, "airfield") ? " • Aeródromo" : ""})
+                            </option>
+                          {/each}
+                        {/if}
+                      </select>
+                    </label>
+
+                    <label class="aircraft-select-group">
+                      <span>Base Aliada de Destino</span>
+                      <select
+                        bind:value={aircraftDestId}
+                        disabled={targetPartnerTerritories.length === 0}
+                      >
+                        {#each targetPartnerTerritories as dest (dest.id)}
+                          <option value={dest.id}>
+                            {getTerritoryName(dest.id)}{activeDiplomacyTarget.capitalTerritoryId === dest.id ? " (Capital)" : hasTerritoryBuilding(dest, "airfield") ? " (Aeródromo)" : ""}
+                          </option>
+                        {/each}
+                      </select>
+                    </label>
+                  </div>
+
+                  <div class="coalition-aircraft-actions">
+                    <div class="aircraft-qty-stepper">
+                      <button
+                        type="button"
+                        disabled={!selectedAircraftOrigin || aircraftTransferQty <= 1}
+                        onclick={() => (aircraftTransferQty = Math.max(1, aircraftTransferQty - 1))}
+                        aria-label="Reduzir aeronaves"
+                      >
+                        -
+                      </button>
+                      <span>{aircraftTransferQty}</span>
+                      <button
+                        type="button"
+                        disabled={!selectedAircraftOrigin || aircraftTransferQty >= maxTransferableAircraft}
+                        onclick={() =>
+                          (aircraftTransferQty = Math.min(maxTransferableAircraft, aircraftTransferQty + 1))}
+                        aria-label="Aumentar aeronaves"
+                      >
+                        +
+                      </button>
+                    </div>
+                    <button
+                      type="button"
+                      class="btn-coalition-aircraft"
+                      disabled={!selectedAircraftOrigin || !selectedAircraftDest}
+                      onclick={() => handleSendCoalitionAircraft(activeDiplomacyTarget.id)}
+                      title={selectedAircraftOrigin && selectedAircraftDest
+                        ? `Transferir ${aircraftTransferQty} aeronave(s) de ${getTerritoryName(selectedAircraftOrigin.id)} para ${getTerritoryName(selectedAircraftDest.id)}`
+                        : "Você precisa ter ao menos 1 Aeronave em um território com mais de 1 divisão para transferir"}
+                    >
+                      <Icon name="aircraft" size={13} />
+                      <span>Transferir +{aircraftTransferQty} Aeronave{aircraftTransferQty > 1 ? "s" : ""}</span>
+                    </button>
+                  </div>
+                </div>
               {/if}
             </div>
           {/if}
@@ -1492,7 +1669,7 @@
           </div>
         </div>
 
-        <!-- Row 3: Clean Vision & Camera Zoom Cluster -->
+        <!-- Row 3: Clean Vision, Tactical Ping & Camera Zoom Cluster -->
         <div class="mode-row camera-row">
           <button
             class="mode-btn clean-mode-tab"
@@ -1502,6 +1679,17 @@
           >
             <Icon name={cleanMapMode ? "eye-off" : "eye"} size={12} />
             <span>{cleanMapMode ? t("mode_clean_active") : t("mode_clean_label")}</span>
+          </button>
+
+          <button
+            class="mode-btn ping-mode-tab"
+            class:active={pingMode}
+            onclick={() => (pingMode = !pingMode)}
+            title={t("comms_ping_mode_title")}
+            data-testid="toggle-ping-mode"
+          >
+            <Icon name="target" size={12} />
+            <span>{pingMode ? t("comms_ping_mode_active") : t("comms_ping_mode_label")}</span>
           </button>
 
           <div class="zoom-cluster">
@@ -4328,11 +4516,108 @@
     border-color: rgba(250, 204, 21, 0.65);
     color: #fef08a;
   }
+  .lend-lease-header-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.4rem;
+  }
+  .lend-lease-title-left {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+  }
+  .lend-lease-scale-pills {
+    display: inline-flex;
+    gap: 0.25rem;
+  }
+  .scale-pill {
+    padding: 0.12rem 0.42rem;
+    font-size: 0.65rem;
+    font-weight: 800;
+    font-family: var(--font-mono);
+    border-radius: 4px;
+    border: 1px solid rgba(148, 163, 184, 0.35);
+    background: rgba(15, 23, 42, 0.85);
+    color: #94a3b8;
+    cursor: pointer;
+  }
+  .scale-pill.active {
+    background: rgba(16, 185, 129, 0.22);
+    border-color: rgba(52, 211, 153, 0.65);
+    color: #6ee7b7;
+  }
   .lend-lease-grid {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 0.35rem;
     margin-bottom: 0.4rem;
+  }
+  .coalition-aircraft-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+    margin-top: 0.4rem;
+    padding-top: 0.45rem;
+    border-top: 1px solid rgba(56, 189, 248, 0.2);
+  }
+  .coalition-aircraft-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.35rem;
+  }
+  .aircraft-select-group {
+    display: flex;
+    flex-direction: column;
+    gap: 0.18rem;
+  }
+  .aircraft-select-group span {
+    font-size: 0.62rem;
+    font-weight: 700;
+    color: #94a3b8;
+    text-transform: uppercase;
+  }
+  .aircraft-select-group select {
+    width: 100%;
+    background: rgba(5, 9, 18, 0.92);
+    color: #e2e8f0;
+    border: 1px solid rgba(56, 189, 248, 0.35);
+    border-radius: 5px;
+    padding: 0.28rem 0.35rem;
+    font-size: 0.7rem;
+  }
+  .coalition-aircraft-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+  }
+  .aircraft-qty-stepper {
+    display: inline-flex;
+    align-items: center;
+    border: 1px solid rgba(56, 189, 248, 0.4);
+    border-radius: 6px;
+    background: rgba(5, 9, 18, 0.9);
+    overflow: hidden;
+  }
+  .aircraft-qty-stepper button {
+    padding: 0.34rem 0.5rem;
+    background: transparent;
+    border: 0;
+    color: #7dd3fc;
+    font-weight: 800;
+    cursor: pointer;
+  }
+  .aircraft-qty-stepper button:disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
+  }
+  .aircraft-qty-stepper span {
+    min-width: 1.4rem;
+    text-align: center;
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    font-weight: 800;
+    color: #f8fafc;
   }
   .btn-lend-lease,
   .btn-coalition-aircraft {
@@ -4351,7 +4636,7 @@
     cursor: pointer;
   }
   .btn-coalition-aircraft {
-    width: 100%;
+    flex: 1;
     border-color: rgba(56, 189, 248, 0.6);
     background: rgba(14, 116, 144, 0.25);
     color: #7dd3fc;
@@ -4540,10 +4825,16 @@
     color: #fee2e2;
     background: rgba(239, 68, 68, 0.28);
   }
-  .mode-btn.clean-mode-tab {
+  .mode-btn.clean-mode-tab,
+  .mode-btn.ping-mode-tab {
     display: inline-flex;
     align-items: center;
     gap: 0.3rem;
+  }
+  .mode-btn.ping-mode-tab.active {
+    border-color: #38bdf8;
+    color: #e0f2fe;
+    background: rgba(14, 165, 233, 0.24);
   }
   .zoom-cluster {
     display: inline-flex;

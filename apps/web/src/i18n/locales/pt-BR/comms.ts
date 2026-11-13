@@ -71,4 +71,13 @@ export const ptBRComms: TranslationCatalog = {
   comms_toggle_chat_size: "Alternar tamanho do chat",
   comms_close_tab: "Fechar aba {title}",
   comms_dismiss_error: "Dispensar erro",
+
+  // Tactical Map Pings (HEGEM-99)
+  comms_ping_defense: "DEFENDER",
+  comms_ping_attack: "ATACAR",
+  comms_ping_danger: "PERIGO",
+  comms_ping_rally: "REUNIR",
+  comms_ping_mode_label: "Ping",
+  comms_ping_mode_active: "Ping Ativo",
+  comms_ping_mode_title: "Enviar ping tático para aliados (ou Alt + Clique no território)",
 };

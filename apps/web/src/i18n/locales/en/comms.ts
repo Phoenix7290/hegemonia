@@ -71,4 +71,13 @@ export const enComms: TranslationCatalog = {
   comms_toggle_chat_size: "Toggle chat size",
   comms_close_tab: "Close {title} tab",
   comms_dismiss_error: "Dismiss error",
+
+  // Tactical Map Pings (HEGEM-99)
+  comms_ping_defense: "DEFEND",
+  comms_ping_attack: "ATTACK",
+  comms_ping_danger: "DANGER",
+  comms_ping_rally: "RALLY",
+  comms_ping_mode_label: "Ping",
+  comms_ping_mode_active: "Ping On",
+  comms_ping_mode_title: "Send tactical ping to allies (or Alt + Click territory)",
 };

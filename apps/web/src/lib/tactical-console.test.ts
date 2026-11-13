@@ -336,5 +336,27 @@ describe("Left Slide-Over Territory Command & Military Engineering Dossier", () 
     expect(objCode).toContain('class="confirm-objective-btn"');
     expect(objCode).toContain('class="card-corner tl"');
     expect(objCode).toContain("Compatibilidade Tática Aprovada");
+    expect(objCode).toContain("onPreviewObjective");
+  });
+
+  it("verifies HEGEM-144 objective map preview glow, HEGEM-99 tactical pings, HEGEM-143 air transfer controls, and HEGEM-145 white faction centering", () => {
+    const mapCode = readFileSync(resolve(__dirname, "../components/TacticalMap.svelte"), "utf-8");
+    expect(mapCode).toContain("previewObjectiveTargetTerritoryIds");
+    expect(mapCode).toContain("objective-preview-aura");
+    expect(mapCode).toContain('class="layer-tactical-pings"');
+    expect(mapCode).toContain('data-testid="tactical-ping-radial"');
+    expect(mapCode).toContain("tacticalRadarWave");
+
+    const topBarCode = readFileSync(resolve(__dirname, "../components/TopBar.svelte"), "utf-8");
+    expect(topBarCode).toContain('data-testid="toggle-ping-mode"');
+    expect(topBarCode).toContain("aircraftOriginId");
+    expect(topBarCode).toContain("aircraftDestId");
+    expect(topBarCode).toContain("aircraftTransferQty");
+    expect(topBarCode).toContain("lendLeaseBlockedByExtermination");
+    expect(topBarCode).toContain("coalition-locked-box");
+
+    const ccCode = readFileSync(resolve(__dirname, "../components/CommandCenter.svelte"), "utf-8");
+    expect(ccCode).toContain("class:faction-white={c === \"white\"}");
+    expect(ccCode).toContain(".faction-choice-card.faction-white");
   });
 });

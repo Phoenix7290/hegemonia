@@ -39,6 +39,7 @@
     GameState,
     MatchOrigin,
     MatchmakingStatus,
+    ObjectiveCard,
     PlayerColor,
     PublicQueueMode,
     TacticalScenarioId,
@@ -250,6 +251,7 @@
 
   // Objective Map Visualizer State
   let highlightObjectiveTerritories = $state(false);
+  let pingMode = $state(false);
 
   // Modular HUD Dock Visibility State (Customizer)
   let showHudManager = $state(false);
@@ -297,9 +299,11 @@
   let myPlayerState = $derived(game?.players.find((p) => p.id === myPlayerId) ?? null);
   let amIHost = $derived(lobbyPlayers.find((p) => p.token === myPlayerId)?.isHost ?? false);
 
-  let objectiveTargetTerritoryIds = $derived.by(() => {
-    if (!myPlayerState || !game) return new Set<string>();
-    const rule = myPlayerState.objective.rule;
+  let previewedObjective = $state<ObjectiveCard | null>(null);
+
+  function resolveObjectiveTargetIds(objective: ObjectiveCard | null | undefined): Set<string> {
+    if (!objective || !game) return new Set<string>();
+    const rule = objective.rule;
     const targetIds = new Set<string>();
     if (rule.type === "specific_territories") {
       for (const tid of rule.territoryIds) targetIds.add(tid);
@@ -321,6 +325,16 @@
       }
     }
     return targetIds;
+  }
+
+  let objectiveTargetTerritoryIds = $derived.by(() => {
+    if (!myPlayerState || !game) return new Set<string>();
+    return resolveObjectiveTargetIds(myPlayerState.objective);
+  });
+
+  let previewObjectiveTargetTerritoryIds = $derived.by(() => {
+    if (!myPlayerState?.pendingObjectiveChoice || !game) return new Set<string>();
+    return resolveObjectiveTargetIds(previewedObjective);
   });
 
   let objectiveProgress = $derived.by(() => {
@@ -523,6 +537,7 @@
       inspectedTerritoryId = null;
       activeRightDrawer = null;
       showHudManager = false;
+      pingMode = false;
     }
   }
 
@@ -1574,7 +1589,14 @@
       {cleanMapMode}
       {highlightObjectiveTerritories}
       {objectiveTargetTerritoryIds}
+      {previewObjectiveTargetTerritoryIds}
       combatAnimations={activeCombatAnimations}
+      activeTacticalPings={communications.activePings}
+      {pingMode}
+      onSendTacticalPing={(territoryId, kind) => {
+        communications.sendTacticalPing(territoryId, kind);
+        pingMode = false;
+      }}
       {isCameraTransitioning}
       bind:selectedFromId
       bind:selectedToId
@@ -1585,12 +1607,16 @@
       {onTerritoryClick}
     />
 
-    <!-- ROUND 1 SECRET OBJECTIVE SELECTION MODAL (HEGEM-117) -->
+    <!-- ROUND 1 SECRET OBJECTIVE SELECTION MODAL (HEGEM-117 & HEGEM-144) -->
     {#if myPlayerState?.pendingObjectiveChoice && myPlayerState.availableObjectives && myPlayerState.availableObjectives.length > 0}
       <ObjectiveSelectionModal
         availableObjectives={myPlayerState.availableObjectives}
         doctrineId={myPlayerState.doctrineId}
-        onSelect={(objectiveId) => sendAction({ type: "choose_objective", objectiveId })}
+        onSelect={(objectiveId) => {
+          previewedObjective = null;
+          sendAction({ type: "choose_objective", objectiveId });
+        }}
+        onPreviewObjective={(obj) => (previewedObjective = obj)}
       />
     {/if}
 
@@ -1645,6 +1671,7 @@
         bind:overlays={mapOverlays}
         bind:cleanMapMode
         bind:highlightObjectiveTerritories
+        bind:pingMode
         bind:activeRightDrawer
         bind:showHudManager
         {objectiveProgress}

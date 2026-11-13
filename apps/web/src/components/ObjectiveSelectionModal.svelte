@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onDestroy } from "svelte";
   import type { DoctrineId, ObjectiveCard } from "@hegemonia/shared";
   import { t, i18n } from "../i18n/index.svelte";
   import { getFactionDoctrine } from "../i18n/content.svelte";
@@ -9,13 +10,26 @@
     availableObjectives: ObjectiveCard[];
     doctrineId?: DoctrineId | null;
     onSelect: (objectiveId: string) => void;
+    onPreviewObjective?: (objective: ObjectiveCard | null) => void;
   }
 
-  let { availableObjectives, doctrineId, onSelect }: Props = $props();
+  let { availableObjectives, doctrineId, onSelect, onPreviewObjective }: Props = $props();
 
   let chosenId = $state<string | null>(null);
+  let hoveredId = $state<string | null>(null);
   let collapsed = $state<boolean>(true);
   let selectedObjectiveId = $derived(chosenId ?? availableObjectives[0]?.id ?? null);
+  let previewedObjective = $derived(
+    availableObjectives.find((o) => o.id === (hoveredId ?? selectedObjectiveId)) ?? null
+  );
+
+  $effect(() => {
+    onPreviewObjective?.(previewedObjective);
+  });
+
+  onDestroy(() => {
+    onPreviewObjective?.(null);
+  });
 
   function hasDoctrineAffinity(obj: ObjectiveCard, docId?: DoctrineId | null): boolean {
     if (!docId) return false;
@@ -103,6 +117,14 @@
             class:selected={isSelected}
             class:affinity-card={isAffinity}
             onclick={() => (chosenId = obj.id)}
+            onmouseenter={() => (hoveredId = obj.id)}
+            onmouseleave={() => {
+              if (hoveredId === obj.id) hoveredId = null;
+            }}
+            onfocus={() => (hoveredId = obj.id)}
+            onblur={() => {
+              if (hoveredId === obj.id) hoveredId = null;
+            }}
           >
             <div class="obj-card-top">
               <span class="obj-type-badge">
