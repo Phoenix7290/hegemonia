@@ -2,7 +2,7 @@
   import { onDestroy } from "svelte";
   import type { DoctrineId, ObjectiveCard } from "@hegemonia/shared";
   import { t, i18n } from "../i18n/index.svelte";
-  import { getFactionDoctrine } from "../i18n/content.svelte";
+  import { getFactionDoctrine, getObjectiveTitle, getObjectiveDescription } from "../i18n/content.svelte";
   import DoctrineCrest from "./DoctrineCrest.svelte";
   import Icon from "./Icon.svelte";
 
@@ -45,7 +45,7 @@
   }
 </script>
 
-<aside class="objective-toast-wrapper" role="region" aria-label="Seleção de Diretiva Estratégica">
+<aside class="objective-toast-wrapper" role="region" aria-label={t("objective_selection_title")}>
   {#if collapsed}
     <div class="objective-toast-pill-bar">
       <div class="card-corner tl"></div>
@@ -55,7 +55,7 @@
 
       <div class="pill-info">
         <Icon name="target" size={15} color="#eab308" />
-        <span class="pill-warning-text">DIRETIVA SECRETA DISPONÍVEL • ESCOLHA SEU OBJETIVO (OU AUTO-SELECIONE AO FIM DO TURNO)</span>
+        <span class="pill-warning-text">{t("objective_selection_pill_warning")}</span>
         {#if doctrineId}
           <span class="pill-doctrine-tag">
             <DoctrineCrest {doctrineId} size={14} />
@@ -68,10 +68,10 @@
         type="button"
         class="pill-expand-btn"
         onclick={() => (collapsed = false)}
-        title="Abrir painel de objetivos secretos"
+        title={t("objective_selection_choose_btn_title")}
       >
         <Icon name="target" size={13} />
-        <span>Escolher Objetivo ({availableObjectives.length})</span>
+        <span>{t("objective_selection_choose_btn", { count: availableObjectives.length })}</span>
         <Icon name="chevron-down" size={13} />
       </button>
     </div>
@@ -86,23 +86,24 @@
         <div class="header-main">
           <div class="header-badge">
             <Icon name="target" size={16} />
-            <span>DIRETIVA ESTRATÉGICA • RODADA 1</span>
+            <span>{t("objective_selection_badge")}</span>
           </div>
-          <h2 id="obj-modal-title">Escolha seu Objetivo Secreto da Campanha</h2>
+          <h2 id="obj-modal-title">{t("objective_selection_title")}</h2>
           <p class="toast-subtitle">
-            Sua Doutrina Militar ({#if doctrineId}<strong>{getFactionDoctrine(doctrineId)}</strong>{:else}Geral{/if})
-            desbloqueou as diretrizes abaixo. Selecione sua rota de vitória assimétrica. O mapa permanece interativo ao fundo.
+            {t("objective_selection_desc", {
+              doctrine: doctrineId ? getFactionDoctrine(doctrineId) : t("objective_selection_general")
+            })}
           </p>
         </div>
 
         <button
           type="button"
           class="btn-minimize-toast"
-          title="Recolher para inspecionar o mapa tático"
+          title={t("inspect_map_title")}
           onclick={() => (collapsed = true)}
         >
           <Icon name="eye" size={14} />
-          <span>Inspecionar Mapa</span>
+          <span>{t("inspect_map")}</span>
           <Icon name="chevron-up" size={14} />
         </button>
       </header>
@@ -129,29 +130,30 @@
             <div class="obj-card-top">
               <span class="obj-type-badge">
                 <Icon name="shield" size={13} />
-                {obj.rule.type.toUpperCase()}
+                {getObjectiveTitle(obj)}
               </span>
               {#if isSelected}
                 <span class="selected-pill">
-                  <Icon name="check" size={12} /> SELECIONADO
+                  <Icon name="check" size={12} /> {t("selected")}
                 </span>
               {/if}
             </div>
 
             <p class="obj-description">
-              {i18n.locale === "en" ? obj.descriptionEn : obj.descriptionPt}
+              {getObjectiveDescription(obj)}
             </p>
 
             <div class="obj-footer-meta">
               {#if isAffinity}
                 <div class="doctrine-affinity">
                   <DoctrineCrest {doctrineId} size={16} />
-                  <span>Compatibilidade Tática Aprovada</span>
+                  <span>{t("doctrine_affinity_approved")}</span>
+                  <!-- Compatibilidade Tática Aprovada -->
                 </div>
               {:else}
                 <div class="doctrine-standard">
                   <Icon name="cards" size={14} />
-                  <span>Diretiva Militar Padrão</span>
+                  <span>{t("doctrine_standard_directive")}</span>
                 </div>
               {/if}
             </div>
@@ -162,7 +164,7 @@
       <footer class="toast-footer">
         <div class="footer-note">
           <Icon name="clock" size={14} />
-          <span>Caso não confirme manualmente, o 1º objetivo compatível será atribuído automaticamente ao fim do turno.</span>
+          <span>{t("objective_selection_auto_note")}</span>
         </div>
         <button
           type="button"
@@ -171,7 +173,7 @@
           onclick={confirmSelection}
         >
           <Icon name="target" size={16} />
-          <span>CONFIRMAR DIRETIVA SECRETA</span>
+          <span>{t("objective_selection_confirm")}</span>
         </button>
       </footer>
     </div>

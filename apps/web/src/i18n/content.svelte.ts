@@ -82,31 +82,62 @@ export function getSubregionName(id: string): string {
 
 export function getObjectiveTitle(idOrObj: string | ObjectiveCard | undefined | null): string {
   if (!idOrObj) return t("objective");
-  if (typeof idOrObj === "object") {
-    const desc = i18n.locale === "en" ? (idOrObj.descriptionEn ?? idOrObj.descriptionPt) : idOrObj.descriptionPt;
-    if (desc && desc.includes(":")) {
-      return desc.split(":")[0].trim();
-    }
-    return getObjectiveTitle(idOrObj.id);
+
+  const id = typeof idOrObj === "object" ? idOrObj.id : idOrObj;
+  const normalized = id ? (id.startsWith("obj_") ? id : `obj_${id}`) : "";
+  const bare = id ? (id.startsWith("obj_") ? id.slice(4) : id) : "";
+
+  // 1. Direct title in active locale catalog
+  if (normalized) {
+    const directTitle = t(`${normalized}_title`);
+    if (directTitle !== `${normalized}_title`) return directTitle;
   }
-  const id = idOrObj;
-  const normalized = id.startsWith("obj_") ? id : `obj_${id}`;
-  const bare = id.startsWith("obj_") ? id.slice(4) : id;
+  if (bare) {
+    const bareTitle = t(`${bare}_title`);
+    if (bareTitle !== `${bare}_title`) return bareTitle;
 
-  const directTitle = t(`${normalized}_title`);
-  if (directTitle !== `${normalized}_title`) return directTitle;
+    const legacyKey = `objective_${bare}_title`;
+    const translatedLegacy = t(legacyKey);
+    if (translatedLegacy !== legacyKey) return translatedLegacy;
+  }
+  if (id) {
+    const idKey = `objective_${id}_title`;
+    const translatedId = t(idKey);
+    if (translatedId !== idKey) return translatedId;
+  }
 
-  const bareTitle = t(`${bare}_title`);
-  if (bareTitle !== `${bare}_title`) return bareTitle;
+  // 2. If an object is provided, check if its own localized description has a colon prefix (e.g. "Title: Description")
+  if (typeof idOrObj === "object") {
+    const rawDesc = i18n.locale === "en" ? (idOrObj.descriptionEn ?? idOrObj.descriptionPt) : idOrObj.descriptionPt;
+    if (rawDesc && rawDesc.includes(":") && !rawDesc.startsWith("obj_")) {
+      const candidate = rawDesc.split(":")[0].trim();
+      if (candidate && !candidate.startsWith("obj_") && candidate.length < 80) {
+        return candidate;
+      }
+    }
+  }
 
-  const key = `objective_${id}_title`;
-  const translated = t(key);
-  if (translated !== key) return translated;
+  // 3. Fallback to extracting title from resolved objective description
+  const desc = getObjectiveDescription(idOrObj);
+  if (desc && desc.includes(":") && !desc.startsWith("obj_")) {
+    const candidate = desc.split(":")[0].trim();
+    if (candidate && !candidate.startsWith("obj_") && candidate.length < 80) {
+      return candidate;
+    }
+  }
 
-  // Extract from description if it contains a title prefix (e.g. "Japão Imperial (Sol Nascente): ...")
-  const desc = getObjectiveDescription(id);
-  if (desc && desc.includes(":")) {
-    return desc.split(":")[0].trim();
+  // 4. Fallback: check ALL_OBJECTIVES static registry
+  if (id) {
+    const found = ALL_OBJECTIVES.find((o) => o.id === id || o.id === normalized || o.id === bare);
+    if (found) {
+      const foundDesc = i18n.locale === "en" ? (found.descriptionEn ?? found.descriptionPt) : found.descriptionPt;
+      if (foundDesc && foundDesc.includes(":") && !foundDesc.startsWith("obj_")) {
+        const candidate = foundDesc.split(":")[0].trim();
+        if (candidate && !candidate.startsWith("obj_") && candidate.length < 80) {
+          return candidate;
+        }
+      }
+    }
   }
 
   return t("objective");
@@ -114,37 +145,69 @@ export function getObjectiveTitle(idOrObj: string | ObjectiveCard | undefined | 
 
 export function getObjectiveDescription(idOrObj: string | ObjectiveCard | undefined | null): string {
   if (!idOrObj) return "";
+
+  // If a raw string is passed that is already an actual sentence (not a key like obj_...)
+  if (typeof idOrObj === "string") {
+    if (idOrObj.includes(" ") && idOrObj.length > 25 && !idOrObj.startsWith("obj_")) {
+      return idOrObj;
+    }
+  }
+
+  const id = typeof idOrObj === "object" ? idOrObj.id : idOrObj;
+  const normalized = id ? (id.startsWith("obj_") ? id : `obj_${id}`) : "";
+  const bare = id ? (id.startsWith("obj_") ? id.slice(4) : id) : "";
+
+  // 1. Direct translation from active locale catalog (ensures locale switching works reactively!)
+  if (normalized) {
+    const directTranslated = t(normalized);
+    if (directTranslated !== normalized) return directTranslated;
+  }
+  if (bare) {
+    const directBare = t(bare);
+    if (directBare !== bare) return directBare;
+
+    const legacyKey = `objective_${bare}_desc`;
+    const translated = t(legacyKey);
+    if (translated !== legacyKey) return translated;
+  }
+  if (id) {
+    const keyNorm = `objective_${normalized}_desc`;
+    const translatedNorm = t(keyNorm);
+    if (translatedNorm !== keyNorm) return translatedNorm;
+  }
+
+  // 2. If an object is passed and has non-raw localized text
   if (typeof idOrObj === "object") {
-    if (i18n.locale === "en" && idOrObj.descriptionEn) return idOrObj.descriptionEn;
-    if (idOrObj.descriptionPt) return idOrObj.descriptionPt;
-    return getObjectiveDescription(idOrObj.id);
+    if (i18n.locale === "en") {
+      if (idOrObj.descriptionEn && idOrObj.descriptionEn.includes(" ") && !idOrObj.descriptionEn.startsWith("obj_")) {
+        return idOrObj.descriptionEn;
+      }
+    } else {
+      if (idOrObj.descriptionPt && idOrObj.descriptionPt.includes(" ") && !idOrObj.descriptionPt.startsWith("obj_")) {
+        return idOrObj.descriptionPt;
+      }
+    }
   }
-  const id = idOrObj;
-  // If the string itself is already a description (e.g. long sentence with spaces), return it
-  if (id.includes(" ") && id.length > 30) return id;
 
-  const normalized = id.startsWith("obj_") ? id : `obj_${id}`;
-  const bare = id.startsWith("obj_") ? id.slice(4) : id;
-
-  const directTranslated = t(normalized);
-  if (directTranslated !== normalized) return directTranslated;
-
-  const directBare = t(bare);
-  if (directBare !== bare) return directBare;
-
-  const key = `objective_${bare}_desc`;
-  const translated = t(key);
-  if (translated !== key) return translated;
-
-  const keyNorm = `objective_${normalized}_desc`;
-  const translatedNorm = t(keyNorm);
-  if (translatedNorm !== keyNorm) return translatedNorm;
-
-  const found = ALL_OBJECTIVES.find((o) => o.id === id || o.id === normalized || o.id === bare);
-  if (found) {
-    return i18n.locale === "en" ? (found.descriptionEn ?? found.descriptionPt) : found.descriptionPt;
+  // 3. Fallback to static registry ALL_OBJECTIVES
+  if (id) {
+    const found = ALL_OBJECTIVES.find((o) => o.id === id || o.id === normalized || o.id === bare);
+    if (found) {
+      return i18n.locale === "en" ? (found.descriptionEn ?? found.descriptionPt) : found.descriptionPt;
+    }
   }
-  return id;
+
+  // 4. Object fallback (even if missing spaces or other locale)
+  if (typeof idOrObj === "object") {
+    if (i18n.locale === "en" && idOrObj.descriptionEn && !idOrObj.descriptionEn.startsWith("obj_")) {
+      return idOrObj.descriptionEn;
+    }
+    if (idOrObj.descriptionPt && !idOrObj.descriptionPt.startsWith("obj_")) {
+      return idOrObj.descriptionPt;
+    }
+  }
+
+  return id || "";
 }
 
 export function getFactionName(color: string): string {
