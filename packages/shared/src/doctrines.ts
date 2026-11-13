@@ -9,6 +9,7 @@ export const DoctrineIdSchema = z.enum([
   "guerrilla",
   "superior_firepower",
   // Legacy aliases
+  "standard",
   "defense_in_depth",
   "fleet_in_being",
   "guerrilla_warfare",
@@ -132,6 +133,20 @@ export const DOCTRINES: Record<DoctrineId, DoctrineDef> = {
   },
 
   // Legacy aliases for backward compatibility with earlier saves/tests
+  standard: {
+    id: "standard",
+    icon: "helmet",
+    accentColor: "#94a3b8",
+    badgeCode: "CLS",
+    namePt: "Comando Clássico (Doutrina Padrão)",
+    nameEn: "Classic Command (Standard Doctrine)",
+    summaryPt:
+      "Experiência neutra e equilibrada (sem bônus e sem penalidades). Acesso irrestrito a todas as unidades e estruturas, priorizando objetivos clássicos de conquista.",
+    summaryEn:
+      "Neutral, balanced baseline experience (no buffs, no debuffs). Full access to all units and structures, prioritizing classic War conquest objectives.",
+    maxPerLobby: 2,
+    orderIndex: 1,
+  },
   defense_in_depth: {
     id: "defense_in_depth",
     icon: "fortification",
@@ -199,6 +214,7 @@ export function isDoctrineAvailableInLobby(
     if (d === "defense_in_depth") return "tall_sovereign";
     if (d === "fleet_in_being") return "naval_supremacy";
     if (d === "guerrilla_warfare") return "guerrilla";
+    if (d === "standard") return "superior_firepower";
     return d;
   });
   const normalizedCandidate =
@@ -208,7 +224,9 @@ export function isDoctrineAvailableInLobby(
         ? "naval_supremacy"
         : doctrineId === "guerrilla_warfare"
           ? "guerrilla"
-          : doctrineId;
+          : doctrineId === "standard"
+            ? "superior_firepower"
+            : doctrineId;
 
   const count = normalizedSelected.filter((d) => d === normalizedCandidate).length;
   return count < def.maxPerLobby;

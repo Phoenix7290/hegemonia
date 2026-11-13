@@ -199,7 +199,7 @@
           stroke-linejoin="round"
           fill="none"
         />
-      {:else if def.id === "superior_firepower"}
+      {:else if def.id === "superior_firepower" || def.id === "standard" || def.icon === "helmet"}
         <!-- Capacete Militar de Soldado (Comando Clássico / Doutrina Padrão) -->
         <path
           d="M8.5 18 C8.5 12 11.5 8 16 8 C20.5 8 23.5 12 23.5 18 C23.5 18.6 23.1 19 22.5 19 H9.5 C8.9 19 8.5 18.6 8.5 18 Z"

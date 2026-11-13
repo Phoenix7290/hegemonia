@@ -49,6 +49,7 @@ export const ICON_NAMES = [
   "navy",
   "port",
   "anchor",
+  "helmet",
 
   // Territorial Buildings & Fortifications
   "market",

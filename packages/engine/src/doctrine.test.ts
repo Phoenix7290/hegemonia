@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { CLASSIC_MAP } from "@hegemonia/maps";
 import {
+  CORE_DOCTRINE_LIST,
+  DOCTRINES,
+  isDoctrineAvailableInLobby,
+} from "@hegemonia/shared";
+import {
   applyAction,
   canDegradeFortificationInCombat,
   createGame,
@@ -158,5 +163,57 @@ describe("Epic IX — Doutrinas Militares Nacionais (Motor Determinístico)", ()
     });
 
     expect(state.log.some((entry) => entry.includes("[GUERRILHA]"))).toBe(true);
+  });
+});
+
+describe("HEGEM-139: Doutrinas Militares - Ícone de Capacete Militar na Doutrina Padrão e Posicionamento no Topo do Grid", () => {
+  it("positions Classic Command / Standard Doctrine in 1st place in the doctrine grid with military helmet icon", () => {
+    // 1. Verifies 1st place in CORE_DOCTRINE_LIST
+    const firstDoc = CORE_DOCTRINE_LIST[0];
+    expect(firstDoc.id).toBe("superior_firepower");
+    expect(firstDoc.icon).toBe("helmet");
+    expect(firstDoc.namePt).toContain("Comando Clássico");
+    expect(firstDoc.orderIndex).toBe(1);
+
+    // 2. Verifies Mass Assault was swapped to 6th position (orderIndex 6)
+    const massAssaultDoc = CORE_DOCTRINE_LIST[5];
+    expect(massAssaultDoc.id).toBe("mass_assault");
+    expect(massAssaultDoc.icon).toBe("infantry");
+    expect(massAssaultDoc.namePt).toContain("Ataque em Massa");
+    expect(massAssaultDoc.orderIndex).toBe(6);
+  });
+
+  it("supports standard alias pointing to Classic Command with helmet icon and proper lobby normalization", () => {
+    expect(DOCTRINES.standard).toBeDefined();
+    expect(DOCTRINES.standard.icon).toBe("helmet");
+    expect(DOCTRINES.standard.orderIndex).toBe(1);
+
+    // Lobby normalization
+    expect(isDoctrineAvailableInLobby("standard", ["superior_firepower"])).toBe(true);
+    expect(
+      isDoctrineAvailableInLobby("standard", ["superior_firepower", "standard"])
+    ).toBe(false);
+  });
+
+  it("allows selecting standard / superior_firepower in Round 1 deploy phase", () => {
+    const rng = createSeededRng("hegem139-doctrine-seed");
+    const state = createGame({
+      id: "match-hegem139",
+      seed: "hegem139-doctrine-seed",
+      players: [
+        { id: "p1", name: "ClassicCommander", color: "blue" },
+        { id: "p2", name: "Rival", color: "red" },
+      ],
+    });
+
+    const updated = applyAction(
+      state,
+      "p1",
+      { type: "select_doctrine", doctrineId: "standard" },
+      rng,
+      CLASSIC_MAP
+    );
+    expect(updated.players.find((p) => p.id === "p1")!.doctrineId).toBe("standard");
+    expect(updated.log.some((l) => l.includes("Comando Clássico"))).toBe(true);
   });
 });
