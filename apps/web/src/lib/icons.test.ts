@@ -77,6 +77,13 @@ describe("Hegemonia Icon Design System (HEGEM-63)", () => {
     expect(portJson).not.toEqual(anchorJson);
   });
 
+  it("provides distinct military helmet vector icon for Classic / Standard Command doctrine (HEGEM-139)", () => {
+    expect(isKnownIconName("helmet")).toBe(true);
+    const helmetShapes = resolveIconShapes("helmet");
+    expect(helmetShapes.length).toBeGreaterThanOrEqual(2);
+    expect(JSON.stringify(ICON_CATALOG.helmet)).not.toEqual(JSON.stringify(ICON_CATALOG.infantry));
+  });
+
   it("verifies all static <Icon name=\"...\" /> usages in Svelte components reference registered icons", () => {
     const srcRoot = join(__dirname, "..");
     const svelteFiles = collectSourceFiles(srcRoot).filter((f) => f.endsWith(".svelte"));

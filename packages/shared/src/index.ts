@@ -248,7 +248,18 @@ export function isObjectiveCompatibleWithDoctrine(
   objective: ObjectiveCard,
   doctrineId: DoctrineId | null | undefined
 ): boolean {
-  if (!doctrineId) {
+  const effectiveDocId =
+    doctrineId === "standard"
+      ? "superior_firepower"
+      : doctrineId === "defense_in_depth"
+        ? "tall_sovereign"
+        : doctrineId === "fleet_in_being"
+          ? "naval_supremacy"
+          : doctrineId === "guerrilla_warfare"
+            ? "guerrilla"
+            : doctrineId;
+
+  if (!effectiveDocId) {
     if (objective.allowedDoctrines && objective.allowedDoctrines.length > 0) {
       return false;
     }
@@ -257,15 +268,23 @@ export function isObjectiveCompatibleWithDoctrine(
     }
     return true;
   }
-  if (objective.allowedDoctrines && !objective.allowedDoctrines.includes(doctrineId)) {
+  if (
+    objective.allowedDoctrines &&
+    !objective.allowedDoctrines.includes(effectiveDocId) &&
+    !objective.allowedDoctrines.includes(doctrineId as DoctrineId)
+  ) {
     return false;
   }
-  if (objective.disallowedDoctrines && objective.disallowedDoctrines.includes(doctrineId)) {
+  if (
+    objective.disallowedDoctrines &&
+    (objective.disallowedDoctrines.includes(effectiveDocId) ||
+      objective.disallowedDoctrines.includes(doctrineId as DoctrineId))
+  ) {
     return false;
   }
 
   // Extermination is strictly and exclusively dedicated to eliminate_players objectives
-  if (doctrineId === "extermination") {
+  if (effectiveDocId === "extermination") {
     return (
       objective.rule.type === "eliminate_players" &&
       objective.rule.minEliminations >= 2
@@ -278,7 +297,7 @@ export function isObjectiveCompatibleWithDoctrine(
   }
 
   // Tall Sovereign and Defense in Depth doctrines are strictly incompatible with wide expansion
-  if (doctrineId === "tall_sovereign" || doctrineId === "defense_in_depth") {
+  if (effectiveDocId === "tall_sovereign") {
     if (objective.rule.type === "territories") return false;
     if (objective.rule.type === "destroy_color") return false;
     if (
