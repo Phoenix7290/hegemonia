@@ -95,7 +95,11 @@
   function getBuildingEffectShort(type: BuildingType, level?: number): string {
     if (type === "market") return "+$2/turno • Libera Mercado";
     if (type === "civilian_factory") return "+$3/turno • +1 Slot de Obra";
-    if (type === "industry") return "2x Extração • Produz Blindados/Art.";
+    if (type === "industry") {
+      return level === 2
+        ? "4x Extração • +$4 Dividendos"
+        : "2x Extração • Produz Blindados/Art.";
+    }
     if (type === "military_factory") return "Produz Blindados & Artilharia";
     if (type === "steel_mine") return "+2 Aço/turno na jazida";
     if (type === "oil_well") return "+2 Petróleo/turno na bacia";
@@ -396,7 +400,7 @@
                         {:else if b.type === "civilian_factory"}
                           {t("building_civilian_factory")}
                         {:else if b.type === "industry"}
-                          {t("building_industry")}
+                          {b.level === 2 ? t("building_industry_l2") : t("building_industry_l1")}
                         {:else if b.type === "military_factory"}
                           {t("building_military_factory")}
                         {:else if b.type === "steel_mine"}
@@ -562,20 +566,20 @@
                   <button
                     type="button"
                     class="btn-build-option upgrade industry-opt"
-                    disabled={myRes.money < 8 || myRes.steel < 2}
+                    disabled={myRes.money < 6 || myRes.steel < 2}
                     onclick={() => handleBuildStructure(inspectedTerritory!.def.id, "industry")}
-                    title="Evoluir para Complexo Industrial Nv. 2 (+100% commodities e dobro de dividendos)"
+                    title={t("building_industry_l2_desc")}
                   >
                     <div class="build-opt-icon industry">
                       <Icon name="industry" size={18} />
                     </div>
                     <div class="build-opt-copy">
-                      <span class="build-opt-title">Complexo Industrial Nv. 2</span>
+                      <span class="build-opt-title">{t("building_industry_l2")}</span>
                       <small class="build-opt-sub">+100% Produção & Dividendos</small>
                     </div>
                     <div class="build-opt-costs">
-                      <strong class="cost-tag money" class:missing={myRes.money < 8}>
-                        <Icon name="coins" size={11} /> $8
+                      <strong class="cost-tag money" class:missing={myRes.money < 6}>
+                        <Icon name="coins" size={11} /> $6
                       </strong>
                       <strong class="cost-tag steel" class:missing={myRes.steel < 2}>
                         <Icon name="steel" size={11} /> 2

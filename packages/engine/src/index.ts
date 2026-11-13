@@ -232,7 +232,7 @@ export const FORTIFICATION_LEVEL_2_COST: BuildingCost = {
 };
 
 export const INDUSTRY_LEVEL_2_COST: BuildingCost = {
-  money: 4,
+  money: 6,
   steel: 2,
 };
 
@@ -783,15 +783,15 @@ export function calculateTurnEconomy(
 
     const resourceYield = hasIndustry ? (isIndLv2 ? 4 : 2) : 1;
     if (def.resource === "steel") {
-      steel += resourceYield + (hasSteelMine ? 2 : 0);
+      steel += resourceYield + (hasSteelMine ? (isIndLv2 ? 4 : 2) : 0);
     } else if (def.resource === "oil") {
-      oil += resourceYield + (hasOilWell ? 2 : 0);
+      oil += resourceYield + (hasOilWell ? (isIndLv2 ? 4 : 2) : 0);
     } else if (def.resource === "gold") {
       gold += resourceYield;
-      goldPassiveMoney += 2;
+      goldPassiveMoney += isIndLv2 ? 4 : 2;
     } else {
-      if (hasSteelMine) steel += 1;
-      if (hasOilWell) oil += 1;
+      if (hasSteelMine) steel += isIndLv2 ? 2 : 1;
+      if (hasOilWell) oil += isIndLv2 ? 2 : 1;
     }
 
     if (hasRefinery) {
@@ -836,9 +836,12 @@ export function calculateTurnEconomy(
     if (occupiedTerritories.length <= 5) {
       for (const terr of occupiedTerritories) {
         const def = mapById.get(terr.id);
-        if (def?.resource === "steel") steel += 1;
-        if (def?.resource === "oil") oil += 1;
-        if (def?.resource === "gold") gold += 1;
+        const indBldg = (terr.buildings ?? []).find((b) => b.type === "industry");
+        const isIndLv2 = (indBldg?.level ?? 1) >= 2;
+        const bonus = isIndLv2 ? 2 : 1;
+        if (def?.resource === "steel") steel += bonus;
+        if (def?.resource === "oil") oil += bonus;
+        if (def?.resource === "gold") gold += bonus;
       }
     } else {
       const overextPenalty = Math.min(0.75, (occupiedTerritories.length - 5) * 0.15);
@@ -2052,6 +2055,10 @@ export function applyAction(
         totalMoneySpent += FORTIFICATION_LEVEL_2_COST.money;
         totalSteelSpent += FORTIFICATION_LEVEL_2_COST.steel;
       }
+      if (action.buildingType === "industry" && targetBldg.level >= 2) {
+        totalMoneySpent += INDUSTRY_LEVEL_2_COST.money;
+        totalSteelSpent += INDUSTRY_LEVEL_2_COST.steel;
+      }
 
       const moneyRefund = Math.floor(totalMoneySpent * 0.5);
       const steelRefund = Math.ceil(totalSteelSpent * 0.5);
@@ -2062,7 +2069,7 @@ export function applyAction(
 
       const buildingNamesPt: Record<BuildingType, string> = {
         market: "Mercado Global",
-        industry: "Complexo Industrial",
+        industry: targetBldg.level >= 2 ? "Complexo Industrial Nv. 2" : "Indústria Básica Nv. 1",
         fortification: targetBldg.level >= 2 ? "Fortaleza Nv. 2" : "Casamata Nv. 1",
         airfield: "Aeródromo Militar",
         port: "Porto Naval",
