@@ -4022,3 +4022,204 @@ describe("Proxy and Reactive State Cloning Resilience", () => {
   });
 });
 
+describe("HEGEM-142: Objetivo Bastião e Construção da Maravilha Soberana (Fim do Mundo)", () => {
+  it("allows player with Bastion objective to construct Wonder in a fortified territory", () => {
+    const rng = createSeededRng("wonder_build_test");
+    let state = createGame({
+      id: "wonder_game",
+      seed: "wonder_seed",
+      players: [
+        { id: "p1", name: "BastionCommander", color: "blue", doctrineId: "tall_sovereign" },
+        { id: "p2", name: "Invader", color: "red", doctrineId: "blitzkrieg" },
+      ],
+    });
+    state.round = 2;
+    state.phase = "deploy";
+    state.turnIndex = 0;
+
+    const p1 = state.players.find((p) => p.id === "p1")!;
+    p1.objective = {
+      id: "obj_fortified_bastion",
+      descriptionPt: "Bastião Inexpugnável",
+      descriptionEn: "Impregnable Bastion",
+      rule: {
+        type: "fortified_bastion",
+        bastionTerritoryCount: 4,
+        roundsRequired: 5,
+      },
+      allowedDoctrines: ["tall_sovereign", "defense_in_depth"],
+    };
+
+    const p1Terr = Object.values(state.territories).find((t) => t.ownerId === "p1")!;
+    p1Terr.buildings = [];
+
+    p1.resources = { money: 20, steel: 10, oil: 5, gold: 5 };
+
+    // 1. Cannot build without fortification
+    expect(() =>
+      applyAction(state, "p1", { type: "build_structure", territoryId: p1Terr.id, buildingType: "wonder" }, rng)
+    ).toThrow(/previamente protegido por uma Fortaleza/);
+
+    // 2. Add fortification
+    p1Terr.buildings = [{ type: "fortification", level: 1 }];
+
+    // 3. Build Wonder successfully
+    state = applyAction(state, "p1", { type: "build_structure", territoryId: p1Terr.id, buildingType: "wonder" }, rng);
+
+    const updatedP1 = state.players.find((p) => p.id === "p1")!;
+    expect(updatedP1.resources.money).toBe(8); // 20 - 12
+    expect(updatedP1.resources.steel).toBe(6); // 10 - 4
+    expect(updatedP1.wonderRoundsHeld).toBe(0);
+    expect(state.territories[p1Terr.id].buildings?.some((b) => b.type === "wonder")).toBe(true);
+    expect(state.log.some((l) => l.includes("ALERTA GLOBAL — MARAVILHA DO BASTIÃO"))).toBe(true);
+
+    // 4. Cannot build a second Wonder
+    const secondTerr = Object.values(state.territories).find((t) => t.ownerId === "p1" && t.id !== p1Terr.id)!;
+    secondTerr.buildings = [{ type: "fortification", level: 1 }];
+    expect(() =>
+      applyAction(state, "p1", { type: "build_structure", territoryId: secondTerr.id, buildingType: "wonder" }, rng)
+    ).toThrow(/já possui uma Maravilha/);
+  });
+
+  it("advances wonder countdown each round and awards immediate victory after 3 rounds (World Ends)", () => {
+    const rng = createSeededRng("wonder_apocalypse_test");
+    let state = createGame({
+      id: "apocalypse_game",
+      seed: "apocalypse_seed",
+      players: [
+        { id: "p1", name: "SovereignBuilder", color: "blue", doctrineId: "tall_sovereign" },
+        { id: "p2", name: "Challenger", color: "red", doctrineId: "standard" },
+      ],
+    });
+    state.round = 2;
+    state.phase = "attack";
+    state.turnIndex = 0;
+
+    const p1 = state.players.find((p) => p.id === "p1")!;
+    p1.objective = {
+      id: "obj_fortified_bastion",
+      descriptionPt: "Bastião Inexpugnável",
+      descriptionEn: "Impregnable Bastion",
+      rule: {
+        type: "fortified_bastion",
+        bastionTerritoryCount: 4,
+        roundsRequired: 5,
+      },
+    };
+
+    const p1Terr = Object.values(state.territories).find((t) => t.ownerId === "p1")!;
+    p1Terr.buildings = [
+      { type: "fortification", level: 1 },
+      { type: "wonder", level: 1 },
+    ];
+    p1.wonderRoundsHeld = 0;
+
+    // Check progress tracking includes Wonder
+    const progInitial = calculateObjectiveProgress(state, "p1", CLASSIC_MAP);
+    expect(progInitial.metrics.some((m) => m.label.includes("Maravilha"))).toBe(true);
+
+    const advanceFullRound = () => {
+      for (let i = 0; i < state.players.length; i++) {
+        const activeP = state.players[state.turnIndex];
+        activeP.unplacedArmies = 0;
+        state.phase = "attack";
+        state = applyAction(state, activeP.id, { type: "end_turn" }, rng);
+        if (state.winnerId) break;
+      }
+    };
+
+    // Pass Round 2 -> Round 3
+    advanceFullRound();
+
+    // Round 3 begins: wonderRoundsHeld should now be 1
+    const p1Round3 = state.players.find((p) => p.id === "p1")!;
+    expect(p1Round3.wonderRoundsHeld).toBe(1);
+    expect(state.log.some((l) => l.includes("1/3 rodadas"))).toBe(true);
+    expect(state.winnerId).toBeNull();
+
+    // Advance Round 3 -> Round 4
+    advanceFullRound();
+
+    // Round 4 begins: wonderRoundsHeld should now be 2
+    const p1Round4 = state.players.find((p) => p.id === "p1")!;
+    expect(p1Round4.wonderRoundsHeld).toBe(2);
+    expect(state.log.some((l) => l.includes("2/3 rodadas"))).toBe(true);
+    expect(state.winnerId).toBeNull();
+
+    // Advance Round 4 -> Round 5 (3rd round held: APOCALYPSE / VICTORY)
+    advanceFullRound();
+
+    // Round 5: World ends, player 1 wins!
+    const p1Round5 = state.players.find((p) => p.id === "p1")!;
+    expect(p1Round5.wonderRoundsHeld).toBe(3);
+    expect(state.winnerId).toBe("p1");
+    expect(state.phase).toBe("game_over");
+    expect(checkPlayerVictory(state, "p1", CLASSIC_MAP)).toBe(true);
+    expect(state.log.some((l) => l.includes("O MUNDO ACABA"))).toBe(true);
+  });
+
+  it("dismantles the Wonder and resets the apocalypse countdown when an enemy breaches and conquers the territory", () => {
+    const rng = createSeededRng("wonder_breach_test");
+    let state = createGame({
+      id: "breach_game",
+      seed: "breach_seed",
+      players: [
+        { id: "p1", name: "Defender", color: "blue", doctrineId: "tall_sovereign" },
+        { id: "p2", name: "SiegeMaster", color: "red", doctrineId: "standard" },
+      ],
+    });
+    state.round = 3;
+    state.phase = "attack";
+    state.turnIndex = 1; // p2's turn to attack
+
+    const p1 = state.players.find((p) => p.id === "p1")!;
+    p1.wonderRoundsHeld = 2; // on verge of apocalypse!
+
+    // Setup adjacent combat: p2 in Omsk attacking p1 in Cazaquistão (which has the Wonder)
+    const defTerr = state.territories["cazaquistao"] ?? Object.values(state.territories)[0];
+    defTerr.ownerId = "p1";
+    defTerr.armies = 1;
+    defTerr.units = { infantry: 1, tank: 0, artillery: 0, aircraft: 0, navy: 0 };
+    defTerr.buildings = [
+      { type: "fortification", level: 1 },
+      { type: "wonder", level: 1 },
+    ];
+
+    const attTerr = Object.values(state.territories).find(
+      (t) => t.id !== defTerr.id && CLASSIC_MAP.territories.find((m) => m.id === t.id)?.neighbors.includes(defTerr.id)
+    )!;
+    attTerr.ownerId = "p2";
+    attTerr.armies = 10;
+    attTerr.units = { infantry: 10, tank: 0, artillery: 0, aircraft: 0, navy: 0 };
+
+    // Mock RNG to guarantee attacker wins
+    const fixedRng = createSeededRng("fixed_roll");
+    let rollCount = 0;
+    fixedRng.rollD6 = () => {
+      rollCount++;
+      return rollCount <= 3 ? 6 : 1;
+    };
+
+    state = applyAction(
+      state,
+      "p2",
+      {
+        type: "attack",
+        fromTerritoryId: attTerr.id,
+        toTerritoryId: defTerr.id,
+        armies: 3,
+      },
+      fixedRng
+    );
+
+    // Territory was conquered by p2
+    expect(state.territories[defTerr.id].ownerId).toBe("p2");
+    // Wonder is dismantled
+    expect(state.territories[defTerr.id].buildings?.some((b) => b.type === "wonder")).toBe(false);
+    // Defender countdown reset to 0
+    expect(state.players.find((p) => p.id === "p1")!.wonderRoundsHeld).toBe(0);
+    // Cancellation logged
+    expect(state.log.some((l) => l.includes("MARAVILHA DO BASTIÃO DESTRUÍDA"))).toBe(true);
+  });
+});
+

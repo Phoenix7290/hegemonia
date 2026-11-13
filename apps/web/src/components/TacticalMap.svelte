@@ -1272,24 +1272,28 @@
                                 width="4.6"
                                 height="5.6"
                                 rx="0.9"
-                                fill={b.type === "market"
+                                fill={b.type === "wonder"
                                   ? "#451a03"
-                                  : b.type === "industry"
-                                    ? "#1e293b"
-                                    : b.type === "fortification"
-                                      ? (b.level === 2 ? "#082f49" : "#1e293b")
-                                      : b.type === "airfield"
-                                        ? "#172554"
-                                        : "#042f2e"}
-                                stroke={b.type === "market"
+                                  : b.type === "market"
+                                    ? "#451a03"
+                                    : b.type === "industry"
+                                      ? "#1e293b"
+                                      : b.type === "fortification"
+                                        ? (b.level === 2 ? "#082f49" : "#1e293b")
+                                        : b.type === "airfield"
+                                          ? "#172554"
+                                          : "#042f2e"}
+                                stroke={b.type === "wonder"
                                   ? "#f59e0b"
-                                  : b.type === "industry"
-                                    ? "#fb923c"
-                                    : b.type === "fortification"
-                                      ? (b.level === 2 ? "#38bdf8" : "#94a3b8")
-                                      : b.type === "airfield"
-                                        ? "#60a5fa"
-                                        : "#2dd4bf"}
+                                  : b.type === "market"
+                                    ? "#f59e0b"
+                                    : b.type === "industry"
+                                      ? "#fb923c"
+                                      : b.type === "fortification"
+                                        ? (b.level === 2 ? "#38bdf8" : "#94a3b8")
+                                        : b.type === "airfield"
+                                          ? "#60a5fa"
+                                          : "#2dd4bf"}
                                 stroke-width="0.55"
                               />
                               <Icon
@@ -1299,15 +1303,17 @@
                                 size={3.8}
                                 x={-1.9}
                                 y={-1.9}
-                                color={b.type === "market"
-                                  ? "#fde047"
-                                  : b.type === "industry"
-                                    ? "#fdba74"
-                                    : b.type === "fortification"
-                                      ? (b.level === 2 ? "#7dd3fc" : "#e2e8f0")
-                                      : b.type === "airfield"
-                                        ? "#93c5fd"
-                                        : "#5eead4"}
+                                color={b.type === "wonder"
+                                  ? "#fbbf24"
+                                  : b.type === "market"
+                                    ? "#fde047"
+                                    : b.type === "industry"
+                                      ? "#fdba74"
+                                      : b.type === "fortification"
+                                        ? (b.level === 2 ? "#7dd3fc" : "#e2e8f0")
+                                        : b.type === "airfield"
+                                          ? "#93c5fd"
+                                          : "#5eead4"}
                                 strokeWidth={2}
                               />
                             {:else}
@@ -1353,8 +1359,10 @@
                           cx={xOffset}
                           cy="0"
                           r="1.6"
-                          fill={b.type === "fortification"
-                            ? (b.level === 2 ? "#38bdf8" : "#94a3b8")
+                          fill={b.type === "wonder"
+                            ? "#fbbf24"
+                            : b.type === "fortification"
+                              ? (b.level === 2 ? "#38bdf8" : "#94a3b8")
                             : b.type === "market"
                               ? "#f59e0b"
                               : b.type === "civilian_factory"
