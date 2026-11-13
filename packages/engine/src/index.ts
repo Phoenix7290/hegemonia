@@ -1123,6 +1123,11 @@ export function checkPlayerVictory(
   const player = state.players.find((p) => p.id === playerId);
   if (!player || player.eliminated) return false;
 
+  // HEGEM-142: Vitória por Conclusão da Maravilha Soberana (Fim do Mundo)
+  if ((player.wonderRoundsHeld ?? 0) >= 3) {
+    return true;
+  }
+
   const activePlayers = state.players.filter((p) => !p.eliminated);
   if (activePlayers.length === 1 && activePlayers[0].id === playerId) {
     return true;
@@ -1198,8 +1203,9 @@ export function checkPlayerVictory(
       (t.buildings ?? []).some((b) => b.type === "fortification")
     ).length;
     return (
-      fortifiedCount >= rule.bastionTerritoryCount &&
-      (player.bastionRoundsHeld ?? 0) >= rule.roundsRequired
+      (fortifiedCount >= rule.bastionTerritoryCount &&
+        (player.bastionRoundsHeld ?? 0) >= rule.roundsRequired) ||
+      (player.wonderRoundsHeld ?? 0) >= 3
     );
   }
 
@@ -1413,7 +1419,17 @@ export function calculateObjectiveProgress(
     ).length;
     const fortProgress = Math.min(100, Math.round((fortifiedCount / rule.bastionTerritoryCount) * 100));
     const roundProgress = Math.min(100, Math.round(((player.bastionRoundsHeld ?? 0) / rule.roundsRequired) * 100));
-    const completionPct = Math.round(fortProgress * 0.5 + roundProgress * 0.5);
+
+    const wonderTerr = ownedTerritories.find((t) =>
+      (t.buildings ?? []).some((b) => b.type === "wonder")
+    );
+    const hasWonder = Boolean(wonderTerr);
+    const wonderHeld = player.wonderRoundsHeld ?? 0;
+    const wonderPct = Math.min(100, Math.round((wonderHeld / 3) * 100));
+
+    const standardPct = Math.round(fortProgress * 0.5 + roundProgress * 0.5);
+    const completionPct = hasWonder ? Math.max(standardPct, wonderPct) : standardPct;
+
     const metrics: ObjectiveMetric[] = [
       {
         label: "Territórios Fortificados",
@@ -1428,10 +1444,20 @@ export function calculateObjectiveProgress(
         pct: roundProgress,
       },
     ];
+
+    if (hasWonder) {
+      metrics.push({
+        label: "Maravilha do Bastião (Fim do Mundo)",
+        current: wonderHeld,
+        target: 3,
+        pct: wonderPct,
+      });
+    }
+
     return {
       completionPct,
-      held: player.bastionRoundsHeld ?? 0,
-      total: rule.roundsRequired,
+      held: hasWonder ? wonderHeld : (player.bastionRoundsHeld ?? 0),
+      total: hasWonder ? 3 : rule.roundsRequired,
       description: player.objective.descriptionPt,
       metrics,
     };
@@ -3116,6 +3142,18 @@ export function applyAction(
             }
           }
           toTerr.buildings = survivingBuildings;
+        }
+
+        // HEGEM-142: Invasão e destruição da Maravilha Soberana em território conquistado
+        if (defenderPlayer && (defenderPlayer.wonderRoundsHeld ?? 0) > 0) {
+          const hadWonder = toTerr.buildings?.some((b) => b.type === "wonder");
+          if (hadWonder) {
+            defenderPlayer.wonderRoundsHeld = 0;
+            toTerr.buildings = toTerr.buildings.filter((b) => b.type !== "wonder");
+            state.log.push(
+              `💥 MARAVILHA DO BASTIÃO DESTRUÍDA: As tropas de ${currentPlayer.name} invadiram ${toName}! O monumento ruiu e a contagem para o Fim do Mundo de ${defenderPlayer.name} foi cancelada!`
+            );
+          }
         }
 
         if (currentPlayer.capitalTerritoryId === toTerr.id && currentPlayer.isCapitalLost) {

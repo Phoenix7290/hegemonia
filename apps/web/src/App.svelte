@@ -443,6 +443,20 @@
     }
   });
 
+  // HEGEM-142: Alerta Global de Construção da Maravilha do Bastião (Fim do Mundo)
+  let prevWonderAlertKey = "";
+  $effect(() => {
+    if (activeWonderInfo) {
+      const wonderKey = `${activeWonderInfo.territoryId}:${activeWonderInfo.roundsHeld}`;
+      if (prevWonderAlertKey !== wonderKey) {
+        prevWonderAlertKey = wonderKey;
+        sound.playDefensiveAlarm();
+      }
+    } else {
+      prevWonderAlertKey = "";
+    }
+  });
+
   // Countdown timer
   $effect(() => {
     const timer = setInterval(() => {

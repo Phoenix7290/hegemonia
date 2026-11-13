@@ -134,11 +134,17 @@
           <div class="fulfilled-directive">
             <span class="directive-label"><Icon name="target" size={14} /> {t("victory_directive_fulfilled")}</span>
             <p>
-              {winner.objective.id
-                ? getObjectiveDescription(winner.objective.id)
-                : i18n.locale === "en"
+              {#if (winner.wonderRoundsHeld ?? 0) >= 3}
+                {t("wonder_directive_fulfilled")}
+              {:else if winner.objective?.id}
+                {getObjectiveDescription(winner.objective.id)}
+              {:else if winner.objective}
+                {i18n.locale === "en"
                   ? winner.objective.descriptionEn
                   : winner.objective.descriptionPt}
+              {:else}
+                {t("victory_conquest_desc")}
+              {/if}
             </p>
           </div>
         {/if}

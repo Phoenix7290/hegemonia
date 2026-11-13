@@ -111,6 +111,7 @@
     }
     if (type === "airfield") return "Opera Aeronaves & Ponte Aérea";
     if (type === "port") return "Opera Marinha & +$1 Polo Naval";
+    if (type === "wonder") return "Fim do Mundo • Vitória em 3 Rodadas";
     return "";
   }
 </script>
@@ -413,6 +414,8 @@
                           {t("building_airfield")}
                         {:else if b.type === "port"}
                           {t("building_port")}
+                        {:else if b.type === "wonder"}
+                          {t("building_wonder")}
                         {/if}
                       </strong>
                       <small>{getBuildingEffectShort(b.type, b.level)}</small>
@@ -784,6 +787,52 @@
                     <div class="build-opt-costs">
                       <strong class="cost-tag money" class:missing={myRes.money < 5}>
                         <Icon name="coins" size={11} /> $5
+                      </strong>
+                    </div>
+                  </button>
+                {/if}
+
+                <!-- Maravilha do Bastião ($12, 4 Aço - Exclusivo para Objetivo de Bastião ou Doutrina Tall/Defesa) -->
+                {#if (myPlayerState?.objective?.rule.type === "fortified_bastion" || myPlayerState?.doctrineId === "tall_sovereign" || myPlayerState?.doctrineId === "defense_in_depth") && !hasTerritoryBuilding(inspectedTerritory.state, "wonder")}
+                  {@const hasFort = hasTerritoryBuilding(inspectedTerritory.state, "fortification")}
+                  {@const hasAnyWonder = Object.values(game.territories).some(
+                    (t) => t.ownerId === myPlayerId && hasTerritoryBuilding(t, "wonder")
+                  )}
+                  {@const wonderBlocked = !hasFort || hasAnyWonder}
+                  {@const canAffordWonder = myRes.money >= 12 && myRes.steel >= 4}
+                  <button
+                    type="button"
+                    class="btn-build-option wonder-opt"
+                    class:doctrine-banned={wonderBlocked}
+                    disabled={wonderBlocked || bldgs.length >= maxSlots || !canAffordWonder}
+                    onclick={() => handleBuildStructure(inspectedTerritory!.def.id, "wonder")}
+                    title={hasAnyWonder
+                      ? "Você já possui uma Maravilha em construção"
+                      : !hasFort
+                        ? "A Maravilha exige uma Fortaleza prévia no território"
+                        : t("building_wonder_desc")}
+                  >
+                    <div class="build-opt-icon wonder">
+                      <Icon name="wonder" size={18} />
+                    </div>
+                    <div class="build-opt-copy">
+                      <span class="build-opt-title">{t("building_wonder")}</span>
+                      <small class="build-opt-sub" class:locked-req={wonderBlocked}>
+                        {#if hasAnyWonder}
+                          MARAVILHA JÁ ERGUIDA
+                        {:else if !hasFort}
+                          REQUER FORTALEZA PRÉVIA
+                        {:else}
+                          Fim do Mundo • 3 Rodadas p/ Vitória
+                        {/if}
+                      </small>
+                    </div>
+                    <div class="build-opt-costs">
+                      <strong class="cost-tag money" class:missing={myRes.money < 12}>
+                        <Icon name="coins" size={11} /> $12
+                      </strong>
+                      <strong class="cost-tag steel" class:missing={myRes.steel < 4}>
+                        <Icon name="steel" size={11} /> 4
                       </strong>
                     </div>
                   </button>
@@ -1526,6 +1575,15 @@
     border: 1px solid rgba(212, 175, 55, 0.38);
     min-width: 0;
   }
+  .recon-bldg-chip.wonder {
+    border-color: rgba(245, 158, 11, 0.7);
+    background: linear-gradient(
+      135deg,
+      rgba(45, 30, 8, 0.95) 0%,
+      rgba(20, 15, 6, 0.98) 100%
+    );
+    box-shadow: 0 0 10px rgba(245, 158, 11, 0.35);
+  }
   .bldg-slot-icon {
     width: 24px;
     height: 24px;
@@ -1693,6 +1751,20 @@
     box-shadow: 0 0 12px rgba(234, 179, 8, 0.25);
   }
 
+  .btn-build-option.wonder-opt {
+    grid-column: 1 / -1;
+    border-color: rgba(245, 158, 11, 0.55);
+    background: linear-gradient(
+      135deg,
+      rgba(40, 26, 6, 0.92) 0%,
+      rgba(18, 14, 8, 0.96) 100%
+    );
+  }
+  .btn-build-option.wonder-opt:hover:not(:disabled) {
+    border-color: #fbbf24;
+    box-shadow: 0 0 16px rgba(245, 158, 11, 0.4);
+  }
+
   .build-opt-icon {
     width: 26px;
     height: 26px;
@@ -1749,6 +1821,11 @@
     color: #fef08a;
     border-color: #eab308;
     background: rgba(234, 179, 8, 0.2);
+  }
+  .build-opt-icon.wonder {
+    color: #fbbf24;
+    border-color: rgba(245, 158, 11, 0.6);
+    background: rgba(245, 158, 11, 0.2);
   }
 
   .build-opt-copy {
