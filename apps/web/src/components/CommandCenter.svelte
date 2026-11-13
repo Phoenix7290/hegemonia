@@ -575,6 +575,7 @@
                   {@const isTaken = Boolean(holder && !isMine)}
                   <button
                     class="faction-choice-card"
+                    class:faction-white={c === "white"}
                     class:selected={isMine}
                     class:taken={isTaken}
                     disabled={isTaken}
@@ -1469,10 +1470,13 @@
 
   .faction-cards-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(155px, 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 10px;
     width: 100%;
     min-width: 0;
+  }
+  .faction-choice-card.faction-white {
+    grid-column: 2;
   }
   .faction-choice-card {
     display: flex;
@@ -1840,7 +1844,10 @@
       grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
     }
     .faction-cards-grid {
-      grid-template-columns: repeat(auto-fill, minmax(155px, 1fr));
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+    .faction-choice-card.faction-white {
+      grid-column: 2;
     }
     .lobby-comms-box {
       min-height: 310px;
@@ -1858,6 +1865,9 @@
     }
     .faction-cards-grid {
       grid-template-columns: 1fr 1fr;
+    }
+    .faction-choice-card.faction-white {
+      grid-column: auto;
     }
     .briefing-footer {
       flex-direction: column;
