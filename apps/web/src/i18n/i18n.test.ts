@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach } from "vitest";
+import { ALL_OBJECTIVES } from "@hegemonia/maps";
 import { catalogs, SUPPORTED_LOCALES } from "./registry";
 import { i18n, t } from "./index.svelte";
 import {
@@ -129,11 +130,61 @@ describe("i18n Content Resolvers", () => {
     expect(getObjectiveDescription("obj_24_any")).toBe("Conquistar 24 TERRITÓRIOS à sua escolha.");
     expect(getObjectiveDescription("24_any")).toBe("Conquistar 24 TERRITÓRIOS à sua escolha.");
     expect(getObjectiveTitle("obj_rp_mongol_empire")).toBe("Império Mongol");
+    expect(getObjectiveTitle("obj_24_any")).toBe("Conquista Global (24 Territórios)");
 
     i18n.setLocale("en");
     expect(getObjectiveDescription("obj_24_any")).toBe("Conquer 24 TERRITORIES of your choice.");
     expect(getObjectiveDescription("24_any")).toBe("Conquer 24 TERRITORIES of your choice.");
     expect(getObjectiveTitle("obj_rp_mongol_empire")).toBe("Mongol Empire");
+    expect(getObjectiveTitle("obj_24_any")).toBe("Global Conquest (24 Territories)");
+  });
+
+  it("should resolve raw keys like obj_extermination_world_chaos properly (HEGEM-135)", () => {
+    i18n.setLocale("pt-BR");
+    expect(getObjectiveTitle("obj_extermination_world_chaos")).toBe("Apocalipse & Caos Global");
+    expect(getObjectiveDescription("obj_extermination_world_chaos")).toContain("Eliminar no mínimo 2 generais adversários e escalar a Tensão Mundial a 100%");
+
+    // Handling raw ID passed in descriptionPt
+    const rawObjPt = {
+      id: "obj_extermination_world_chaos",
+      descriptionPt: "obj_extermination_world_chaos",
+      rule: { type: "eliminate_players" as const, minEliminations: 2 },
+    };
+    expect(getObjectiveDescription(rawObjPt)).not.toBe("obj_extermination_world_chaos");
+    expect(getObjectiveDescription(rawObjPt)).toContain("Apocalipse & Caos Global");
+    expect(getObjectiveTitle(rawObjPt)).toBe("Apocalipse & Caos Global");
+
+    i18n.setLocale("en");
+    expect(getObjectiveTitle("obj_extermination_world_chaos")).toBe("World Chaos & Apocalypse");
+    expect(getObjectiveDescription("obj_extermination_world_chaos")).toContain("Eliminate at least 2 enemy generals and escalate World Tension to 100%");
+
+    // Handling raw ID passed in descriptionPt when locale is English
+    expect(getObjectiveDescription(rawObjPt)).toContain("World Chaos & Apocalypse");
+    expect(getObjectiveTitle(rawObjPt)).toBe("World Chaos & Apocalypse");
+
+    // Pure stub with only id
+    const stubObj = { id: "obj_extermination_world_chaos" };
+    expect(getObjectiveTitle(stubObj as any)).toBe("World Chaos & Apocalypse");
+    expect(getObjectiveDescription(stubObj as any)).toContain("World Chaos & Apocalypse");
+  });
+
+  it("should ensure all objectives in ALL_OBJECTIVES have localized titles and descriptions", () => {
+    for (const locale of ["pt-BR", "en"] as const) {
+      i18n.setLocale(locale);
+      for (const obj of ALL_OBJECTIVES) {
+        const title = getObjectiveTitle(obj);
+        const desc = getObjectiveDescription(obj);
+
+        expect(title).toBeDefined();
+        expect(title.length).toBeGreaterThan(0);
+        expect(title.startsWith("obj_")).toBe(false);
+        expect(title).not.toBe("objective");
+
+        expect(desc).toBeDefined();
+        expect(desc.length).toBeGreaterThan(10);
+        expect(desc.startsWith("obj_")).toBe(false);
+      }
+    }
   });
 });
 

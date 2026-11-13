@@ -8,6 +8,7 @@
     getTerritoryName,
     getContinentName,
     getSubregionName,
+    getObjectiveTitle,
     getObjectiveDescription,
     getFactionDoctrine,
   } from "../i18n/content.svelte";
@@ -1465,10 +1466,12 @@
           data-testid="btn-open-objective"
           class:active={activeRightDrawer === "objective"}
           onclick={() => toggleRightDrawer("objective")}
-          title={t("secret_objective_label")}
+          title={myPlayerState?.objective
+            ? `${t("secret_objective_label")}: ${getObjectiveTitle(myPlayerState.objective)}`
+            : t("secret_objective_label")}
         >
           <span class="hq-btn-icon"><Icon name="target" size={14} /></span>
-          <span class="hq-btn-label">Diretriz</span>
+          <span class="hq-btn-label">{t("directive")}</span>
           {#if objectiveProgress}
             <span class="hq-btn-pill">{objectiveProgress.pct}%</span>
           {/if}
@@ -1930,13 +1933,19 @@
       <div class="floating-drawer objective-drawer">
         <div class="drawer-header">
           <h4>
-            <Icon name="target" size={15} /> Diretriz Secreta de Alto Comando
+            <Icon name="target" size={15} /> {t("secret_objective_drawer_title")}
           </h4>
           <button
             class="btn-close"
             onclick={() => (activeRightDrawer = null)}
             aria-label={t("close")}><Icon name="close" size={14} /></button
           >
+        </div>
+        <div class="objective-header-title">
+          <span class="objective-type-badge">
+            <Icon name="shield" size={12} />
+            {getObjectiveTitle(myPlayerState.objective)}
+          </span>
         </div>
         <p class="objective-body">
           {getObjectiveDescription(myPlayerState.objective)}
@@ -1959,12 +1968,12 @@
                 </div>
               {/each}
               <div class="progress-bar-header" style="margin-top: 0.75rem; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 0.35rem;">
-                <span>Progresso Total da Operação:</span>
+                <span>{t("operation_total_progress")}:</span>
                 <strong>{objectiveProgress.pct}%</strong>
               </div>
             {:else}
               <div class="progress-bar-header">
-                <span>Progresso da Operação:</span>
+                <span>{t("operation_progress")}:</span>
                 <strong
                   >{objectiveProgress.pct}% ({objectiveProgress.owned}/{objectiveProgress.total})</strong
                 >
@@ -1993,14 +2002,13 @@
               size={13}
             />
             {highlightObjectiveTerritories
-              ? "Ocultar Alvos no Mapa"
-              : "Destacar Alvos no Mapa (Verde / Vermelho)"}
+              ? t("secret_objective_target_hide")
+              : t("secret_objective_target_highlight")}
           </button>
         </div>
 
         <small class="objective-note">
-          Documento confidencial mascarado no servidor. O cumprimento garante
-          vitória imediata.
+          {t("secret_objective_note")}
         </small>
       </div>
     {/if}
@@ -5027,6 +5035,24 @@
   /* Objective Drawer */
   .objective-drawer {
     width: 320px;
+  }
+  .objective-header-title {
+    margin: 0.35rem 0 0.5rem 0;
+  }
+  .objective-type-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    color: #fbbf24;
+    background: rgba(251, 191, 36, 0.12);
+    border: 1px solid rgba(251, 191, 36, 0.3);
+    border-radius: 4px;
+    padding: 0.25rem 0.55rem;
+    text-transform: uppercase;
+    box-shadow: 0 0 8px rgba(251, 191, 36, 0.15);
   }
   .objective-body {
     margin: 0;

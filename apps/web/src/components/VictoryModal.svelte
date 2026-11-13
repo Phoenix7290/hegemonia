@@ -136,12 +136,8 @@
             <p>
               {#if (winner.wonderRoundsHeld ?? 0) >= 3}
                 {t("wonder_directive_fulfilled")}
-              {:else if winner.objective?.id}
-                {getObjectiveDescription(winner.objective.id)}
               {:else if winner.objective}
-                {i18n.locale === "en"
-                  ? winner.objective.descriptionEn
-                  : winner.objective.descriptionPt}
+                {getObjectiveDescription(winner.objective)}
               {:else}
                 {t("victory_conquest_desc")}
               {/if}
