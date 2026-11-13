@@ -1277,7 +1277,7 @@
                                   : b.type === "market"
                                     ? "#451a03"
                                     : b.type === "industry"
-                                      ? "#1e293b"
+                                      ? (b.level === 2 ? "#431407" : "#1e293b")
                                       : b.type === "fortification"
                                         ? (b.level === 2 ? "#082f49" : "#1e293b")
                                         : b.type === "airfield"
@@ -1288,7 +1288,7 @@
                                   : b.type === "market"
                                     ? "#f59e0b"
                                     : b.type === "industry"
-                                      ? "#fb923c"
+                                      ? (b.level === 2 ? "#f97316" : "#fb923c")
                                       : b.type === "fortification"
                                         ? (b.level === 2 ? "#38bdf8" : "#94a3b8")
                                         : b.type === "airfield"
@@ -1308,7 +1308,7 @@
                                   : b.type === "market"
                                     ? "#fde047"
                                     : b.type === "industry"
-                                      ? "#fdba74"
+                                      ? (b.level === 2 ? "#ffedd5" : "#fdba74")
                                       : b.type === "fortification"
                                         ? (b.level === 2 ? "#7dd3fc" : "#e2e8f0")
                                         : b.type === "airfield"
@@ -1376,7 +1376,7 @@
                                       : b.type === "refinery"
                                         ? "#06b6d4"
                                         : b.type === "industry"
-                                          ? "#fb923c"
+                                          ? (b.level === 2 ? "#f97316" : "#fb923c")
                                           : b.type === "airfield"
                                             ? "#60a5fa"
                                             : "#2dd4bf"}

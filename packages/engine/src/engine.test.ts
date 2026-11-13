@@ -4022,6 +4022,154 @@ describe("Proxy and Reactive State Cloning Resilience", () => {
   });
 });
 
+describe("HEGEM-141: Doutrina Tall Soberana - Indústria Nível 2 e Dobro de Produção de Commodities", () => {
+  it("allows only tall_sovereign / defense_in_depth players to evolve Industry to Level 2 (cost: $6, 2 Steel)", () => {
+    const seed = "hegem141-upgrade-seed";
+    const rng = createSeededRng(seed);
+    let state = createGame({
+      id: "hegem141-game-1",
+      seed,
+      players: [
+        { id: "p1", name: "TallLord", color: "blue", doctrineId: "tall_sovereign" },
+        { id: "p2", name: "BlitzGeneral", color: "red", doctrineId: "blitzkrieg" },
+      ],
+    });
+    state.round = 2;
+    state.turnIndex = 0;
+    state.phase = "deploy";
+
+    const p1Terr = Object.values(state.territories).find((t) => t.ownerId === "p1")!;
+    p1Terr.buildings = [];
+    state.players[0].resources = { money: 20, steel: 10, oil: 10, gold: 10 };
+
+    // 1. Build Industry Lv. 1
+    state = applyAction(
+      state,
+      "p1",
+      { type: "build_structure", territoryId: p1Terr.id, buildingType: "industry" },
+      rng
+    );
+    expect(getTerritoryBuildingLevel(state.territories[p1Terr.id], "industry")).toBe(1);
+
+    // 2. Evolve Industry to Lv. 2
+    const moneyBeforeUpgrade = state.players[0].resources.money;
+    const steelBeforeUpgrade = state.players[0].resources.steel;
+    state = applyAction(
+      state,
+      "p1",
+      { type: "build_structure", territoryId: p1Terr.id, buildingType: "industry" },
+      rng
+    );
+    expect(getTerritoryBuildingLevel(state.territories[p1Terr.id], "industry")).toBe(2);
+    expect(state.players[0].resources.money).toBe(moneyBeforeUpgrade - 6);
+    expect(state.players[0].resources.steel).toBe(steelBeforeUpgrade - 2);
+
+    // 3. Cannot evolve beyond Level 2
+    expect(() => {
+      applyAction(
+        state,
+        "p1",
+        { type: "build_structure", territoryId: p1Terr.id, buildingType: "industry" },
+        rng
+      );
+    }).toThrow("A indústria neste território já está no nível máximo");
+
+    // 4. Non-tall player cannot evolve Industry to Level 2
+    const p2Terr = Object.values(state.territories).find((t) => t.ownerId === "p2")!;
+    p2Terr.buildings = [{ type: "industry", level: 1 }];
+    state.turnIndex = 1;
+    state.players[1].resources = { money: 20, steel: 10, oil: 10, gold: 10 };
+    expect(() => {
+      applyAction(
+        state,
+        "p2",
+        { type: "build_structure", territoryId: p2Terr.id, buildingType: "industry" },
+        rng
+      );
+    }).toThrow("Apenas generais com Doutrina de Desenvolvimento Tall (Fortaleza Soberana) podem expandir Indústria para o Nível 2");
+  });
+
+  it("doubles commodity production in territories with Industry Level 2 for Tall sovereign empire", () => {
+    const seed = "hegem141-econ-seed";
+    let state = createGame({
+      id: "hegem141-game-2",
+      seed,
+      players: [
+        { id: "p1", name: "TallLord", color: "blue", doctrineId: "tall_sovereign" },
+        { id: "p2", name: "Rival", color: "red" },
+      ],
+    });
+    state.round = 2;
+
+    // Isolate p1 to sao_paulo (steel) and inglaterra (no resource)
+    for (const t of CLASSIC_MAP.territories) {
+      state.territories[t.id].ownerId = "p2";
+      state.territories[t.id].buildings = [];
+    }
+    state.territories["sao_paulo"].ownerId = "p1";
+    state.territories["inglaterra"].ownerId = "p1";
+
+    // Scenario A: Industry Level 1 in sao_paulo and inglaterra
+    state.territories["sao_paulo"].buildings = [{ type: "industry", level: 1 }];
+    state.territories["inglaterra"].buildings = [{ type: "industry", level: 1 }];
+    const econLv1 = calculateTurnEconomy(state, "p1", CLASSIC_MAP);
+    // sao_paulo has steel: base yield 2 + Tall bonus 1 = 3 steel
+    expect(econLv1.steel).toBe(3);
+    // inglaterra has no resource: gives $2 dividend
+    expect(econLv1.buildingMoney).toBe(2);
+
+    // Scenario B: Industry Level 2 in sao_paulo and inglaterra
+    state.territories["sao_paulo"].buildings = [{ type: "industry", level: 2 }];
+    state.territories["inglaterra"].buildings = [{ type: "industry", level: 2 }];
+    const econLv2 = calculateTurnEconomy(state, "p1", CLASSIC_MAP);
+    // sao_paulo has steel: base yield 4 + Tall bonus 2 = 6 steel (doubled!)
+    expect(econLv2.steel).toBe(6);
+    // inglaterra has no resource: gives $4 dividend (doubled!)
+    expect(econLv2.buildingMoney).toBe(4);
+
+    // Scenario C: sao_paulo with Industry Level 2 + Steel Mine
+    state.territories["sao_paulo"].buildings = [
+      { type: "industry", level: 2 },
+      { type: "steel_mine", level: 1 },
+    ];
+    const econMine = calculateTurnEconomy(state, "p1", CLASSIC_MAP);
+    // Base 4 + Mine (2 * 2 = 4) + Tall bonus 2 = 10 steel
+    expect(econMine.steel).toBe(10);
+  });
+
+  it("correctly calculates refund when demolishing an Industry Level 2 structure", () => {
+    const seed = "hegem141-demolish-seed";
+    const rng = createSeededRng(seed);
+    let state = createGame({
+      id: "hegem141-game-3",
+      seed,
+      players: [
+        { id: "p1", name: "TallLord", color: "blue", doctrineId: "tall_sovereign" },
+        { id: "p2", name: "Rival", color: "red" },
+      ],
+    });
+    state.round = 2;
+    state.turnIndex = 0;
+    state.phase = "deploy";
+
+    const p1Terr = Object.values(state.territories).find((t) => t.ownerId === "p1")!;
+    p1Terr.buildings = [{ type: "industry", level: 2 }];
+    state.players[0].resources = { money: 0, steel: 0, oil: 0, gold: 0 };
+
+    // Total spent: base $6 + 1 steel, plus Lv. 2 upgrade $6 + 2 steel = $12 and 3 steel
+    // Refund: floor(12 * 0.5) = $6, ceil(3 * 0.5) = 2 steel
+    state = applyAction(
+      state,
+      "p1",
+      { type: "demolish_structure", territoryId: p1Terr.id, buildingType: "industry" },
+      rng
+    );
+    expect(state.territories[p1Terr.id].buildings?.length).toBe(0);
+    expect(state.players[0].resources.money).toBe(6);
+    expect(state.players[0].resources.steel).toBe(2);
+  });
+});
+
 describe("HEGEM-142: Objetivo Bastião e Construção da Maravilha Soberana (Fim do Mundo)", () => {
   it("allows player with Bastion objective to construct Wonder in a fortified territory", () => {
     const rng = createSeededRng("wonder_build_test");
