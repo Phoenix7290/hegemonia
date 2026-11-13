@@ -3,6 +3,7 @@ import {
   ChatSendSchema,
   DirectChannelOpenSchema,
   GLOBAL_CHANNEL_ID,
+  TacticalPingInputSchema,
   VoiceJoinSchema,
   VoiceLeaveSchema,
   VoiceSignalSchema,
@@ -12,6 +13,7 @@ import {
   type CommunicationSyncPayload,
   type IceServerConfig,
   type PlayerColor,
+  type TacticalPingEvent,
   type VoicePresence,
   type VoiceSignalInput,
 } from "@hegemonia/shared";
@@ -46,6 +48,9 @@ interface RoomCommunicationsOptions {
 const HISTORY_LIMIT = 100;
 const CHAT_RATE_WINDOW_MS = 2_000;
 const CHAT_RATE_LIMIT = 6;
+const PING_RATE_WINDOW_MS = 5_000;
+const PING_RATE_LIMIT = 6;
+const TACTICAL_PING_DURATION_MS = 7_000;
 const SIGNAL_RATE_WINDOW_MS = 10_000;
 const SIGNAL_RATE_LIMIT = 300;
 const INTEL_REPEAT_WINDOW_MS = 45_000;
@@ -56,6 +61,7 @@ export class RoomCommunications {
   private readonly voiceChannels = new Map<string, Set<string>>();
   private readonly activeVoiceByPlayer = new Map<string, string>();
   private readonly chatRate = new Map<string, number[]>();
+  private readonly pingRate = new Map<string, number[]>();
   private readonly signalRate = new Map<string, number[]>();
   private readonly lastIntelByChannel = new Map<string, number>();
   private readonly now: () => number;
@@ -228,10 +234,42 @@ export class RoomCommunications {
     });
   }
 
+  sendTacticalPing(client: CommunicationClient, rawPayload: unknown): TacticalPingEvent | null {
+    const sender = this.playerForClient(client);
+    const parsed = TacticalPingInputSchema.safeParse(rawPayload);
+    if (!sender || sender.isBot || !parsed.success) return null;
+    if (!this.consumeRate(this.pingRate, sender.token, PING_RATE_WINDOW_MS, PING_RATE_LIMIT)) {
+      client.send("error_msg", { message: "Sinalizações táticas muito frequentes. Aguarde um instante." });
+      return null;
+    }
+
+    const ping: TacticalPingEvent = {
+      id: this.createId(),
+      territoryId: parsed.data.territoryId,
+      kind: parsed.data.kind,
+      senderId: sender.token,
+      senderName: sender.name,
+      senderColor: sender.color,
+      createdAt: new Date(this.now()).toISOString(),
+      durationMs: TACTICAL_PING_DURATION_MS,
+    };
+
+    for (const recipient of this.host.getPlayers()) {
+      if (!recipient.connected || recipient.isBot) continue;
+      const isAllowed =
+        recipient.token === sender.token || Boolean(this.host.areAllied?.(sender.token, recipient.token));
+      if (!isAllowed) continue;
+      this.clientForPlayer(recipient.token)?.send("tactical_ping", ping);
+    }
+
+    return ping;
+  }
+
   removePlayer(playerId: string): void {
     const channelId = this.activeVoiceByPlayer.get(playerId);
     if (channelId) this.removeFromVoice(playerId, channelId);
     this.chatRate.delete(playerId);
+    this.pingRate.delete(playerId);
     this.signalRate.delete(playerId);
   }
 
@@ -239,6 +277,7 @@ export class RoomCommunications {
     this.voiceChannels.clear();
     this.activeVoiceByPlayer.clear();
     this.chatRate.clear();
+    this.pingRate.clear();
     this.signalRate.clear();
   }
 

@@ -3869,6 +3869,39 @@ describe("HEGEM-96: Manual Deploy Phase Transition (end_deploy)", () => {
       );
       expect(state.territories["franca"].units?.aircraft).toBe(1);
 
+      // Rejects explicit destination territory not owned by the coalition partner
+      state.territories["alemanha"].ownerId = "p2";
+      expect(() =>
+        applyAction(
+          state,
+          "p1",
+          {
+            type: "send_coalition_aircraft",
+            targetPlayerId: "p3",
+            fromTerritoryId: "inglaterra",
+            toTerritoryId: "alemanha",
+            quantity: 1,
+          },
+          rng
+        )
+      ).toThrow("não pertence ao parceiro de Coalizão");
+
+      // Rejects leaving 0 garrison divisions behind on aircraft transfer
+      expect(() =>
+        applyAction(
+          state,
+          "p1",
+          {
+            type: "send_coalition_aircraft",
+            targetPlayerId: "p3",
+            fromTerritoryId: "inglaterra",
+            toTerritoryId: "franca",
+            quantity: 2,
+          },
+          rng
+        )
+      ).toThrow();
+
       // 5. Extermination doctrine reinforcement bonus (+4 base divisions) and 0 0 0 0 economy protection
       const p2State = state.players.find((p) => p.id === "p2")!;
       p2State.doctrineId = "extermination";

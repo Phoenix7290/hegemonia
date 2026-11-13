@@ -3992,8 +3992,16 @@ export function applyAction(
         throw new Error("O território de origem deve manter ao menos 1 divisão de guarnição.");
       }
 
-      let destTerr = action.toTerritoryId ? state.territories[action.toTerritoryId] : undefined;
-      if (!destTerr || destTerr.ownerId !== target.id) {
+      let destTerr: TerritoryState | undefined;
+      if (action.toTerritoryId) {
+        const requestedDest = state.territories[action.toTerritoryId];
+        if (!requestedDest || requestedDest.ownerId !== target.id) {
+          throw new Error(
+            "O território de destino selecionado não pertence ao parceiro de Coalizão."
+          );
+        }
+        destTerr = requestedDest;
+      } else {
         destTerr =
           (target.capitalTerritoryId &&
           state.territories[target.capitalTerritoryId]?.ownerId === target.id

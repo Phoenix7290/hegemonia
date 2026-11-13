@@ -32,7 +32,15 @@ import {
 } from "@hegemonia/engine";
 import { appendMatchEvent, createMatch, startMatch } from "./db.js";
 import { RoomCommunications } from "./communications.js";
-import { synchronizeHumanHost } from "./room-membership.js";
+import {
+  advanceDisconnectedTurnTimeout,
+  applyConsentedLeaveTransition,
+  applyDisconnectTimeoutTransition,
+  applyLeaveMatchTransition,
+  restoreHumanOnReconnect,
+  synchronizeHumanHost,
+  type BotTakeoverMode,
+} from "./room-membership.js";
 import { matchmakingService } from "./matchmaking.js";
 
 interface LobbyPlayer {
@@ -50,7 +58,8 @@ interface LobbyPlayer {
   avatarUrl?: string | null;
   level?: number | null;
   disconnectedTurns?: number;
-  botTakeoverMode?: "immediate" | "after_2_turns";
+  botTakeoverMode?: BotTakeoverMode;
+  leftMatchExplicitly?: boolean;
 }
 
 interface HegemoniaRoomOptions {
@@ -92,6 +101,8 @@ export class HegemoniaRoom extends Room {
   private turnTimerSeconds = Number(process.env.TURN_TIMER_DEFAULT ?? 120);
   private turnDeadline = 0;
   private timerInterval: NodeJS.Timeout | null = null;
+  private botStepTimer: NodeJS.Timeout | null = null;
+  private handlingTurnTimeout = false;
   private disconnectTimeouts = new Map<string, NodeJS.Timeout>();
   private disposeTimeout: NodeJS.Timeout | null = null;
   private recentObjectivesByUser = new Map<string, string[]>();
@@ -129,6 +140,7 @@ export class HegemoniaRoom extends Room {
     this.communications = new RoomCommunications({
       getPlayers: () => this.lobbyPlayers,
       getClients: () => [...this.clients],
+      areAllied: (firstPlayerId, secondPlayerId) => this.arePlayersAllied(firstPlayerId, secondPlayerId),
     });
     this.roomCode = (
       options.roomCode?.toUpperCase() ||
@@ -261,28 +273,36 @@ export class HegemoniaRoom extends Room {
     this.onMessage(
       "leave_match",
       (client, payload: { botTakeoverMode?: "immediate" | "after_2_turns" }) => {
-        const player = this.lobbyPlayers.find((p) => p.sessionId === client.sessionId);
-        if (!player) return;
-        const mode = payload?.botTakeoverMode === "immediate" ? "immediate" : "after_2_turns";
-        player.botTakeoverMode = mode;
-        if (this.gameState && this.gameState.phase !== "game_over") {
-          if (mode === "immediate") {
-            player.isBot = true;
-            player.connected = false;
-            this.gameState.log.push(
-              `🤖 COMANDO TRANSFERIDO: ${player.name} retirou-se da campanha e delegou controle imediato ao General IA.`
-            );
-            this.purgePlayer(player);
-            this.checkAndRunBotTurn();
-            return;
-          } else {
-            player.disconnectedTurns = 0;
-            this.gameState.log.push(
-              `⚠️ AUSÊNCIA DE COMANDO: ${player.name} deixou a sala. Um General IA assumirá após 2 rodadas caso não retorne.`
-            );
+        const mode: BotTakeoverMode =
+          payload?.botTakeoverMode === "immediate" ? "immediate" : "after_2_turns";
+        const sessionId = client.sessionId;
+        this.enqueueAction(async () => {
+          const player = this.lobbyPlayers.find((p) => p.sessionId === sessionId);
+          if (!player) return;
+          const pendingTimer = this.disconnectTimeouts.get(player.token);
+          if (pendingTimer) {
+            clearTimeout(pendingTimer);
+            this.disconnectTimeouts.delete(player.token);
           }
-        }
-        this.purgePlayer(player);
+          const inActiveMatch = Boolean(this.gameState && this.gameState.phase !== "game_over");
+          const immediateTakeover = applyLeaveMatchTransition(player, mode, inActiveMatch);
+          if (inActiveMatch && this.gameState) {
+            if (immediateTakeover) {
+              this.gameState.log.push(
+                `[IA] COMANDO TRANSFERIDO: ${player.name} retirou-se da campanha e delegou controle imediato ao General IA.`
+              );
+            } else {
+              this.gameState.log.push(
+                `[AUSÊNCIA] ${player.name} deixou a sala. Um General IA assumirá após 2 rodadas caso não retorne.`
+              );
+            }
+          }
+          player.sessionId = "";
+          this.purgePlayer(player);
+          if (immediateTakeover) {
+            this.checkAndRunBotTurn();
+          }
+        });
       }
     );
 
@@ -446,10 +466,14 @@ export class HegemoniaRoom extends Room {
     this.onMessage("voice_signal", (client, payload: unknown) => {
       this.communications.relayVoiceSignal(client, payload);
     });
+    this.onMessage("tactical_ping", (client, payload: unknown) => {
+      this.communications.sendTacticalPing(client, payload);
+    });
 
     this.timerInterval = setInterval(() => {
       if (!this.gameState || this.gameState.phase === "game_over") return;
-      if (Date.now() > this.turnDeadline) {
+      if (!this.handlingTurnTimeout && Date.now() > this.turnDeadline) {
+        this.handlingTurnTimeout = true;
         this.enqueueAction(() => this.handleTurnTimeout());
       }
     }, 1000);
@@ -496,8 +520,8 @@ export class HegemoniaRoom extends Room {
       }
       this.communications.removePlayer(existing.token);
       existing.sessionId = client.sessionId;
-      existing.connected = true;
       existing.name = name;
+      const wasBotTakeover = restoreHumanOnReconnect(existing);
       if (authUser) {
         existing.userId = authUser.id;
         existing.username = authUser.username;
@@ -507,6 +531,11 @@ export class HegemoniaRoom extends Room {
       if (this.gameState) {
         const gp = this.gameState.players.find((p) => p.id === token);
         if (gp) gp.connected = true;
+        if (wasBotTakeover) {
+          this.gameState.log.push(
+            `[COMANDO RESTAURADO] ${existing.name} reconectou-se e reassumiu o controle de suas forças!`
+          );
+        }
       }
       synchronizeHumanHost(this.lobbyPlayers);
       this.syncMetadata();
@@ -557,7 +586,18 @@ export class HegemoniaRoom extends Room {
     this.communications.removePlayer(player.token);
 
     if (consented) {
+      const inActiveMatch = Boolean(this.gameState && this.gameState.phase !== "game_over");
+      const immediateTakeover = applyConsentedLeaveTransition(player, inActiveMatch);
+      if (immediateTakeover && this.gameState) {
+        this.gameState.log.push(
+          `[IA] COMANDO TRANSFERIDO: ${player.name} abandonou a partida e a IA assumiu suas forças.`
+        );
+      }
+      player.sessionId = "";
       this.purgePlayer(player);
+      if (immediateTakeover) {
+        this.checkAndRunBotTurn();
+      }
       return;
     }
 
@@ -573,7 +613,20 @@ export class HegemoniaRoom extends Room {
     const timer = setTimeout(() => {
       this.disconnectTimeouts.delete(player.token);
       if (!player.connected) {
-        this.purgePlayer(player);
+        this.enqueueAction(async () => {
+          const inActiveMatch = Boolean(this.gameState && this.gameState.phase !== "game_over");
+          const immediateTakeover = applyDisconnectTimeoutTransition(player, inActiveMatch);
+          if (immediateTakeover && this.gameState) {
+            this.gameState.log.push(
+              `[IA] COMANDO TRANSFERIDO: ${player.name} desconectou-se e a IA assumiu o comando.`
+            );
+          }
+          player.sessionId = "";
+          this.purgePlayer(player);
+          if (immediateTakeover) {
+            this.checkAndRunBotTurn();
+          }
+        });
       }
     }, 60000);
     this.disconnectTimeouts.set(player.token, timer);
@@ -622,6 +675,7 @@ export class HegemoniaRoom extends Room {
 
   async onDispose() {
     if (this.timerInterval) clearInterval(this.timerInterval);
+    if (this.botStepTimer) clearTimeout(this.botStepTimer);
     if (this.disposeTimeout) clearTimeout(this.disposeTimeout);
     for (const t of this.disconnectTimeouts.values()) clearTimeout(t);
     this.disconnectTimeouts.clear();
@@ -630,6 +684,23 @@ export class HegemoniaRoom extends Room {
     for (const player of this.lobbyPlayers) {
       if (player.userId) matchmakingService.releaseParticipant(player.userId, this.roomCode);
     }
+  }
+
+  private arePlayersAllied(firstPlayerId: string, secondPlayerId: string): boolean {
+    if (!this.gameState) return false;
+    if (firstPlayerId === secondPlayerId) return true;
+    const hasAlliance = (this.gameState.treaties ?? []).some(
+      (t) =>
+        t.status === "active" &&
+        t.type === "alliance" &&
+        ((t.fromPlayerId === firstPlayerId && t.toPlayerId === secondPlayerId) ||
+          (t.fromPlayerId === secondPlayerId && t.toPlayerId === firstPlayerId))
+    );
+    if (hasAlliance) return true;
+    return (this.gameState.coalitions ?? []).some(
+      (c) =>
+        c.memberPlayerIds.includes(firstPlayerId) && c.memberPlayerIds.includes(secondPlayerId)
+    );
   }
 
   private enqueueAction(operation: () => Promise<void>): void {
@@ -708,114 +779,128 @@ export class HegemoniaRoom extends Room {
   }
 
   private async handleTurnTimeout(): Promise<void> {
-    if (!this.gameState || this.gameState.phase === "game_over") return;
-    const current = this.gameState.players[this.gameState.turnIndex];
-    const timedOutPlayerId = current.id;
-    this.gameState.log.push(
-      `[TEMPO] Tempo esgotado para ${current.name}. Turno encerrado automaticamente.`
-    );
+    try {
+      if (!this.gameState || this.gameState.phase === "game_over") return;
+      if (Date.now() <= this.turnDeadline) return;
+      const current = this.gameState.players[this.gameState.turnIndex];
+      const timedOutPlayerId = current.id;
+      this.gameState.log.push(
+        `[TEMPO] Tempo esgotado para ${current.name}. Turno encerrado automaticamente.`
+      );
 
-    for (let guard = 0; guard < 6; guard++) {
-      const gs = this.gameState as GameState | null;
-      if (!gs || gs.phase === "game_over") break;
-      const active = gs.players[gs.turnIndex];
-      if (!active || active.id !== timedOutPlayerId) break;
+      for (let guard = 0; guard < 6; guard++) {
+        const gs = this.gameState as GameState | null;
+        if (!gs || gs.phase === "game_over") break;
+        const active = gs.players[gs.turnIndex];
+        if (!active || active.id !== timedOutPlayerId) break;
 
-      try {
-        if (active.pendingObjectiveChoice && active.availableObjectives?.length) {
-          await this.executePlayerAction(timedOutPlayerId, {
-            type: "choose_objective",
-            objectiveId: active.availableObjectives[0].id,
-          });
-          continue;
-        }
-
-        if (active.cards.length >= 5) {
-          const triplet = findValidTradeTriplet(active.cards);
-          if (triplet) {
+        try {
+          if (active.pendingObjectiveChoice && active.availableObjectives?.length) {
             await this.executePlayerAction(timedOutPlayerId, {
-              type: "trade_cards",
-              cardIds: triplet,
+              type: "choose_objective",
+              objectiveId: active.availableObjectives[0].id,
             });
             continue;
           }
-        }
 
-        if (gs.pendingConquest) {
-          await this.executePlayerAction(timedOutPlayerId, {
-            type: "occupy",
-            armies: gs.pendingConquest.minMove,
-          });
-          continue;
-        }
+          if (gs.pendingConquest) {
+            await this.executePlayerAction(timedOutPlayerId, {
+              type: "occupy",
+              armies: gs.pendingConquest.minMove,
+            });
+            continue;
+          }
 
-        if (gs.phase === "deploy" && active.unplacedArmies > 0) {
-          const target = this.pickDeployableTerritory(gs, timedOutPlayerId);
-          if (target) {
-            if (target.isEncircled) {
-              target.isEncircled = false;
+          if (active.cards.length >= 5) {
+            const triplet = findValidTradeTriplet(active.cards);
+            if (triplet) {
+              await this.executePlayerAction(timedOutPlayerId, {
+                type: "trade_cards",
+                cardIds: triplet,
+              });
+              continue;
             }
-            await this.executePlayerAction(timedOutPlayerId, {
-              type: "deploy",
-              territoryId: target.id,
-              armies: active.unplacedArmies,
-            });
+          }
+
+          if (gs.phase === "deploy" && active.unplacedArmies > 0) {
+            const target = this.pickDeployableTerritory(gs, timedOutPlayerId);
+            if (target) {
+              if (target.isEncircled) {
+                target.isEncircled = false;
+              }
+              await this.executePlayerAction(timedOutPlayerId, {
+                type: "deploy",
+                territoryId: target.id,
+                armies: active.unplacedArmies,
+              });
+              continue;
+            }
+            active.unplacedArmies = 0;
+            await this.executePlayerAction(timedOutPlayerId, { type: "end_turn" });
+            break;
+          }
+
+          if (gs.phase === "deploy" && active.unplacedArmies === 0 && gs.round > 1) {
+            await this.executePlayerAction(timedOutPlayerId, { type: "end_deploy" });
             continue;
           }
-        }
 
-        if (gs.phase === "deploy" && active.unplacedArmies === 0 && gs.round > 1) {
-          await this.executePlayerAction(timedOutPlayerId, { type: "end_deploy" });
-          continue;
+          await this.executePlayerAction(timedOutPlayerId, { type: "end_turn" });
+          break;
+        } catch {
+          active.unplacedArmies = 0;
+          gs.pendingConquest = null;
+          await this.executePlayerAction(timedOutPlayerId, { type: "end_turn" }).catch(() => undefined);
+          break;
         }
-
-        await this.executePlayerAction(timedOutPlayerId, { type: "end_turn" });
-        break;
-      } catch {
-        active.unplacedArmies = 0;
-        gs.pendingConquest = null;
-        await this.executePlayerAction(timedOutPlayerId, { type: "end_turn" }).catch(() => undefined);
-        break;
       }
-    }
 
-    const timedOutLobbyEntry = this.lobbyPlayers.find((p) => p.token === timedOutPlayerId);
-    if (timedOutLobbyEntry && !timedOutLobbyEntry.connected && !timedOutLobbyEntry.isBot) {
-      timedOutLobbyEntry.disconnectedTurns = (timedOutLobbyEntry.disconnectedTurns ?? 0) + 1;
-      if (timedOutLobbyEntry.disconnectedTurns >= 2) {
-        timedOutLobbyEntry.isBot = true;
+      const timedOutLobbyEntry = this.lobbyPlayers.find((p) => p.token === timedOutPlayerId);
+      if (timedOutLobbyEntry && advanceDisconnectedTurnTimeout(timedOutLobbyEntry)) {
         if (this.gameState) {
           this.gameState.log.push(
-            `🤖 CONTROLE IA ATIVADO: Após 2 rodadas ausente, a IA assumiu o comando de ${timedOutLobbyEntry.name}!`
+            `[IA] CONTROLE IA ATIVADO: Após 2 rodadas ausente, a IA assumiu o comando de ${timedOutLobbyEntry.name}!`
           );
         }
         this.broadcastRoomState();
       }
-    }
 
-    this.resetTurnTimer();
-    this.checkAndRunBotTurn();
+      this.resetTurnTimer();
+      this.checkAndRunBotTurn();
+    } finally {
+      this.handlingTurnTimeout = false;
+    }
   }
 
   private checkAndRunBotTurn() {
+    if (this.botStepTimer) {
+      clearTimeout(this.botStepTimer);
+      this.botStepTimer = null;
+    }
     if (!this.gameState || this.gameState.phase === "game_over") return;
     const current = this.gameState.players[this.gameState.turnIndex];
+    if (!current) return;
     const lobbyEntry = this.lobbyPlayers.find((p) => p.token === current.id);
     if (!lobbyEntry?.isBot) return;
 
-    setTimeout(() => {
+    const scheduledPlayerId = current.id;
+    this.botStepTimer = setTimeout(() => {
+      this.botStepTimer = null;
       if (!this.gameState || this.gameState.phase === "game_over") return;
       const active = this.gameState.players[this.gameState.turnIndex];
-      if (active.id === current.id) {
-        this.enqueueAction(() => this.runSingleBotStep(current.id));
+      const activeLobby = this.lobbyPlayers.find((p) => p.token === active?.id);
+      if (active && active.id === scheduledPlayerId && activeLobby?.isBot) {
+        this.enqueueAction(() => this.runSingleBotStep(scheduledPlayerId));
       }
     }, 450);
   }
 
   private async runSingleBotStep(playerId: string): Promise<void> {
     if (!this.gameState || this.gameState.phase === "game_over") return;
-    const player = this.gameState.players.find((p) => p.id === playerId);
-    if (!player) return;
+    const current = this.gameState.players[this.gameState.turnIndex];
+    const lobbyEntry = this.lobbyPlayers.find((p) => p.token === playerId);
+    if (!current || current.id !== playerId || !lobbyEntry?.isBot) return;
+    const player = current;
     const mapById = new Map(CLASSIC_MAP.territories.map((t) => [t.id, t]));
 
     try {
@@ -823,6 +908,14 @@ export class HegemoniaRoom extends Room {
         await this.executePlayerAction(playerId, {
           type: "choose_objective",
           objectiveId: player.availableObjectives[0].id,
+        });
+        return;
+      }
+
+      if (this.gameState.pendingConquest) {
+        await this.executePlayerAction(playerId, {
+          type: "occupy",
+          armies: this.gameState.pendingConquest.maxMove,
         });
         return;
       }
@@ -851,16 +944,12 @@ export class HegemoniaRoom extends Room {
         return;
       }
 
-      if (this.gameState.phase === "deploy" && player.unplacedArmies === 0 && this.gameState.round > 1) {
-        await this.executePlayerAction(playerId, { type: "end_deploy" });
-        return;
-      }
-
-      if (this.gameState.pendingConquest) {
-        await this.executePlayerAction(playerId, {
-          type: "occupy",
-          armies: this.gameState.pendingConquest.maxMove,
-        });
+      if (this.gameState.phase === "deploy" && player.unplacedArmies === 0) {
+        if (this.gameState.round > 1) {
+          await this.executePlayerAction(playerId, { type: "end_deploy" });
+        } else {
+          await this.executePlayerAction(playerId, { type: "end_turn" });
+        }
         return;
       }
 

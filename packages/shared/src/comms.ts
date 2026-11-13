@@ -95,6 +95,26 @@ export interface CommunicationSyncPayload {
   voice: VoicePresence[];
 }
 
+export const TacticalPingKindSchema = z.enum(["defense", "attack", "danger", "rally"]);
+export type TacticalPingKind = z.infer<typeof TacticalPingKindSchema>;
+
+export const TacticalPingInputSchema = z.object({
+  territoryId: z.string().trim().min(1).max(128),
+  kind: TacticalPingKindSchema,
+});
+export type TacticalPingInput = z.infer<typeof TacticalPingInputSchema>;
+
+export interface TacticalPingEvent {
+  id: string;
+  territoryId: string;
+  kind: TacticalPingKind;
+  senderId: string;
+  senderName: string;
+  senderColor: PlayerColor;
+  createdAt: string;
+  durationMs: number;
+}
+
 export function directChannelId(firstPlayerId: string, secondPlayerId: string): string {
   return `direct:${[firstPlayerId, secondPlayerId]
     .sort((a, b) => a.localeCompare(b))

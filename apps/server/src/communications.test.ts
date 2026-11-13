@@ -5,6 +5,7 @@ import {
   type CommunicationMessage,
   type CommunicationSyncPayload,
   type PlayerColor,
+  type TacticalPingEvent,
   type VoicePresence,
 } from "@hegemonia/shared";
 import {
@@ -241,6 +242,43 @@ describe("RoomCommunications", () => {
     expect(messages).toHaveLength(100);
     expect(messages[0].text).toBe("Mensagem 5");
     expect(messages.at(-1)?.text).toBe("Mensagem 104");
+  });
+
+  it("despacha tactical_ping apenas ao remetente e aliados/membros da coalizão (HEGEM-99)", () => {
+    const players = [
+      player("alpha", "Alice", "blue"),
+      player("beta", "Bruno", "red"),
+      player("gamma", "Carla", "green"),
+    ];
+    const clients = players.map((entry) => new FakeClient(entry.sessionId));
+    const [alpha, beta, gamma] = clients;
+    const communications = new RoomCommunications(
+      {
+        getPlayers: () => players,
+        getClients: () => clients,
+        areAllied: (first, second) =>
+          (first === "alpha" && second === "beta") || (first === "beta" && second === "alpha"),
+      },
+      {
+        now: () => 5_000,
+        createId: () => "ping-1",
+      }
+    );
+
+    const emitted = communications.sendTacticalPing(alpha, {
+      territoryId: "brasil",
+      kind: "attack",
+    });
+    expect(emitted).toMatchObject({
+      id: "ping-1",
+      territoryId: "brasil",
+      kind: "attack",
+      senderId: "alpha",
+      durationMs: 7000,
+    });
+    expect(alpha.ofType<TacticalPingEvent>("tactical_ping")).toHaveLength(1);
+    expect(beta.ofType<TacticalPingEvent>("tactical_ping")).toHaveLength(1);
+    expect(gamma.ofType<TacticalPingEvent>("tactical_ping")).toHaveLength(0);
   });
 });
 

@@ -1,5 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { synchronizeHumanHost, type HostMember } from "./room-membership.js";
+import {
+  advanceDisconnectedTurnTimeout,
+  applyConsentedLeaveTransition,
+  applyDisconnectTimeoutTransition,
+  applyLeaveMatchTransition,
+  restoreHumanOnReconnect,
+  synchronizeHumanHost,
+  type HostMember,
+  type TakeoverMember,
+} from "./room-membership.js";
 
 interface TestMember extends HostMember {
   token: string;
@@ -7,6 +16,17 @@ interface TestMember extends HostMember {
 
 function member(token: string, overrides: Partial<TestMember> = {}): TestMember {
   return { token, isHost: false, isBot: false, connected: true, ...overrides };
+}
+
+function takeoverMember(token: string, overrides: Partial<TakeoverMember> = {}): TakeoverMember {
+  return {
+    token,
+    sessionId: `sess-${token}`,
+    isHost: false,
+    isBot: false,
+    connected: true,
+    ...overrides,
+  };
 }
 
 describe("room host succession", () => {
@@ -42,5 +62,68 @@ describe("room host succession", () => {
     const players = [member("returning"), member("bot", { isBot: true })];
     synchronizeHumanHost(players);
     expect(players[0].isHost).toBe(true);
+  });
+});
+
+describe("bot takeover and reconnect resilience (HEGEM-146)", () => {
+  it("activates bot immediately when player leaves match with immediate takeover", () => {
+    const player = takeoverMember("p1", { isHost: true });
+    const immediate = applyLeaveMatchTransition(player, "immediate", true);
+    expect(immediate).toBe(true);
+    expect(player.isBot).toBe(true);
+    expect(player.connected).toBe(false);
+    expect(player.isHost).toBe(false);
+    expect(player.leftMatchExplicitly).toBe(true);
+  });
+
+  it("defers bot takeover for 2 missed turns when player leaves with after_2_turns", () => {
+    const player = takeoverMember("p1");
+    const immediate = applyLeaveMatchTransition(player, "after_2_turns", true);
+    expect(immediate).toBe(false);
+    expect(player.isBot).toBe(false);
+    expect(player.connected).toBe(false);
+
+    // First missed turn timeout keeps human slot open for reconnect
+    expect(advanceDisconnectedTurnTimeout(player)).toBe(false);
+    expect(player.isBot).toBe(false);
+    expect(player.disconnectedTurns).toBe(1);
+
+    // Second missed turn triggers AI takeover
+    expect(advanceDisconnectedTurnTimeout(player)).toBe(true);
+    expect(player.isBot).toBe(true);
+    expect(player.disconnectedTurns).toBe(2);
+  });
+
+  it("activates immediate AI takeover on consented leave without leave_match during active match", () => {
+    const player = takeoverMember("p1");
+    expect(applyConsentedLeaveTransition(player, true)).toBe(true);
+    expect(player.isBot).toBe(true);
+    expect(player.connected).toBe(false);
+
+    // Does not override explicit after_2_turns leave_match if onLeave arrives right after
+    const deferred = takeoverMember("p2");
+    applyLeaveMatchTransition(deferred, "after_2_turns", true);
+    expect(applyConsentedLeaveTransition(deferred, true)).toBe(false);
+    expect(deferred.isBot).toBe(false);
+  });
+
+  it("restores human control when a player reconnects after AI takeover", () => {
+    const player = takeoverMember("p1", {
+      isBot: true,
+      connected: false,
+      disconnectedTurns: 2,
+      botTakeoverMode: "after_2_turns",
+      leftMatchExplicitly: true,
+    });
+    expect(restoreHumanOnReconnect(player)).toBe(true);
+    expect(player.isBot).toBe(false);
+    expect(player.connected).toBe(true);
+    expect(player.disconnectedTurns).toBe(0);
+    expect(player.leftMatchExplicitly).toBe(false);
+
+    // Reconnecting after disconnect timeout preserves after_2_turns until 2 turns expire
+    const dropped = takeoverMember("p2");
+    expect(applyDisconnectTimeoutTransition(dropped, true)).toBe(false);
+    expect(dropped.botTakeoverMode).toBe("after_2_turns");
   });
 });
